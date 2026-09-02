@@ -1,8 +1,14 @@
 package com.governence.faflow.face.model
 
 import android.graphics.Bitmap
-import android.graphics.PointF
-import android.graphics.RectF
+
+/**
+ * 2D coordinate point for facial landmarks.
+ */
+data class FacePoint(
+    val x: Float,
+    val y: Float
+)
 
 /**
  * Normalized 2D bounding box and spatial boundaries of a detected face.
@@ -17,8 +23,6 @@ data class FaceBox(
     val height: Float get() = bottom - top
     val centerX: Float get() = (left + right) / 2f
     val centerY: Float get() = (top + bottom) / 2f
-
-    fun toRectF(): RectF = RectF(left, top, right, bottom)
 }
 
 /**
@@ -30,13 +34,13 @@ data class FaceBox(
  * 5. Right Mouth Corner
  */
 data class FaceLandmarks(
-    val leftEye: PointF,
-    val rightEye: PointF,
-    val nose: PointF,
-    val leftMouth: PointF,
-    val rightMouth: PointF
+    val leftEye: FacePoint,
+    val rightEye: FacePoint,
+    val nose: FacePoint,
+    val leftMouth: FacePoint,
+    val rightMouth: FacePoint
 ) {
-    fun toPointList(): List<PointF> = listOf(leftEye, rightEye, nose, leftMouth, rightMouth)
+    fun toPointList(): List<FacePoint> = listOf(leftEye, rightEye, nose, leftMouth, rightMouth)
 }
 
 /**

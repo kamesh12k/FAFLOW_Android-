@@ -34,6 +34,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -51,7 +52,8 @@ import androidx.core.content.ContextCompat
 import com.governence.faflow.camera.CameraController
 import com.governence.faflow.camera.CameraOverlay
 import com.governence.faflow.camera.CameraPreviewView
-import com.governence.faflow.camera.CameraState
+import com.governence.faflow.face.model.ScrfdModelManager
+import com.governence.faflow.face.scrfd.ScrfdFaceDetector
 import com.governence.faflow.location.LocationVerificationResult
 import com.governence.faflow.ui.components.AppTopBar
 import com.governence.faflow.ui.components.PrimaryGradientButton
@@ -60,6 +62,7 @@ import com.governence.faflow.ui.theme.StatusError
 import com.governence.faflow.ui.theme.StatusSuccess
 import com.governence.faflow.ui.theme.StatusWarning
 import com.governence.faflow.ui.viewmodels.AttendanceViewModel
+import com.governence.faflow.ui.viewmodels.FaceDetectionUiState
 
 @Composable
 fun AttendanceCheckInOutScreen(
@@ -70,7 +73,22 @@ fun AttendanceCheckInOutScreen(
     val context = LocalContext.current
     val uiState by viewModel.uiState.collectAsState()
     val verificationResult by viewModel.verificationResult.collectAsState()
+    val faceDetectionState by viewModel.faceDetectionState.collectAsState()
     val isLocationVerified = viewModel.isLocationVerifiedForAttendance()
+
+    // SCRFD Model Manager & Face Detector
+    val modelManager = remember { ScrfdModelManager(context) }
+    val faceDetector = remember { ScrfdFaceDetector(modelManager) }
+    val latencyMs by faceDetector.inferenceLatencyMs.collectAsState()
+    val detections by faceDetector.latestDetections.collectAsState()
+
+    LaunchedEffect(Unit) {
+        modelManager.initializeModels()
+    }
+
+    LaunchedEffect(detections) {
+        viewModel.updateDetections(detections)
+    }
 
     // Runtime Camera Permission Handling
     var hasCameraPermission by remember {
@@ -86,9 +104,11 @@ fun AttendanceCheckInOutScreen(
     }
 
     val cameraController = remember {
-        CameraController(context = context, targetFps = 10)
+        CameraController(context = context, frameProcessor = faceDetector, targetFps = 10)
     }
     val cameraState by cameraController.cameraState.collectAsState()
+
+    val isReadyForAttendance = isLocationVerified && hasCameraPermission && faceDetectionState is FaceDetectionUiState.FaceDetected
 
     Scaffold(
         topBar = {
@@ -199,78 +219,42 @@ fun AttendanceCheckInOutScreen(
                 contentAlignment = Alignment.Center
             ) {
                 if (!isLocationVerified) {
-                    // Location gating blocks camera activation
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         modifier = Modifier.padding(24.dp)
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.LocationOn,
-                            contentDescription = null,
-                            tint = StatusWarning,
-                            modifier = Modifier.size(56.dp)
-                        )
+                        Icon(imageVector = Icons.Default.LocationOn, contentDescription = null, tint = StatusWarning, modifier = Modifier.size(56.dp))
                         Spacer(modifier = Modifier.height(12.dp))
-                        Text(
-                            text = "Campus Location Verification Required",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = Color.White,
-                            textAlign = TextAlign.Center
-                        )
+                        Text("Campus Location Verification Required", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color.White, textAlign = TextAlign.Center)
                         Spacer(modifier = Modifier.height(6.dp))
-                        Text(
-                            text = "Camera pipeline is active only when you are physically inside an authorized campus geofence perimeter.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = Color.Gray,
-                            textAlign = TextAlign.Center
-                        )
+                        Text("Camera pipeline is active only when you are physically inside an authorized campus geofence perimeter.", style = MaterialTheme.typography.bodySmall, color = Color.Gray, textAlign = TextAlign.Center)
                     }
                 } else if (!hasCameraPermission) {
-                    // Camera permission rationale view
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         modifier = Modifier.padding(24.dp)
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.CameraAlt,
-                            contentDescription = null,
-                            tint = PrimaryBlue,
-                            modifier = Modifier.size(56.dp)
-                        )
+                        Icon(imageVector = Icons.Default.CameraAlt, contentDescription = null, tint = PrimaryBlue, modifier = Modifier.size(56.dp))
                         Spacer(modifier = Modifier.height(12.dp))
-                        Text(
-                            text = "Camera Permission Required",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = Color.White,
-                            textAlign = TextAlign.Center
-                        )
+                        Text("Camera Permission Required", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color.White, textAlign = TextAlign.Center)
                         Spacer(modifier = Modifier.height(6.dp))
-                        Text(
-                            text = "FAFLOW requires front-camera access to capture your facial attendance frame securely on device.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = Color.Gray,
-                            textAlign = TextAlign.Center
-                        )
+                        Text("FAFLOW requires front-camera access to capture your facial attendance frame securely on device.", style = MaterialTheme.typography.bodySmall, color = Color.Gray, textAlign = TextAlign.Center)
                         Spacer(modifier = Modifier.height(16.dp))
-                        Button(
-                            onClick = { cameraPermissionLauncher.launch(Manifest.permission.CAMERA) },
-                            colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue)
-                        ) {
+                        Button(onClick = { cameraPermissionLauncher.launch(Manifest.permission.CAMERA) }, colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue)) {
                             Text("Grant Camera Access")
                         }
                     }
                 } else {
-                    // Real CameraX Front-Camera Preview
                     CameraPreviewView(
                         cameraController = cameraController,
                         modifier = Modifier.fillMaxSize()
                     )
 
-                    // Visual Positioning Guide Overlay
                     CameraOverlay(
                         cameraState = cameraState,
+                        faceDetectionState = faceDetectionState,
+                        showDebugOverlay = false,
+                        inferenceLatencyMs = latencyMs,
                         modifier = Modifier.fillMaxSize()
                     )
                 }
@@ -279,7 +263,7 @@ fun AttendanceCheckInOutScreen(
             Spacer(modifier = Modifier.height(14.dp))
 
             // Action Button
-            if (isLocationVerified && hasCameraPermission) {
+            if (isReadyForAttendance) {
                 PrimaryGradientButton(
                     text = if (uiState.isCheckingIn) "Confirm Shift Check-In" else "Confirm Shift Check-Out",
                     icon = Icons.Default.Fingerprint,
@@ -297,12 +281,15 @@ fun AttendanceCheckInOutScreen(
                     shape = RoundedCornerShape(16.dp),
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
                 ) {
+                    val promptText = when {
+                        !isLocationVerified -> "Shift attendance is gated by campus geofencing. Please verify location first."
+                        !hasCameraPermission -> "Grant camera permission to complete facial attendance capture."
+                        faceDetectionState is FaceDetectionUiState.MultipleFaces -> "Multiple faces detected. Only the authenticated staff member must be in frame."
+                        faceDetectionState is FaceDetectionUiState.FaceTooSmall -> "Please move closer to the camera."
+                        else -> "Align your face within the guide oval to register attendance."
+                    }
                     Text(
-                        text = if (!isLocationVerified) {
-                            "Shift attendance is gated by campus geofencing. Please verify location first."
-                        } else {
-                            "Grant camera permission to complete facial attendance capture."
-                        },
+                        text = promptText,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(14.dp),

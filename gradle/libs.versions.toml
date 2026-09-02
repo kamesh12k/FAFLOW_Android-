@@ -54,6 +54,9 @@ androidx-security-crypto = { group = "androidx.security", name = "security-crypt
 # Location (FusedLocationProviderClient)
 play-services-location = { group = "com.google.android.gms", name = "play-services-location", version = "21.3.0" }
 
+# ONNX Runtime (InsightFace Inference)
+onnxruntime-android = { group = "com.microsoft.onnxruntime", name = "onnxruntime-android", version = "1.20.0" }
+
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }

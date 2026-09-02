@@ -21,6 +21,18 @@ import com.governence.faflow.domain.model.LeaveRequest
 import com.governence.faflow.domain.model.LeaveStatus
 import com.governence.faflow.domain.model.StaffMember
 import com.governence.faflow.domain.model.TimetableSlot
+import com.governence.faflow.face.ModelInfo
+import com.governence.faflow.face.ModelTask
+import com.governence.faflow.face.ModelState
+import com.governence.faflow.face.model.FaceBox
+import com.governence.faflow.face.model.FaceDetectionResult
+import com.governence.faflow.face.model.FaceLandmarks
+import com.governence.faflow.face.model.FacePoint
+import com.governence.faflow.face.model.ScrfdModelMetadata
+import com.governence.faflow.face.scrfd.LetterboxInfo
+import com.governence.faflow.face.scrfd.ScrfdCandidate
+import com.governence.faflow.face.scrfd.ScrfdDecoder
+import com.governence.faflow.face.scrfd.ScrfdPostprocessor
 import com.governence.faflow.location.CampusGeofence
 import com.governence.faflow.location.GeoPoint
 import com.governence.faflow.location.GeofenceMathEngine
@@ -28,17 +40,163 @@ import com.governence.faflow.location.GeofenceType
 import com.governence.faflow.location.GeofenceValidator
 import com.governence.faflow.location.LocationVerificationResult
 import com.governence.faflow.location.StaffLiveLocation
+import com.governence.faflow.ui.viewmodels.FaceDetectionUiState
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 
 class FaflowIntegrationTest {
+
+    // ---------- Milestone 6: InsightFace SCRFD Face Detection Tests ----------
+
+    @Test
+    fun testScrfdAnchorGenerationCounts() {
+        val stride8Anchors = ScrfdDecoder.generateAnchorCenters(inputWidth = 640, inputHeight = 640, stride = 8, numAnchors = 2)
+        assertEquals(12800, stride8Anchors.size) // (640/8) * (640/8) * 2 = 80 * 80 * 2 = 12800
+
+        val stride16Anchors = ScrfdDecoder.generateAnchorCenters(inputWidth = 640, inputHeight = 640, stride = 16, numAnchors = 2)
+        assertEquals(3200, stride16Anchors.size) // 40 * 40 * 2 = 3200
+
+        val stride32Anchors = ScrfdDecoder.generateAnchorCenters(inputWidth = 640, inputHeight = 640, stride = 32, numAnchors = 2)
+        assertEquals(800, stride32Anchors.size) // 20 * 20 * 2 = 800
+
+        val totalAnchors = stride8Anchors.size + stride16Anchors.size + stride32Anchors.size
+        assertEquals(16800, totalAnchors)
+    }
+
+    @Test
+    fun testScrfdBoundingBoxAndLandmarkDecoding() {
+        val letterbox = LetterboxInfo(
+            scale = 1.0f,
+            padX = 0f,
+            padY = 0f,
+            originalWidth = 640,
+            originalHeight = 640,
+            rotationApplied = 0
+        )
+
+        val scores = floatArrayOf(0.92f)
+        val bboxDeltas = floatArrayOf(2.0f, 2.0f, 2.0f, 2.0f) // l, t, r, b = 16px each at stride 8
+        val kpsDeltas = floatArrayOf(
+            -1.0f, -1.0f, // Left eye
+            1.0f, -1.0f,  // Right eye
+            0.0f, 0.0f,   // Nose
+            -0.8f, 1.0f,  // Left mouth
+            0.8f, 1.0f    // Right mouth
+        )
+        val anchorCenters = listOf(Pair(320f, 240f)) // Center anchor
+
+        val candidates = ScrfdDecoder.decodeStride(
+            scores = scores,
+            bboxDeltas = bboxDeltas,
+            kpsDeltas = kpsDeltas,
+            anchorCenters = anchorCenters,
+            stride = 8,
+            scoreThreshold = 0.50f,
+            letterboxInfo = letterbox
+        )
+
+        assertEquals(1, candidates.size)
+        val cand = candidates.first()
+        assertEquals(0.92f, cand.score, 0.001f)
+
+        // Bounding box: cx - l*s = 320 - 16 = 304, cy - t*s = 240 - 16 = 224, etc.
+        assertEquals(304f, cand.box.left, 0.1f)
+        assertEquals(224f, cand.box.top, 0.1f)
+        assertEquals(336f, cand.box.right, 0.1f)
+        assertEquals(256f, cand.box.bottom, 0.1f)
+
+        // Landmarks
+        assertNotNull(cand.landmarks)
+        assertEquals(312f, cand.landmarks!!.leftEye.x, 0.1f) // 320 + (-1 * 8) = 312
+        assertEquals(232f, cand.landmarks!!.leftEye.y, 0.1f) // 240 + (-1 * 8) = 232
+        assertEquals(328f, cand.landmarks!!.rightEye.x, 0.1f) // 320 + (1 * 8) = 328
+        assertEquals(320f, cand.landmarks!!.nose.x, 0.1f)
+    }
+
+    @Test
+    fun testIoUCalculation() {
+        val boxA = FaceBox(left = 100f, top = 100f, right = 200f, bottom = 200f) // 100x100 = 10000
+        val boxB = FaceBox(left = 100f, top = 100f, right = 200f, bottom = 200f) // Identical
+        val iouSame = ScrfdPostprocessor.calculateIoU(boxA, boxB)
+        assertEquals(1.0f, iouSame, 0.001f)
+
+        val boxDisjoint = FaceBox(left = 300f, top = 300f, right = 400f, bottom = 400f)
+        val iouDisjoint = ScrfdPostprocessor.calculateIoU(boxA, boxDisjoint)
+        assertEquals(0.0f, iouDisjoint, 0.001f)
+
+        val boxPartial = FaceBox(left = 150f, top = 100f, right = 250f, bottom = 200f) // 50% overlap width
+        val iouPartial = ScrfdPostprocessor.calculateIoU(boxA, boxPartial)
+        assertTrue(iouPartial in 0.30f..0.36f)
+    }
+
+    @Test
+    fun testNonMaximumSuppressionSuppressesOverlaps() {
+        val candidates = listOf(
+            ScrfdCandidate(box = FaceBox(100f, 100f, 200f, 200f), score = 0.95f),
+            ScrfdCandidate(box = FaceBox(105f, 102f, 202f, 201f), score = 0.85f), // Heavy overlap with first
+            ScrfdCandidate(box = FaceBox(400f, 100f, 500f, 200f), score = 0.90f)  // Second distinct face
+        )
+
+        val filtered = ScrfdPostprocessor.applyNMS(candidates, iouThreshold = 0.40f)
+        assertEquals(2, filtered.size)
+        assertEquals(0.95f, filtered[0].score, 0.001f)
+        assertEquals(0.90f, filtered[1].score, 0.001f)
+    }
+
+    @Test
+    fun testQualityAssessmentAndHeadPose() {
+        val landmarks = FaceLandmarks(
+            leftEye = FacePoint(180f, 150f),
+            rightEye = FacePoint(240f, 150f),
+            nose = FacePoint(210f, 180f),
+            leftMouth = FacePoint(190f, 210f),
+            rightMouth = FacePoint(230f, 210f)
+        )
+        val candidate = ScrfdCandidate(
+            box = FaceBox(150f, 100f, 270f, 240f),
+            score = 0.94f,
+            landmarks = landmarks
+        )
+
+        val quality = ScrfdPostprocessor.assessQuality(candidate, frameWidth = 640, frameHeight = 480)
+        assertTrue("Frontal face should have isFrontal = true", quality.isFrontal)
+        assertTrue("Face width 120px is adequately sized", quality.isAdequatelySized)
+        assertTrue("Quality is acceptable for attendance", quality.isAcceptableForEnrollment)
+    }
+
+    @Test
+    fun testModelManagerLifecycleStates() {
+        val uninit: ModelState = ModelState.Uninitialized
+        assertTrue(uninit is ModelState.Uninitialized)
+
+        val loading: ModelState = ModelState.Loading(0.5f)
+        assertTrue(loading is ModelState.Loading)
+        assertEquals(0.5f, (loading as ModelState.Loading).progress, 0.01f)
+
+        val modelInfo = ModelInfo(
+            modelId = "test-model",
+            modelName = "Test SCRFD",
+            version = "1.0",
+            task = ModelTask.DETECTION,
+            inputShape = intArrayOf(1, 3, 640, 640),
+            fileSizeInBytes = 2500000L,
+            licenseType = "Evaluation",
+            isCommercialPermitted = false
+        )
+        val ready: ModelState = ModelState.Ready(listOf(modelInfo))
+        assertTrue(ready is ModelState.Ready)
+        assertEquals(1, (ready as ModelState.Ready).models.size)
+
+        val error: ModelState = ModelState.Error("Asset missing")
+        assertTrue(error is ModelState.Error)
+        assertEquals("Asset missing", (error as ModelState.Error).message)
+    }
 
     // ---------- Milestone 5: CameraX Pipeline & Frame Processing Tests ----------
 
@@ -134,13 +292,11 @@ class FaflowIntegrationTest {
         val isProcessing = AtomicBoolean(false)
 
         fun simulateIncomingFrame(timestamp: Long, isWorkerBusy: Boolean) {
-            // 1. Throttle rate
             if (timestamp - lastProcessedTime < minIntervalMs) {
                 droppedCount.incrementAndGet()
                 return
             }
 
-            // 2. Concurrency lock
             if (isWorkerBusy) {
                 droppedCount.incrementAndGet()
                 return
@@ -150,22 +306,18 @@ class FaflowIntegrationTest {
             processedCount.incrementAndGet()
         }
 
-        // T = 0ms (Accepted)
         simulateIncomingFrame(0L, isWorkerBusy = false)
         assertEquals(1, processedCount.get())
         assertEquals(0, droppedCount.get())
 
-        // T = 30ms (Dropped due to rate limit)
         simulateIncomingFrame(30L, isWorkerBusy = false)
         assertEquals(1, processedCount.get())
         assertEquals(1, droppedCount.get())
 
-        // T = 120ms with worker busy (Dropped due to concurrent processing lock)
         simulateIncomingFrame(120L, isWorkerBusy = true)
         assertEquals(1, processedCount.get())
         assertEquals(2, droppedCount.get())
 
-        // T = 250ms with worker free (Accepted)
         simulateIncomingFrame(250L, isWorkerBusy = false)
         assertEquals(2, processedCount.get())
         assertEquals(2, droppedCount.get())

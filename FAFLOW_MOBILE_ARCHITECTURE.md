@@ -1,52 +1,75 @@
 # FAFLOW Staff Mobile: Architecture Specification & Integration Blueprint
 
-> **System Status**: **Milestone 5 Complete (Production CameraX Subsystem & Frame Analysis Pipeline)**  
+> **System Status**: **Milestone 6 Complete (InsightFace SCRFD On-Device Face Detection Subsystem)**  
 > **Target Audience**: College Faculty & Staff (Teachers, HODs, Lab Staff, Non-Teaching Staff)  
 > **Source of Truth**: Upstream FAFLOW FastAPI + PostgreSQL Backend (`https://github.com/kamesh12k/FACULTY_FLOW.git`)  
 > **Attendance Architecture**: Palgeo-style Geofenced Biometric Face Attendance  
 > **Geofence Engine**: Haversine Circle + Ray-Casting Point-in-Polygon (Jordan Curve Theorem) + Anti-Spoof Mock Location  
 > **Camera Subsystem**: Front-Camera CameraX (`Preview` + `ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST` + Throttled `CameraAnalyzer` + `CameraFrame` Abstraction)  
+> **Face AI Subsystem**: InsightFace SCRFD 500M ONNX Model (`[1, 3, 640, 640]` NCHW, Multi-Stride 8/16/32 Anchor Decoding, IoU NMS, 5-Point Facial Landmarks)  
 > **Build Status**: `BUILD SUCCESSFUL` with 100% Unit Test Pass Rate and Zero Fake/Mock Data  
 
 ---
 
-## Milestone 5: Production CameraX Subsystem Architecture
+## Milestone 6: InsightFace SCRFD On-Device Face Detection Architecture
 
 ```
-                    Staff Attendance Workflow
-                               │
-                               ▼
-                    M4 Geofence Validation
-                               │
-                         [ VERIFIED ]
-                               │
-                               ▼
-                       CameraX Subsystem
-                               │
-             ┌─────────────────┴─────────────────┐
-             ▼                                   ▼
-      CameraPreviewView                    ImageAnalysis
-     (Front-Camera Selfie)           (KEEP_ONLY_LATEST @ 10 FPS)
-             │                                   │
-             ▼                                   ▼
-       CameraOverlay                        CameraFrame
-   (Facial Guide Oval &               (Decoupled YUV/NV21 data,
-     Camera Readiness)                rotationDegrees, timestamp)
-                                                 │
-                                                 ▼
-                                       CameraFrameProcessor
-                                                 │
-                                                 ▼
-                                        (M6: SCRFD Detector)
+                 CameraX Subsystem
+                        │
+                        ▼
+                   CameraFrame
+                        │
+                        ▼
+                ScrfdPreprocessor
+     (Rotation + Letterbox to 640x640 +
+       (x - 127.5)/128.0 NCHW Tensor)
+                        │
+                        ▼
+               ONNX Runtime Mobile
+          (SCRFD 500M KPS ONNX Model)
+                        │
+                        ▼
+                  ScrfdDecoder
+      (Multi-Stride 8/16/32 Anchors +
+       Un-letterbox to native frame)
+                        │
+                        ▼
+                ScrfdPostprocessor
+        (Score Filter >= 0.50 + IoU NMS
+           Threshold 0.40 + Quality)
+                        │
+                        ▼
+               FaceDetectionResult
+          (Bounding Box + 5 Landmarks +
+              FaceDetectionUiState)
+                        │
+                        ▼
+             Attendance Check-In Screen
+           (Guided Facial Framing Overlay)
+                        │
+                        ▼
+          (Future M7: Umeyama Alignment)
 ```
 
-### Key Components:
-1. **`CameraController`**: Explicitly binds `CameraSelector.LENS_FACING_FRONT` with lifecycle awareness. Automatically detects front-camera presence and unbinds on screen exit or backgrounding.
-2. **`CameraFrame`**: Pure, decoupled data class encapsulating frame metadata (`width`, `height`, `rotationDegrees`, `timestamp`, `lensFacing`, `nv21Bytes`, `bitmap`). Excludes any `ImageProxy` references from escaping the camera subsystem.
-3. **`CameraAnalyzer`**: High-performance `ImageAnalysis.Analyzer` with backpressure control (`STRATEGY_KEEP_ONLY_LATEST`), rate throttling ($10\text{ FPS} / 100\text{ms}$), atomic non-blocking concurrency locks, and immediate `imageProxy.close()` safety to prevent buffer starvation.
-4. **`CameraOverlay`**: Clean visual oval positioning guide rendering strictly non-AI camera readiness states ("Camera Ready", "Processing camera frame", "Position face inside guide").
-5. **Gating Integration**: Front-camera preview is activated **only** after physical presence is verified inside campus boundaries by the M4 Geofence Engine. If outside campus or fake GPS is detected, camera activation is strictly blocked.
-6. **Privacy & Security**: Zero frame disk persistence, zero background telemetry, and zero unauthenticated image uploads. Frames remain ephemeral in memory for on-device analysis.
+### Key Architectural Specifications:
+1. **Model Provenance**: Official InsightFace SCRFD 500M model (`scrfd_500m_kps.onnx`) with 5-point facial landmark regression. Non-commercial/academic research license documented in `face/models/MODEL_PROVENANCE.md`.
+2. **Preprocessing**: Normalizes RGB channels via $(x - 127.5f) / 128.0f$ in NCHW float tensor format (`[1, 3, 640, 640]`). Maintains exact aspect ratio using gray letterboxing $(padX, padY)$.
+3. **Multi-Stride Anchor Grid**:
+   - Stride 8: $80 \times 80 \times 2 = 12,800$ anchors
+   - Stride 16: $40 \times 40 \times 2 = 3,200$ anchors
+   - Stride 32: $20 \times 20 \times 2 = 800$ anchors
+   - Total: **16,800 anchors** evaluated per inference pass.
+4. **Postprocessing & NMS**:
+   - Score thresholding ($\ge 0.50$).
+   - Non-Maximum Suppression with IoU threshold $0.40$.
+   - Un-letterboxing transforms coordinates back to native image dimensions.
+5. **Detection State Machine**:
+   - `NoFace`: Prompts staff to position face within the guide.
+   - `FaceDetected(count = 1)`: Prompts staff to keep still; enables shift check-in action.
+   - `MultipleFaces(count)`: Flags security warning; blocks check-in until only 1 person is in frame.
+   - `FaceTooSmall`: Prompts staff to move closer.
+   - `LowConfidence`: Prompts staff to adjust device lighting.
+6. **Strict Decoupling**: No ArcFace embeddings, no identity matching, and no liveness verification are executed in M6. Zero frame persistence or remote upload.
 
 ---
 

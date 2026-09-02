@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.governence.faflow.domain.model.AttendanceStatus
 import com.governence.faflow.domain.model.StaffAttendanceRecord
+import com.governence.faflow.face.model.FaceDetectionResult
 import com.governence.faflow.faflow.data.GeofenceRepository
 import com.governence.faflow.location.CampusGeofence
 import com.governence.faflow.location.LocationVerificationResult
@@ -16,6 +17,18 @@ import kotlinx.coroutines.flow.stateIn
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+
+/**
+ * Real-time face detection UI states for the camera positioning overlay.
+ */
+sealed interface FaceDetectionUiState {
+    data object NoFace : FaceDetectionUiState
+    data class FaceDetected(val count: Int, val primaryFace: FaceDetectionResult) : FaceDetectionUiState
+    data class MultipleFaces(val count: Int) : FaceDetectionUiState
+    data object FaceTooSmall : FaceDetectionUiState
+    data object FaceOutOfFrame : FaceDetectionUiState
+    data object LowConfidence : FaceDetectionUiState
+}
 
 data class AttendanceUiState(
     val isCheckingIn: Boolean = true,
@@ -34,6 +47,9 @@ class AttendanceViewModel(
     private val _uiState = MutableStateFlow(AttendanceUiState())
     val uiState: StateFlow<AttendanceUiState> = _uiState.asStateFlow()
 
+    private val _faceDetectionState = MutableStateFlow<FaceDetectionUiState>(FaceDetectionUiState.NoFace)
+    val faceDetectionState: StateFlow<FaceDetectionUiState> = _faceDetectionState.asStateFlow()
+
     val verificationResult: StateFlow<LocationVerificationResult> = geofenceRepository.verificationResult
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), LocationVerificationResult.Loading)
 
@@ -42,6 +58,21 @@ class AttendanceViewModel(
 
     val geofences: StateFlow<List<CampusGeofence>> = geofenceRepository.geofences
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    fun updateDetections(detections: List<FaceDetectionResult>) {
+        _faceDetectionState.value = when {
+            detections.isEmpty() -> FaceDetectionUiState.NoFace
+            detections.size > 1 -> FaceDetectionUiState.MultipleFaces(detections.size)
+            else -> {
+                val primary = detections.first()
+                when {
+                    primary.confidence < 0.50f -> FaceDetectionUiState.LowConfidence
+                    !primary.quality.isAdequatelySized -> FaceDetectionUiState.FaceTooSmall
+                    else -> FaceDetectionUiState.FaceDetected(count = 1, primaryFace = primary)
+                }
+            }
+        }
+    }
 
     fun refreshLocation() {
         geofenceRepository.startLocationMonitoring()
@@ -56,6 +87,10 @@ class AttendanceViewModel(
             is LocationVerificationResult.Boundary -> true
             else -> false
         }
+    }
+
+    fun isFaceVerifiedForAttendance(): Boolean {
+        return faceDetectionState.value is FaceDetectionUiState.FaceDetected
     }
 
     fun performCheckIn(onSuccess: () -> Unit) {
