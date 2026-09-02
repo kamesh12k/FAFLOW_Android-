@@ -17,51 +17,39 @@ import com.google.android.gms.location.Priority
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlin.coroutines.resume
 
 /**
- * Live GPS Snapshot of Staff Member.
+ * Fused Location Provider Client implementation with high-accuracy updates and anti-spoof checks.
  */
-data class StaffLiveLocation(
-    val latitude: Double,
-    val longitude: Double,
-    val accuracy: Float,
-    val altitude: Double,
-    val speed: Float,
-    val isMock: Boolean,
-    val timestamp: Long
-)
-
-/**
- * Fused Location Provider Client wrapper with real-time location stream and mock detection.
- */
-class StaffLocationProvider(private val context: Context) {
+class StaffLocationProvider(private val context: Context) : LocationProvider {
 
     private val fusedLocationClient: FusedLocationProviderClient =
         LocationServices.getFusedLocationProviderClient(context)
 
-    fun hasLocationPermission(): Boolean {
-        val fineLocation = ContextCompat.checkSelfPermission(
-            context,
-            Manifest.permission.ACCESS_FINE_LOCATION
-        ) == PackageManager.PERMISSION_GRANTED
+    override val isLocationPermissionGranted: Boolean
+        get() {
+            val fine = ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.ACCESS_FINE_LOCATION
+            ) == PackageManager.PERMISSION_GRANTED
 
-        val coarseLocation = ContextCompat.checkSelfPermission(
-            context,
-            Manifest.permission.ACCESS_COARSE_LOCATION
-        ) == PackageManager.PERMISSION_GRANTED
+            val coarse = ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.ACCESS_COARSE_LOCATION
+            ) == PackageManager.PERMISSION_GRANTED
 
-        return fineLocation || coarseLocation
-    }
+            return fine || coarse
+        }
 
-    fun isLocationServiceEnabled(): Boolean {
-        val locationManager = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
-        return locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER) ||
-                locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)
-    }
+    override val isLocationServiceEnabled: Boolean
+        get() {
+            val locationManager = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
+            return locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER) ||
+                    locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)
+        }
 
-    /**
-     * Inspects whether the provided Android Location is spoofed by a Mock Provider / Fake GPS app.
-     */
     fun isMockLocation(location: Location): Boolean {
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             location.isMock
@@ -71,11 +59,8 @@ class StaffLocationProvider(private val context: Context) {
         }
     }
 
-    /**
-     * Returns a cold Flow emitting high-accuracy live GPS updates.
-     */
-    fun getLocationUpdates(intervalMs: Long = 3000L): Flow<StaffLiveLocation> = callbackFlow {
-        if (!hasLocationPermission()) {
+    override fun getLocationUpdates(intervalMs: Long): Flow<StaffLiveLocation> = callbackFlow {
+        if (!isLocationPermissionGranted) {
             close(SecurityException("Location permission not granted"))
             return@callbackFlow
         }
@@ -88,16 +73,16 @@ class StaffLocationProvider(private val context: Context) {
         val locationCallback = object : LocationCallback() {
             override fun onLocationResult(result: LocationResult) {
                 result.lastLocation?.let { location ->
-                    val liveLocation = StaffLiveLocation(
+                    val live = StaffLiveLocation(
                         latitude = location.latitude,
                         longitude = location.longitude,
-                        accuracy = location.accuracy,
+                        accuracyMeters = location.accuracy,
                         altitude = location.altitude,
                         speed = location.speed,
                         isMock = isMockLocation(location),
                         timestamp = location.time
                     )
-                    trySend(liveLocation)
+                    trySend(live)
                 }
             }
         }
@@ -114,6 +99,37 @@ class StaffLocationProvider(private val context: Context) {
 
         awaitClose {
             fusedLocationClient.removeLocationUpdates(locationCallback)
+        }
+    }
+
+    override suspend fun getLastKnownLocation(): StaffLiveLocation? {
+        if (!isLocationPermissionGranted) return null
+        return suspendCancellableCoroutine { continuation ->
+            try {
+                fusedLocationClient.lastLocation
+                    .addOnSuccessListener { loc ->
+                        if (loc != null) {
+                            continuation.resume(
+                                StaffLiveLocation(
+                                    latitude = loc.latitude,
+                                    longitude = loc.longitude,
+                                    accuracyMeters = loc.accuracy,
+                                    altitude = loc.altitude,
+                                    speed = loc.speed,
+                                    isMock = isMockLocation(loc),
+                                    timestamp = loc.time
+                                )
+                            )
+                        } else {
+                            continuation.resume(null)
+                        }
+                    }
+                    .addOnFailureListener {
+                        continuation.resume(null)
+                    }
+            } catch (e: SecurityException) {
+                continuation.resume(null)
+            }
         }
     }
 }

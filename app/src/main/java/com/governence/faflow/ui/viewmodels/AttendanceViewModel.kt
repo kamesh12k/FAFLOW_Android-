@@ -6,14 +6,13 @@ import com.governence.faflow.domain.model.AttendanceStatus
 import com.governence.faflow.domain.model.StaffAttendanceRecord
 import com.governence.faflow.faflow.data.GeofenceRepository
 import com.governence.faflow.location.CampusGeofence
-import com.governence.faflow.location.GeofenceValidationResult
+import com.governence.faflow.location.LocationVerificationResult
 import com.governence.faflow.location.StaffLiveLocation
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -35,8 +34,8 @@ class AttendanceViewModel(
     private val _uiState = MutableStateFlow(AttendanceUiState())
     val uiState: StateFlow<AttendanceUiState> = _uiState.asStateFlow()
 
-    val geofenceResult: StateFlow<GeofenceValidationResult> = geofenceRepository.validationResult
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), GeofenceValidationResult.Loading)
+    val verificationResult: StateFlow<LocationVerificationResult> = geofenceRepository.verificationResult
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), LocationVerificationResult.Loading)
 
     val liveLocation: StateFlow<StaffLiveLocation?> = geofenceRepository.liveLocation
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
@@ -51,10 +50,17 @@ class AttendanceViewModel(
     fun hasLocationPermission(): Boolean = geofenceRepository.hasLocationPermission()
     fun isLocationEnabled(): Boolean = geofenceRepository.isLocationEnabled()
 
+    fun isLocationVerifiedForAttendance(): Boolean {
+        return when (verificationResult.value) {
+            is LocationVerificationResult.InsideGeofence -> true
+            is LocationVerificationResult.Boundary -> true
+            else -> false
+        }
+    }
+
     fun performCheckIn(onSuccess: () -> Unit) {
-        val currentValidation = geofenceResult.value
-        if (currentValidation !is GeofenceValidationResult.Inside) {
-            _uiState.value = _uiState.value.copy(errorMessage = "Cannot check in: You must be inside an active campus geofence boundary.")
+        if (!isLocationVerifiedForAttendance()) {
+            _uiState.value = _uiState.value.copy(errorMessage = "Cannot check in: Staff member must be physically inside an active campus geofence boundary.")
             return
         }
 
@@ -69,9 +75,8 @@ class AttendanceViewModel(
     }
 
     fun performCheckOut(onSuccess: () -> Unit) {
-        val currentValidation = geofenceResult.value
-        if (currentValidation !is GeofenceValidationResult.Inside) {
-            _uiState.value = _uiState.value.copy(errorMessage = "Cannot check out: You must be inside an active campus geofence boundary.")
+        if (!isLocationVerifiedForAttendance()) {
+            _uiState.value = _uiState.value.copy(errorMessage = "Cannot check out: Staff member must be physically inside an active campus geofence boundary.")
             return
         }
 
@@ -83,5 +88,10 @@ class AttendanceViewModel(
             errorMessage = null
         )
         onSuccess()
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        geofenceRepository.stopLocationMonitoring()
     }
 }

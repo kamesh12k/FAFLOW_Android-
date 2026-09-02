@@ -19,15 +19,16 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Face
 import androidx.compose.material.icons.filled.Fingerprint
 import androidx.compose.material.icons.filled.GpsFixed
 import androidx.compose.material.icons.filled.GpsNotFixed
 import androidx.compose.material.icons.filled.GpsOff
 import androidx.compose.material.icons.filled.History
-import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.LocationOn
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -43,15 +44,12 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.governence.faflow.location.CampusGeofence
 import com.governence.faflow.location.GeofenceType
-import com.governence.faflow.location.GeofenceValidationResult
+import com.governence.faflow.location.LocationVerificationResult
 import com.governence.faflow.ui.components.AppTopBar
 import com.governence.faflow.ui.components.PrimaryGradientButton
 import com.governence.faflow.ui.theme.PrimaryBlue
-import com.governence.faflow.ui.theme.SecondaryTeal
 import com.governence.faflow.ui.theme.StatusError
-import com.governence.faflow.ui.theme.StatusInfo
 import com.governence.faflow.ui.theme.StatusSuccess
 import com.governence.faflow.ui.theme.StatusWarning
 import com.governence.faflow.ui.viewmodels.AttendanceViewModel
@@ -63,7 +61,7 @@ fun AttendancePlaceholderScreen(
     onNavigateToHistory: () -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsState()
-    val geofenceResult by viewModel.geofenceResult.collectAsState()
+    val verificationResult by viewModel.verificationResult.collectAsState()
     val liveLocation by viewModel.liveLocation.collectAsState()
     val geofences by viewModel.geofences.collectAsState()
 
@@ -83,16 +81,17 @@ fun AttendancePlaceholderScreen(
             contentPadding = PaddingValues(20.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // Live Geofence & Location Radar Banner
+            // Live Geofence Status Card
             item {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(20.dp),
                     colors = CardDefaults.cardColors(
-                        containerColor = when (geofenceResult) {
-                            is GeofenceValidationResult.Inside -> Color(0x1A10B981)
-                            is GeofenceValidationResult.MockLocationDetected -> Color(0x1AEF4444)
-                            is GeofenceValidationResult.PoorAccuracy -> Color(0x1AF59E0B)
+                        containerColor = when (verificationResult) {
+                            is LocationVerificationResult.InsideGeofence -> Color(0x1A10B981)
+                            is LocationVerificationResult.Boundary -> Color(0x1A10B981)
+                            is LocationVerificationResult.MockLocationDetected -> Color(0x1AEF4444)
+                            is LocationVerificationResult.AccuracyInsufficient -> Color(0x1AF59E0B)
                             else -> MaterialTheme.colorScheme.surface
                         }
                     )
@@ -102,38 +101,63 @@ fun AttendancePlaceholderScreen(
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            val (icon, tint, title) = when (geofenceResult) {
-                                is GeofenceValidationResult.Inside -> Triple(
+                            val (icon, tint, title) = when (verificationResult) {
+                                is LocationVerificationResult.InsideGeofence -> Triple(
                                     Icons.Default.GpsFixed,
                                     StatusSuccess,
-                                    "Inside Campus Geofence"
+                                    "✓ Inside ${(verificationResult as LocationVerificationResult.InsideGeofence).geofenceName}"
                                 )
-                                is GeofenceValidationResult.Outside -> Triple(
+                                is LocationVerificationResult.Boundary -> Triple(
+                                    Icons.Default.GpsFixed,
+                                    StatusSuccess,
+                                    "✓ Near Boundary of ${(verificationResult as LocationVerificationResult.Boundary).geofenceName}"
+                                )
+                                is LocationVerificationResult.OutsideAllGeofences -> Triple(
                                     Icons.Default.LocationOn,
                                     StatusWarning,
-                                    "Outside Campus Perimeter"
+                                    "✕ Outside Allowed Attendance Area"
                                 )
-                                is GeofenceValidationResult.PoorAccuracy -> Triple(
+                                is LocationVerificationResult.AccuracyInsufficient -> Triple(
                                     Icons.Default.GpsNotFixed,
                                     StatusWarning,
-                                    "Poor GPS Signal Accuracy"
+                                    "⚠ Location Accuracy Too Low"
                                 )
-                                is GeofenceValidationResult.MockLocationDetected -> Triple(
+                                is LocationVerificationResult.MockLocationDetected -> Triple(
                                     Icons.Default.Warning,
                                     StatusError,
-                                    "Mock Location / Spoofing Detected"
+                                    "⚠ Mock Location / Fake GPS Detected"
                                 )
-                                is GeofenceValidationResult.LocationDisabled -> Triple(
+                                is LocationVerificationResult.StaleLocation -> Triple(
+                                    Icons.Default.Warning,
+                                    StatusWarning,
+                                    "⚠ Stale GPS Fix"
+                                )
+                                is LocationVerificationResult.LocationServicesDisabled -> Triple(
                                     Icons.Default.GpsOff,
                                     StatusError,
-                                    "GPS Location Disabled"
+                                    "GPS Services Disabled"
                                 )
-                                is GeofenceValidationResult.PermissionDenied -> Triple(
+                                is LocationVerificationResult.PermissionDenied -> Triple(
                                     Icons.Default.GpsOff,
                                     StatusError,
                                     "Location Permission Required"
                                 )
-                                GeofenceValidationResult.Loading -> Triple(
+                                is LocationVerificationResult.PermissionPermanentlyDenied -> Triple(
+                                    Icons.Default.GpsOff,
+                                    StatusError,
+                                    "Location Permission Blocked"
+                                )
+                                is LocationVerificationResult.LocationUnavailable -> Triple(
+                                    Icons.Default.GpsOff,
+                                    StatusError,
+                                    "Location Signal Unavailable"
+                                )
+                                is LocationVerificationResult.NoActiveGeofences -> Triple(
+                                    Icons.Default.LocationOn,
+                                    StatusWarning,
+                                    "No Active Campus Boundaries"
+                                )
+                                LocationVerificationResult.Loading -> Triple(
                                     Icons.Default.GpsFixed,
                                     PrimaryBlue,
                                     "Acquiring GPS Fix..."
@@ -152,20 +176,30 @@ fun AttendancePlaceholderScreen(
 
                         Spacer(modifier = Modifier.height(6.dp))
 
-                        val detailText = when (val res = geofenceResult) {
-                            is GeofenceValidationResult.Inside ->
-                                "Zone: ${res.geofence.name} • ${res.distanceToCenterMeters.toInt()}m from center (Accuracy: ±${res.accuracyMeters.toInt()}m)"
-                            is GeofenceValidationResult.Outside ->
-                                "Nearest: ${res.nearestGeofence?.name ?: "Campus"} (${res.distanceMeters.toInt()}m away)"
-                            is GeofenceValidationResult.PoorAccuracy ->
-                                "Accuracy is ±${res.currentAccuracyMeters.toInt()}m (Max allowed: ${res.requiredAccuracyMeters.toInt()}m). Move outside or near a window."
-                            is GeofenceValidationResult.MockLocationDetected ->
-                                "Anti-spoofing algorithm rejected fake GPS provider: ${res.provider}"
-                            is GeofenceValidationResult.LocationDisabled ->
-                                "Please enable Location Services (GPS) in your device settings."
-                            is GeofenceValidationResult.PermissionDenied ->
-                                "Grant Fine Location permission in Android Settings to verify campus attendance."
-                            GeofenceValidationResult.Loading ->
+                        val detailText = when (val res = verificationResult) {
+                            is LocationVerificationResult.InsideGeofence ->
+                                "Distance: ${res.distanceToCenterMeters.toInt()}m • Accuracy: ±${res.accuracyMeters.toInt()}m • Status: READY"
+                            is LocationVerificationResult.Boundary ->
+                                "Within tolerance margin of campus boundary • Accuracy: ±${res.accuracyMeters.toInt()}m • Status: READY"
+                            is LocationVerificationResult.OutsideAllGeofences ->
+                                "Nearest: ${res.nearestGeofenceName ?: "Campus"} (${res.distanceToNearestMeters.toInt()}m away). Move inside campus to check in."
+                            is LocationVerificationResult.AccuracyInsufficient ->
+                                "Accuracy is ±${res.currentAccuracyMeters.toInt()}m (Max allowed: ${res.requiredAccuracyMeters.toInt()}m). Move to an open area."
+                            is LocationVerificationResult.MockLocationDetected ->
+                                "Anti-spoofing engine rejected mock location from ${res.provider}"
+                            is LocationVerificationResult.StaleLocation ->
+                                "Location data is ${res.ageSeconds}s old. Tap Refresh Location to get a fresh satellite fix."
+                            is LocationVerificationResult.LocationServicesDisabled ->
+                                "Enable High-Accuracy Location Services in device settings."
+                            is LocationVerificationResult.PermissionDenied ->
+                                "Grant Location permission in Android Settings to verify campus attendance."
+                            is LocationVerificationResult.PermissionPermanentlyDenied ->
+                                "Location permission permanently denied. Open App Settings to enable."
+                            is LocationVerificationResult.LocationUnavailable ->
+                                "Unable to receive GPS signals. Ensure unobstructed view of the sky."
+                            is LocationVerificationResult.NoActiveGeofences ->
+                                "No active institutional attendance geofences found."
+                            LocationVerificationResult.Loading ->
                                 "Listening for satellite signals and computing geodesic boundary..."
                         }
 
@@ -174,6 +208,17 @@ fun AttendancePlaceholderScreen(
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        Button(
+                            onClick = { viewModel.refreshLocation() },
+                            colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue.copy(alpha = 0.15f), contentColor = PrimaryBlue)
+                        ) {
+                            Icon(imageVector = Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Refresh Location", style = MaterialTheme.typography.labelSmall)
+                        }
                     }
                 }
             }
@@ -234,7 +279,6 @@ fun AttendancePlaceholderScreen(
 
                         Spacer(modifier = Modifier.height(20.dp))
 
-                        val isInside = geofenceResult is GeofenceValidationResult.Inside
                         PrimaryGradientButton(
                             text = if (uiState.isShiftActive) "Check Out" else "Check In (Face + Geofence)",
                             icon = Icons.Default.Fingerprint,

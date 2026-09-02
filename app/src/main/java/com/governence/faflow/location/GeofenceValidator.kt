@@ -4,52 +4,57 @@ package com.governence.faflow.location
  * Validates staff live GPS snapshots against institutional geofences.
  */
 class GeofenceValidator(
-    private val maxAccuracyThresholdMeters: Float = 30.0f
-) {
+    override val maxAccuracyThresholdMeters: Float = 30.0f,
+    private val maxLocationAgeSeconds: Long = 60L
+) : GeofenceValidatorContract {
 
-    fun validateLocation(
+    override fun validate(
         location: StaffLiveLocation?,
-        geofences: List<CampusGeofence>
-    ): GeofenceValidationResult {
+        activeGeofences: List<CampusGeofence>
+    ): LocationVerificationResult {
         if (location == null) {
-            return GeofenceValidationResult.Loading
+            return LocationVerificationResult.Loading
         }
 
         // 1. Anti-Spoofing / Mock Location Verification
         if (location.isMock) {
-            return GeofenceValidationResult.MockLocationDetected(
+            return LocationVerificationResult.MockLocationDetected(
                 provider = "Android Mock Location Provider",
                 details = "Fake GPS / Spoofed location detected. Attendance cannot be registered."
             )
         }
 
-        // 2. GPS Signal Quality & Accuracy Threshold Verification
-        if (location.accuracy > maxAccuracyThresholdMeters) {
-            return GeofenceValidationResult.PoorAccuracy(
-                currentAccuracyMeters = location.accuracy,
+        // 2. Stale Location Verification
+        val ageSeconds = (System.currentTimeMillis() - location.timestamp) / 1000L
+        if (ageSeconds > maxLocationAgeSeconds) {
+            return LocationVerificationResult.StaleLocation(
+                ageSeconds = ageSeconds,
+                maxAgeSeconds = maxLocationAgeSeconds
+            )
+        }
+
+        // 3. GPS Signal Quality & Accuracy Threshold Verification
+        if (location.accuracyMeters > maxAccuracyThresholdMeters) {
+            return LocationVerificationResult.AccuracyInsufficient(
+                currentAccuracyMeters = location.accuracyMeters,
                 requiredAccuracyMeters = maxAccuracyThresholdMeters
             )
         }
 
-        val activeGeofences = geofences.filter { it.isActive }
-        if (activeGeofences.isEmpty()) {
-            // Default fallback if no geofences configured
-            return GeofenceValidationResult.Outside(
-                nearestGeofence = null,
-                distanceMeters = 0.0,
-                accuracyMeters = location.accuracy
-            )
+        val activeList = activeGeofences.filter { it.isActive }
+        if (activeList.isEmpty()) {
+            return LocationVerificationResult.NoActiveGeofences
         }
 
         val staffPoint = GeoPoint(location.latitude, location.longitude)
         var nearestGeofence: CampusGeofence? = null
         var minDistance = Double.MAX_VALUE
 
-        for (geofence in activeGeofences) {
+        for (geofence in activeList) {
             when (geofence.type) {
                 GeofenceType.CIRCLE -> {
                     val centerPoint = GeoPoint(geofence.centerLatitude, geofence.centerLongitude)
-                    val (isInside, distance) = GeofenceMathEngine.isInsideCircle(
+                    val (isInside, isBoundary, distance) = GeofenceMathEngine.evaluateCircle(
                         point = staffPoint,
                         center = centerPoint,
                         radiusMeters = geofence.radiusMeters,
@@ -61,11 +66,23 @@ class GeofenceValidator(
                         nearestGeofence = geofence
                     }
 
+                    if (isBoundary) {
+                        return LocationVerificationResult.Boundary(
+                            geofenceId = geofence.id,
+                            geofenceName = geofence.name,
+                            distanceToBoundaryMeters = Math.abs(distance - geofence.radiusMeters),
+                            accuracyMeters = location.accuracyMeters,
+                            timestamp = location.timestamp
+                        )
+                    }
+
                     if (isInside) {
-                        return GeofenceValidationResult.Inside(
-                            geofence = geofence,
+                        return LocationVerificationResult.InsideGeofence(
+                            geofenceId = geofence.id,
+                            geofenceName = geofence.name,
                             distanceToCenterMeters = distance,
-                            accuracyMeters = location.accuracy
+                            accuracyMeters = location.accuracyMeters,
+                            timestamp = location.timestamp
                         )
                     }
                 }
@@ -90,21 +107,25 @@ class GeofenceValidator(
                     }
 
                     if (isInside) {
-                        return GeofenceValidationResult.Inside(
-                            geofence = geofence,
+                        return LocationVerificationResult.InsideGeofence(
+                            geofenceId = geofence.id,
+                            geofenceName = geofence.name,
                             distanceToCenterMeters = distance,
-                            accuracyMeters = location.accuracy
+                            accuracyMeters = location.accuracyMeters,
+                            timestamp = location.timestamp
                         )
                     }
                 }
             }
         }
 
-        // If outside all active geofences, report distance to nearest campus perimeter
-        return GeofenceValidationResult.Outside(
-            nearestGeofence = nearestGeofence,
-            distanceMeters = minDistance,
-            accuracyMeters = location.accuracy
+        // Outside all active geofences
+        return LocationVerificationResult.OutsideAllGeofences(
+            nearestGeofenceId = nearestGeofence?.id,
+            nearestGeofenceName = nearestGeofence?.name,
+            distanceToNearestMeters = minDistance,
+            accuracyMeters = location.accuracyMeters,
+            timestamp = location.timestamp
         )
     }
 }

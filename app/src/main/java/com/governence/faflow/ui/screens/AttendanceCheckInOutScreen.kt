@@ -38,10 +38,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.governence.faflow.location.GeofenceValidationResult
+import com.governence.faflow.location.LocationVerificationResult
 import com.governence.faflow.ui.components.AppTopBar
 import com.governence.faflow.ui.components.PrimaryGradientButton
-import com.governence.faflow.ui.theme.DarkSurfaceVariant
 import com.governence.faflow.ui.theme.PrimaryBlue
 import com.governence.faflow.ui.theme.SecondaryTeal
 import com.governence.faflow.ui.theme.StatusError
@@ -56,8 +55,8 @@ fun AttendanceCheckInOutScreen(
     onAttendanceSuccess: () -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsState()
-    val geofenceResult by viewModel.geofenceResult.collectAsState()
-    val isInsideGeofence = geofenceResult is GeofenceValidationResult.Inside
+    val verificationResult by viewModel.verificationResult.collectAsState()
+    val isVerified = viewModel.isLocationVerifiedForAttendance()
 
     Scaffold(
         topBar = {
@@ -81,10 +80,11 @@ fun AttendanceCheckInOutScreen(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(16.dp),
                 colors = CardDefaults.cardColors(
-                    containerColor = when (geofenceResult) {
-                        is GeofenceValidationResult.Inside -> Color(0x1A10B981)
-                        is GeofenceValidationResult.MockLocationDetected -> Color(0x1AEF4444)
-                        is GeofenceValidationResult.PoorAccuracy -> Color(0x1AF59E0B)
+                    containerColor = when (verificationResult) {
+                        is LocationVerificationResult.InsideGeofence -> Color(0x1A10B981)
+                        is LocationVerificationResult.Boundary -> Color(0x1A10B981)
+                        is LocationVerificationResult.MockLocationDetected -> Color(0x1AEF4444)
+                        is LocationVerificationResult.AccuracyInsufficient -> Color(0x1AF59E0B)
                         else -> MaterialTheme.colorScheme.surface
                     }
                 )
@@ -95,11 +95,12 @@ fun AttendanceCheckInOutScreen(
                         .padding(16.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    val (icon, tint) = when (geofenceResult) {
-                        is GeofenceValidationResult.Inside -> Pair(Icons.Default.GpsFixed, StatusSuccess)
-                        is GeofenceValidationResult.Outside -> Pair(Icons.Default.LocationOn, StatusWarning)
-                        is GeofenceValidationResult.PoorAccuracy -> Pair(Icons.Default.GpsNotFixed, StatusWarning)
-                        is GeofenceValidationResult.MockLocationDetected -> Pair(Icons.Default.Warning, StatusError)
+                    val (icon, tint) = when (verificationResult) {
+                        is LocationVerificationResult.InsideGeofence -> Pair(Icons.Default.GpsFixed, StatusSuccess)
+                        is LocationVerificationResult.Boundary -> Pair(Icons.Default.GpsFixed, StatusSuccess)
+                        is LocationVerificationResult.OutsideAllGeofences -> Pair(Icons.Default.LocationOn, StatusWarning)
+                        is LocationVerificationResult.AccuracyInsufficient -> Pair(Icons.Default.GpsNotFixed, StatusWarning)
+                        is LocationVerificationResult.MockLocationDetected -> Pair(Icons.Default.Warning, StatusError)
                         else -> Pair(Icons.Default.GpsOff, StatusError)
                     }
 
@@ -116,14 +117,19 @@ fun AttendanceCheckInOutScreen(
                     Spacer(modifier = Modifier.width(12.dp))
 
                     Column(modifier = Modifier.weight(1f)) {
-                        val titleText = when (val res = geofenceResult) {
-                            is GeofenceValidationResult.Inside -> "Campus Geofence Verified: ${res.geofence.name}"
-                            is GeofenceValidationResult.Outside -> "Outside Campus Boundary (${res.distanceMeters.toInt()}m away)"
-                            is GeofenceValidationResult.PoorAccuracy -> "GPS Accuracy Too Low (±${res.currentAccuracyMeters.toInt()}m)"
-                            is GeofenceValidationResult.MockLocationDetected -> "Fake GPS Spoofing Blocked"
-                            is GeofenceValidationResult.LocationDisabled -> "Location Services Disabled"
-                            is GeofenceValidationResult.PermissionDenied -> "Location Permission Required"
-                            GeofenceValidationResult.Loading -> "Acquiring High-Accuracy GPS Fix..."
+                        val titleText = when (val res = verificationResult) {
+                            is LocationVerificationResult.InsideGeofence -> "Campus Geofence Verified: ${res.geofenceName}"
+                            is LocationVerificationResult.Boundary -> "Boundary Verified: ${res.geofenceName}"
+                            is LocationVerificationResult.OutsideAllGeofences -> "Outside Campus (${res.distanceToNearestMeters.toInt()}m away)"
+                            is LocationVerificationResult.AccuracyInsufficient -> "GPS Accuracy Too Low (±${res.currentAccuracyMeters.toInt()}m)"
+                            is LocationVerificationResult.MockLocationDetected -> "Fake GPS Spoofing Blocked"
+                            is LocationVerificationResult.StaleLocation -> "Stale GPS Fix"
+                            is LocationVerificationResult.LocationServicesDisabled -> "Location Services Disabled"
+                            is LocationVerificationResult.PermissionDenied -> "Location Permission Required"
+                            is LocationVerificationResult.PermissionPermanentlyDenied -> "Location Permission Blocked"
+                            is LocationVerificationResult.LocationUnavailable -> "Location Unavailable"
+                            is LocationVerificationResult.NoActiveGeofences -> "No Active Geofences"
+                            LocationVerificationResult.Loading -> "Acquiring High-Accuracy GPS Fix..."
                         }
 
                         Text(
@@ -133,9 +139,10 @@ fun AttendanceCheckInOutScreen(
                             color = tint
                         )
 
-                        val subText = when (val res = geofenceResult) {
-                            is GeofenceValidationResult.Inside -> "Distance: ${res.distanceToCenterMeters.toInt()}m • Accuracy: ±${res.accuracyMeters.toInt()}m • Mock: None"
-                            is GeofenceValidationResult.MockLocationDetected -> "Anti-spoofing engine rejected mock location"
+                        val subText = when (val res = verificationResult) {
+                            is LocationVerificationResult.InsideGeofence -> "Distance: ${res.distanceToCenterMeters.toInt()}m • Accuracy: ±${res.accuracyMeters.toInt()}m • Mock: None"
+                            is LocationVerificationResult.Boundary -> "Boundary tolerance: ${res.distanceToBoundaryMeters.toInt()}m • Accuracy: ±${res.accuracyMeters.toInt()}m"
+                            is LocationVerificationResult.MockLocationDetected -> "Anti-spoofing engine rejected mock location"
                             else -> "Move inside institutional boundaries to enable attendance"
                         }
 
@@ -150,7 +157,7 @@ fun AttendanceCheckInOutScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Camera Viewport & Face Guide Placeholder
+            // Camera Viewport & Face Guide Placeholder (CameraX & InsightFace strictly deferred to M5+)
             Box(
                 modifier = Modifier
                     .weight(1f)
@@ -165,7 +172,7 @@ fun AttendanceCheckInOutScreen(
                         .size(width = 220.dp, height = 280.dp)
                         .border(
                             width = 3.dp,
-                            color = if (isInsideGeofence) SecondaryTeal else Color.Gray,
+                            color = if (isVerified) SecondaryTeal else Color.Gray,
                             shape = RoundedCornerShape(110.dp)
                         ),
                     contentAlignment = Alignment.Center
@@ -189,14 +196,14 @@ fun AttendanceCheckInOutScreen(
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(
-                            imageVector = if (isInsideGeofence) Icons.Default.CheckCircle else Icons.Default.LocationOn,
+                            imageVector = if (isVerified) Icons.Default.CheckCircle else Icons.Default.LocationOn,
                             contentDescription = null,
-                            tint = if (isInsideGeofence) StatusSuccess else StatusWarning,
+                            tint = if (isVerified) StatusSuccess else StatusWarning,
                             modifier = Modifier.size(16.dp)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = if (isInsideGeofence) "Geofence Validated • Biometric Ready" else "Awaiting Campus Location Verification",
+                            text = if (isVerified) "Geofence Validated • Location Verified" else "Awaiting Campus Location Verification",
                             style = MaterialTheme.typography.bodySmall,
                             color = Color.White,
                             fontWeight = FontWeight.SemiBold
@@ -208,7 +215,7 @@ fun AttendanceCheckInOutScreen(
             Spacer(modifier = Modifier.height(16.dp))
 
             // Gated Action Trigger Button
-            if (isInsideGeofence) {
+            if (isVerified) {
                 PrimaryGradientButton(
                     text = if (uiState.isCheckingIn) "Confirm Shift Check-In" else "Confirm Shift Check-Out",
                     icon = Icons.Default.Fingerprint,

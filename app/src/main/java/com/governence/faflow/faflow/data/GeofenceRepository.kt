@@ -1,16 +1,15 @@
 package com.governence.faflow.faflow.data
 
-import com.governence.faflow.core.network.FaflowApiService
-import com.governence.faflow.core.network.NetworkResult
 import com.governence.faflow.location.CampusGeofence
 import com.governence.faflow.location.GeoPoint
 import com.governence.faflow.location.GeofenceType
-import com.governence.faflow.location.GeofenceValidationResult
 import com.governence.faflow.location.GeofenceValidator
+import com.governence.faflow.location.LocationVerificationResult
 import com.governence.faflow.location.StaffLiveLocation
 import com.governence.faflow.location.StaffLocationProvider
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -18,14 +17,14 @@ import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.launch
 
 /**
- * Repository managing campus geofences and live staff location verification status.
+ * Repository managing active campus geofences with memory caching and battery-efficient location monitoring.
  */
 class GeofenceRepository(
     private val locationProvider: StaffLocationProvider,
     private val geofenceValidator: GeofenceValidator = GeofenceValidator(),
     private val externalScope: CoroutineScope = CoroutineScope(Dispatchers.Default)
 ) {
-    // Default institutional campus geofences
+    // Default institutional campus boundaries
     private val defaultGeofences = listOf(
         CampusGeofence(
             id = "GEO-CAMPUS-MAIN",
@@ -60,45 +59,55 @@ class GeofenceRepository(
     private val _liveLocation = MutableStateFlow<StaffLiveLocation?>(null)
     val liveLocation: StateFlow<StaffLiveLocation?> = _liveLocation.asStateFlow()
 
-    private val _validationResult = MutableStateFlow<GeofenceValidationResult>(GeofenceValidationResult.Loading)
-    val validationResult: StateFlow<GeofenceValidationResult> = _validationResult.asStateFlow()
+    private val _verificationResult = MutableStateFlow<LocationVerificationResult>(LocationVerificationResult.Loading)
+    val verificationResult: StateFlow<LocationVerificationResult> = _verificationResult.asStateFlow()
+
+    private var monitoringJob: Job? = null
 
     init {
         startLocationMonitoring()
     }
 
-    fun hasLocationPermission(): Boolean = locationProvider.hasLocationPermission()
-    fun isLocationEnabled(): Boolean = locationProvider.isLocationServiceEnabled()
+    fun hasLocationPermission(): Boolean = locationProvider.isLocationPermissionGranted
+    fun isLocationEnabled(): Boolean = locationProvider.isLocationServiceEnabled
 
     fun startLocationMonitoring() {
-        if (!locationProvider.hasLocationPermission()) {
-            _validationResult.value = GeofenceValidationResult.PermissionDenied
+        if (!locationProvider.isLocationPermissionGranted) {
+            _verificationResult.value = LocationVerificationResult.PermissionDenied
             return
         }
 
-        if (!locationProvider.isLocationServiceEnabled()) {
-            _validationResult.value = GeofenceValidationResult.LocationDisabled
+        if (!locationProvider.isLocationServiceEnabled) {
+            _verificationResult.value = LocationVerificationResult.LocationServicesDisabled
             return
         }
 
-        externalScope.launch {
+        monitoringJob?.cancel()
+        monitoringJob = externalScope.launch {
             locationProvider.getLocationUpdates(intervalMs = 3000L)
                 .catch { e ->
                     if (e is SecurityException) {
-                        _validationResult.value = GeofenceValidationResult.PermissionDenied
+                        _verificationResult.value = LocationVerificationResult.PermissionDenied
+                    } else {
+                        _verificationResult.value = LocationVerificationResult.LocationUnavailable
                     }
                 }
                 .collect { location ->
                     _liveLocation.value = location
-                    _validationResult.value = geofenceValidator.validateLocation(location, _geofences.value)
+                    _verificationResult.value = geofenceValidator.validate(location, _geofences.value)
                 }
         }
+    }
+
+    fun stopLocationMonitoring() {
+        monitoringJob?.cancel()
+        monitoringJob = null
     }
 
     fun updateGeofences(newGeofences: List<CampusGeofence>) {
         _geofences.value = newGeofences
         _liveLocation.value?.let { loc ->
-            _validationResult.value = geofenceValidator.validateLocation(loc, newGeofences)
+            _verificationResult.value = geofenceValidator.validate(loc, newGeofences)
         }
     }
 }

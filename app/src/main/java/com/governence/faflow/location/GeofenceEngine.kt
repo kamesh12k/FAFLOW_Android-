@@ -6,7 +6,7 @@ import kotlin.math.sin
 import kotlin.math.sqrt
 
 /**
- * Supported Geofence geometry shapes.
+ * Supported Geofence geometry types.
  */
 enum class GeofenceType {
     CIRCLE,
@@ -14,7 +14,7 @@ enum class GeofenceType {
 }
 
 /**
- * Precise Geographic Coordinate (WGS84).
+ * High-precision WGS84 coordinate.
  */
 data class GeoPoint(
     val latitude: Double,
@@ -22,7 +22,7 @@ data class GeoPoint(
 )
 
 /**
- * Campus Geofence Definition (Circle or Polygon).
+ * Institutional Campus Geofence Definition.
  */
 data class CampusGeofence(
     val id: String,
@@ -37,44 +37,13 @@ data class CampusGeofence(
 )
 
 /**
- * Result of Geofence evaluation against a staff member's live location.
- */
-sealed class GeofenceValidationResult {
-    data class Inside(
-        val geofence: CampusGeofence,
-        val distanceToCenterMeters: Double,
-        val accuracyMeters: Float
-    ) : GeofenceValidationResult()
-
-    data class Outside(
-        val nearestGeofence: CampusGeofence?,
-        val distanceMeters: Double,
-        val accuracyMeters: Float
-    ) : GeofenceValidationResult()
-
-    data class PoorAccuracy(
-        val currentAccuracyMeters: Float,
-        val requiredAccuracyMeters: Float = 30.0f
-    ) : GeofenceValidationResult()
-
-    data class MockLocationDetected(
-        val provider: String?,
-        val details: String = "Fake GPS / Mock Location detected"
-    ) : GeofenceValidationResult()
-
-    data object LocationDisabled : GeofenceValidationResult()
-    data object PermissionDenied : GeofenceValidationResult()
-    data object Loading : GeofenceValidationResult()
-}
-
-/**
- * Mathematical Engine for Geodesic distance (Haversine) and Point-In-Polygon (Ray Casting) computations.
+ * Core mathematical engine for spherical geodesy (Haversine) and Point-In-Polygon (Jordan Curve).
  */
 object GeofenceMathEngine {
     private const val EARTH_RADIUS_METERS = 6371000.0
 
     /**
-     * Calculates the great-circle distance between two geographic coordinates using the Haversine formula.
+     * Calculates great-circle distance between two coordinates in meters.
      */
     fun calculateDistanceMeters(
         lat1: Double,
@@ -82,6 +51,8 @@ object GeofenceMathEngine {
         lat2: Double,
         lon2: Double
     ): Double {
+        if (lat1 == lat2 && lon1 == lon2) return 0.0
+
         val dLat = Math.toRadians(lat2 - lat1)
         val dLon = Math.toRadians(lon2 - lon1)
 
@@ -96,26 +67,32 @@ object GeofenceMathEngine {
     }
 
     /**
-     * Evaluates whether a point is inside a circular geofence with optional margin tolerance.
+     * Checks if a point is inside a circle, on its boundary (within tolerance), or outside.
+     * Returns: Pair(isInside, isBoundary) and distance in meters.
      */
-    fun isInsideCircle(
+    fun evaluateCircle(
         point: GeoPoint,
         center: GeoPoint,
         radiusMeters: Double,
-        toleranceMeters: Double = 0.0
-    ): Pair<Boolean, Double> {
+        toleranceMeters: Double = 15.0
+    ): Triple<Boolean, Boolean, Double> {
         val distance = calculateDistanceMeters(
             point.latitude,
             point.longitude,
             center.latitude,
             center.longitude
         )
-        val isInside = distance <= (radiusMeters + toleranceMeters)
-        return Pair(isInside, distance)
+
+        val isStrictlyInside = distance < (radiusMeters - toleranceMeters)
+        val isBoundary = distance in (radiusMeters - toleranceMeters)..(radiusMeters + toleranceMeters)
+        val isInsideWithTolerance = distance <= (radiusMeters + toleranceMeters)
+
+        return Triple(isInsideWithTolerance, isBoundary, distance)
     }
 
     /**
-     * Evaluates whether a point is inside a polygon using the Ray Casting Algorithm (Jordan Curve Theorem).
+     * Point-In-Polygon evaluation using the Ray Casting algorithm.
+     * Returns true if point is strictly inside polygon.
      */
     fun isInsidePolygon(
         point: GeoPoint,
