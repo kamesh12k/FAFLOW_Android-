@@ -1,6 +1,6 @@
 # FAFLOW Staff Mobile: Architecture Specification & Integration Blueprint
 
-> **System Status**: **Milestone 15 Complete (Android 16 KB Page-Size Compatibility & Production Hardening)**  
+> **System Status**: **Milestone 16 Complete (Governance System Control Plane + Feature Licensing + Geofence Security)**  
 > **Target Audience**: College Faculty & Staff (Teachers, HODs, Lab Staff, Non-Teaching Staff)  
 > **Source of Truth**: Upstream FAFLOW FastAPI + PostgreSQL Backend (`https://github.com/kamesh12k/FACULTY_FLOW.git`)  
 > **Attendance Architecture**: Palgeo-style Geofenced Biometric Face Attendance with Authoritative Server Ledger  
