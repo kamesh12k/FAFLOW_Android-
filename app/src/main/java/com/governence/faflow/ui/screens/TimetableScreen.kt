@@ -20,14 +20,13 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -37,19 +36,14 @@ import androidx.compose.ui.unit.dp
 import com.governence.faflow.domain.model.TimetableSlot
 import com.governence.faflow.ui.components.AppTopBar
 import com.governence.faflow.ui.theme.PrimaryBlue
+import com.governence.faflow.ui.viewmodels.TimetableViewModel
 
 @Composable
 fun TimetableScreen(
+    viewModel: TimetableViewModel,
     onNavigateBack: () -> Unit
 ) {
-    var selectedDayOrder by remember { mutableIntStateOf(3) }
-
-    val sampleSlots = listOf(
-        TimetableSlot(1, 42, "Deep Learning", "CS801", "III B.Sc CS", "A", "Room 302", 3, 1),
-        TimetableSlot(2, 42, "Operating Systems", "CS402", "II B.Sc CS", "B", "Room 204", 3, 3),
-        TimetableSlot(3, 42, "Computer Vision Lab", "CS803", "III B.Sc CS", "A", "Lab 2", 3, 4),
-        TimetableSlot(4, 42, "Computer Vision Lab", "CS803", "III B.Sc CS", "A", "Lab 2", 3, 5)
-    )
+    val state by viewModel.uiState.collectAsState()
 
     Scaffold(
         topBar = {
@@ -74,12 +68,12 @@ fun TimetableScreen(
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 items((1..6).toList()) { day ->
-                    val isSelected = day == selectedDayOrder
+                    val isSelected = day == state.selectedDayOrder
                     Box(
                         modifier = Modifier
                             .clip(RoundedCornerShape(12.dp))
                             .background(if (isSelected) PrimaryBlue else MaterialTheme.colorScheme.surface)
-                            .clickable { selectedDayOrder = day }
+                            .clickable { viewModel.selectDayOrder(day) }
                             .padding(horizontal = 16.dp, vertical = 10.dp),
                         contentAlignment = Alignment.Center
                     ) {
@@ -95,15 +89,21 @@ fun TimetableScreen(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // 5 Periods Schedule List
-            LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                items((1..5).toList()) { period ->
-                    val slot = sampleSlots.find { it.periodNumber == period }
-                    TimetablePeriodCard(period = period, slot = slot)
+            if (state.isLoading) {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+                }
+            } else {
+                // 5 Periods Schedule List
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    items((1..5).toList()) { period ->
+                        val slot = state.daySlots.find { it.periodNumber == period }
+                        TimetablePeriodCard(period = period, slot = slot)
+                    }
                 }
             }
         }

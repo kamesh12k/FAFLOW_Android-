@@ -1,10 +1,14 @@
 package com.governence.faflow.ui.navigation
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import com.governence.faflow.auth.ui.AuthViewModel
+import com.governence.faflow.core.di.AppContainer
 import com.governence.faflow.ui.screens.ApplyLeaveScreen
 import com.governence.faflow.ui.screens.AttendanceCheckInOutScreen
 import com.governence.faflow.ui.screens.AttendanceHistoryScreen
@@ -21,12 +25,66 @@ import com.governence.faflow.ui.screens.SplashScreen
 import com.governence.faflow.ui.screens.SubstitutionScreen
 import com.governence.faflow.ui.screens.SyncStatusScreen
 import com.governence.faflow.ui.screens.TimetableScreen
+import com.governence.faflow.ui.viewmodels.CreditsViewModel
+import com.governence.faflow.ui.viewmodels.DashboardViewModel
+import com.governence.faflow.ui.viewmodels.LeaveViewModel
+import com.governence.faflow.ui.viewmodels.NotificationsViewModel
+import com.governence.faflow.ui.viewmodels.PreferencesViewModel
+import com.governence.faflow.ui.viewmodels.SubstitutionViewModel
+import com.governence.faflow.ui.viewmodels.TimetableViewModel
 
 @Composable
 fun NavGraph(
     navController: NavHostController,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
+    val appContainer = remember { AppContainer.getInstance(context) }
+
+    val authViewModel = remember { AuthViewModel(appContainer.authRepository) }
+    val dashboardViewModel = remember {
+        DashboardViewModel(
+            authRepository = appContainer.authRepository,
+            academicSummaryRepository = appContainer.academicSummaryRepository,
+            timetableRepository = appContainer.timetableRepository,
+            creditRepository = appContainer.creditRepository,
+            substitutionRepository = appContainer.substitutionRepository
+        )
+    }
+    val timetableViewModel = remember {
+        TimetableViewModel(
+            authRepository = appContainer.authRepository,
+            timetableRepository = appContainer.timetableRepository
+        )
+    }
+    val leaveViewModel = remember {
+        LeaveViewModel(
+            leaveRepository = appContainer.leaveRepository,
+            academicSummaryRepository = appContainer.academicSummaryRepository
+        )
+    }
+    val creditsViewModel = remember {
+        CreditsViewModel(
+            authRepository = appContainer.authRepository,
+            creditRepository = appContainer.creditRepository
+        )
+    }
+    val substitutionViewModel = remember {
+        SubstitutionViewModel(
+            substitutionRepository = appContainer.substitutionRepository
+        )
+    }
+    val preferencesViewModel = remember {
+        PreferencesViewModel(
+            preferencesRepository = appContainer.preferencesRepository
+        )
+    }
+    val notificationsViewModel = remember {
+        NotificationsViewModel(
+            notificationRepository = appContainer.notificationRepository
+        )
+    }
+
     NavHost(
         navController = navController,
         startDestination = Screen.Splash.route,
@@ -49,7 +107,15 @@ fun NavGraph(
 
         composable(Screen.Login.route) {
             LoginScreen(
+                authViewModel = authViewModel,
                 onLoginSuccess = {
+                    dashboardViewModel.loadDashboardData()
+                    timetableViewModel.loadTimetable()
+                    leaveViewModel.loadMyLeaves()
+                    creditsViewModel.loadCredits()
+                    substitutionViewModel.loadDuties()
+                    preferencesViewModel.loadPreferences()
+                    notificationsViewModel.loadNotifications()
                     navController.navigate(Screen.Dashboard.route) {
                         popUpTo(Screen.Login.route) { inclusive = true }
                     }
@@ -59,6 +125,7 @@ fun NavGraph(
 
         composable(Screen.Dashboard.route) {
             DashboardScreen(
+                viewModel = dashboardViewModel,
                 onNavigateToCheckIn = { navController.navigate(Screen.AttendanceCheckInOut.route) },
                 onNavigateToTimetable = { navController.navigate(Screen.Timetable.route) },
                 onNavigateToApplyLeave = { navController.navigate(Screen.ApplyLeave.route) },
@@ -106,12 +173,14 @@ fun NavGraph(
         // FAFLOW Core Staff Modules
         composable(Screen.Timetable.route) {
             TimetableScreen(
+                viewModel = timetableViewModel,
                 onNavigateBack = { navController.popBackStack() }
             )
         }
 
         composable(Screen.ApplyLeave.route) {
             ApplyLeaveScreen(
+                viewModel = leaveViewModel,
                 onNavigateBack = { navController.popBackStack() },
                 onLeaveSubmitted = {
                     navController.navigate(Screen.LeaveHistory.route) {
@@ -123,36 +192,42 @@ fun NavGraph(
 
         composable(Screen.LeaveHistory.route) {
             LeaveHistoryScreen(
+                viewModel = leaveViewModel,
                 onNavigateBack = { navController.popBackStack() }
             )
         }
 
         composable(Screen.Credits.route) {
             CreditsScreen(
+                viewModel = creditsViewModel,
                 onNavigateBack = { navController.popBackStack() }
             )
         }
 
         composable(Screen.Substitution.route) {
             SubstitutionScreen(
+                viewModel = substitutionViewModel,
                 onNavigateBack = { navController.popBackStack() }
             )
         }
 
         composable(Screen.Preferences.route) {
             PreferencesScreen(
+                viewModel = preferencesViewModel,
                 onNavigateBack = { navController.popBackStack() }
             )
         }
 
         composable(Screen.Notifications.route) {
             NotificationsScreen(
+                viewModel = notificationsViewModel,
                 onNavigateBack = { navController.popBackStack() }
             )
         }
 
         composable(Screen.Profile.route) {
             ProfileScreen(
+                authViewModel = authViewModel,
                 onNavigateBack = { navController.popBackStack() },
                 onNavigateToFaceEnrollment = { navController.navigate(Screen.FaceEnrollment.route) },
                 onLogout = {

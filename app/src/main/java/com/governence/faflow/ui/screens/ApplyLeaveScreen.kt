@@ -1,8 +1,5 @@
 package com.governence.faflow.ui.screens
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -19,13 +16,15 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -33,24 +32,35 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.governence.faflow.ui.components.AppTopBar
 import com.governence.faflow.ui.components.PrimaryGradientButton
+import com.governence.faflow.ui.theme.StatusError
 import com.governence.faflow.ui.theme.StatusWarning
+import com.governence.faflow.ui.viewmodels.LeaveViewModel
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 @Composable
 fun ApplyLeaveScreen(
+    viewModel: LeaveViewModel,
     onNavigateBack: () -> Unit,
     onLeaveSubmitted: () -> Unit
 ) {
-    var leaveDate by remember { mutableStateOf("2026-09-03") }
-    var dayOrder by remember { mutableIntStateOf(4) }
-    var selectedPeriod by remember { mutableIntStateOf(2) }
-    var reason by remember { mutableStateOf("Attending Academic Faculty Development Program") }
-    var isEmergency by remember { mutableStateOf(false) }
+    val state by viewModel.uiState.collectAsState()
+
+    val todayStr = remember { SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date()) }
+    var leaveDate by remember { mutableStateOf(todayStr) }
+    var selectedPeriod by remember { mutableIntStateOf(1) }
+    var reason by remember { mutableStateOf("") }
+
+    LaunchedEffect(leaveDate) {
+        if (leaveDate.length == 10) {
+            viewModel.resolveDateDayOrder(leaveDate)
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -73,9 +83,7 @@ fun ApplyLeaveScreen(
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = Color(0x1AF59E0B)
-                )
+                colors = CardDefaults.cardColors(containerColor = Color(0x1AF59E0B))
             ) {
                 Row(
                     modifier = Modifier.padding(16.dp),
@@ -98,6 +106,15 @@ fun ApplyLeaveScreen(
 
             Spacer(modifier = Modifier.height(20.dp))
 
+            if (state.errorMessage != null) {
+                Text(
+                    text = state.errorMessage!!,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = StatusError,
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
+            }
+
             OutlinedTextField(
                 value = leaveDate,
                 onValueChange = { leaveDate = it },
@@ -109,11 +126,17 @@ fun ApplyLeaveScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
 
+            val dayOrderDisplay = if (state.resolvedDayOrder != null) {
+                "Day Order ${state.resolvedDayOrder}"
+            } else {
+                "Resolving from FAFLOW academic calendar..."
+            }
+
             OutlinedTextField(
-                value = "Day Order $dayOrder",
+                value = dayOrderDisplay,
                 onValueChange = {},
                 readOnly = true,
-                label = { Text("Calculated Day Order") },
+                label = { Text("Resolved Day Order") },
                 singleLine = true,
                 shape = RoundedCornerShape(12.dp),
                 modifier = Modifier.fillMaxWidth()
@@ -122,10 +145,12 @@ fun ApplyLeaveScreen(
             Spacer(modifier = Modifier.height(16.dp))
 
             OutlinedTextField(
-                value = "Period $selectedPeriod (10:55 AM - 11:45 AM)",
-                onValueChange = {},
-                readOnly = true,
-                label = { Text("Target Teaching Period") },
+                value = selectedPeriod.toString(),
+                onValueChange = {
+                    val p = it.toIntOrNull()
+                    if (p != null && p in 1..5) selectedPeriod = p
+                },
+                label = { Text("Teaching Period (1 to 5)") },
                 singleLine = true,
                 shape = RoundedCornerShape(12.dp),
                 modifier = Modifier.fillMaxWidth()
@@ -144,10 +169,21 @@ fun ApplyLeaveScreen(
 
             Spacer(modifier = Modifier.height(32.dp))
 
-            PrimaryGradientButton(
-                text = "Submit Leave Request",
-                onClick = onLeaveSubmitted
-            )
+            if (state.isLoading) {
+                CircularProgressIndicator(
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.align(Alignment.CenterHorizontally)
+                )
+            } else {
+                PrimaryGradientButton(
+                    text = "Submit Leave Request",
+                    onClick = {
+                        if (reason.isNotBlank()) {
+                            viewModel.submitLeave(leaveDate, selectedPeriod, reason, onLeaveSubmitted)
+                        }
+                    }
+                )
+            }
         }
     }
 }

@@ -12,13 +12,15 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -30,14 +32,24 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.governence.faflow.ui.components.AppTopBar
 import com.governence.faflow.ui.components.PrimaryGradientButton
+import com.governence.faflow.ui.viewmodels.PreferencesViewModel
 
 @Composable
 fun PreferencesScreen(
+    viewModel: PreferencesViewModel,
     onNavigateBack: () -> Unit
 ) {
+    val state by viewModel.uiState.collectAsState()
+
     var maxSubsPerDay by remember { mutableFloatStateOf(2f) }
     var maxSubsPerWeek by remember { mutableFloatStateOf(6f) }
     var allowCrossDept by remember { mutableStateOf(false) }
+
+    LaunchedEffect(state.maxPerDay, state.maxPerWeek, state.crossDept) {
+        maxSubsPerDay = state.maxPerDay.toFloat()
+        maxSubsPerWeek = state.maxPerWeek.toFloat()
+        allowCrossDept = state.crossDept
+    }
 
     Scaffold(
         topBar = {
@@ -105,10 +117,24 @@ fun PreferencesScreen(
 
             Spacer(modifier = Modifier.height(28.dp))
 
-            PrimaryGradientButton(
-                text = "Save Preferences",
-                onClick = onNavigateBack
-            )
+            if (state.isLoading) {
+                CircularProgressIndicator(
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.align(Alignment.CenterHorizontally)
+                )
+            } else {
+                PrimaryGradientButton(
+                    text = "Save Preferences to FAFLOW",
+                    onClick = {
+                        viewModel.savePreferences(
+                            day = maxSubsPerDay.toInt(),
+                            week = maxSubsPerWeek.toInt(),
+                            cross = allowCrossDept,
+                            onComplete = onNavigateBack
+                        )
+                    }
+                )
+            }
         }
     }
 }
