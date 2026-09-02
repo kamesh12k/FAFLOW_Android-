@@ -31,6 +31,7 @@ import com.governence.faflow.ui.screens.SplashScreen
 import com.governence.faflow.ui.screens.SubstitutionScreen
 import com.governence.faflow.ui.screens.SyncStatusScreen
 import com.governence.faflow.ui.screens.TimetableScreen
+import com.governence.faflow.ui.viewmodels.AttendanceViewModel
 import com.governence.faflow.ui.viewmodels.CreditsViewModel
 import com.governence.faflow.ui.viewmodels.DashboardViewModel
 import com.governence.faflow.ui.viewmodels.LeaveViewModel
@@ -88,6 +89,11 @@ fun NavGraph(
     val notificationsViewModel = remember {
         NotificationsViewModel(
             notificationRepository = appContainer.notificationRepository
+        )
+    }
+    val attendanceViewModel = remember {
+        AttendanceViewModel(
+            geofenceRepository = appContainer.geofenceRepository
         )
     }
 
@@ -160,9 +166,11 @@ fun NavGraph(
                 )
             }
 
-            // Primary Bottom Nav Tab 3: Attendance Placeholder
+            // Primary Bottom Nav Tab 3: Attendance
             composable(Screen.Attendance.route) {
                 AttendancePlaceholderScreen(
+                    viewModel = attendanceViewModel,
+                    onNavigateToCheckIn = { navController.navigate(Screen.AttendanceCheckInOut.route) },
                     onNavigateToHistory = { navController.navigate(Screen.AttendanceHistory.route) }
                 )
             }
@@ -250,6 +258,7 @@ fun NavGraph(
 
             composable(Screen.AttendanceCheckInOut.route) {
                 AttendanceCheckInOutScreen(
+                    viewModel = attendanceViewModel,
                     onNavigateBack = { navController.popBackStack() },
                     onAttendanceSuccess = {
                         navController.navigate(Screen.Home.route) {

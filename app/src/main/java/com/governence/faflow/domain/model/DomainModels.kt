@@ -17,18 +17,6 @@ data class StaffMember(
 )
 
 /**
- * Campus Geofence boundary defining permitted attendance zones.
- */
-data class CampusGeofence(
-    val id: String,
-    val name: String,
-    val latitude: Double,
-    val longitude: Double,
-    val radiusMeters: Float = 150.0f,
-    val isActive: Boolean = true
-)
-
-/**
  * Staff biometric face profile storing 512-dim ArcFace embedding.
  */
 data class StaffFaceProfile(

@@ -1,19 +1,26 @@
 # FAFLOW Staff Mobile: Architecture Specification & Integration Blueprint
 
-> **System Status**: **Milestone 3 Complete (Full FAFLOW Staff Mobile Native Experience)**  
+> **System Status**: **Milestone 4 Complete (Graphical Geofence + Staff Location Verification Subsystem)**  
 > **Target Audience**: College Faculty & Staff (Teachers, HODs, Lab Staff, Non-Teaching Staff)  
 > **Source of Truth**: Upstream FAFLOW FastAPI + PostgreSQL Backend (`https://github.com/kamesh12k/FACULTY_FLOW.git`)  
-> **Attendance Architecture**: Palgeo-style Geofenced Biometric Face Attendance (Scheduled for M4-M10)  
+> **Attendance Architecture**: Palgeo-style Geofenced Biometric Face Attendance  
+> **Geofence Engine**: Haversine Circle + Ray-Casting Point-in-Polygon (Jordan Curve Theorem) + Anti-Spoof Mock Location  
 > **Build Status**: `BUILD SUCCESSFUL` with 100% Unit Test Pass Rate and Zero Fake/Mock Data  
 
 ---
 
-## Milestone 3 Implementation Status
+## Milestone 4 Implementation Status
 
-1. **Native Client Architecture**: The Android app is a native, reactive client connected to the FAFLOW backend via Retrofit, OkHttp, and Moshi with Bearer JWT injection and 401 auto-eviction.
-2. **Bottom Navigation**: 4-tab streamlined navigation (`Home`, `Timetable`, `Attendance`, `More/Hub`) providing 1-touch access to all faculty functions.
-3. **Real API Consumption**: All screens (`Dashboard`, `Timetable`, `Apply Leave`, `Leave History`, `Credits`, `Substitution`, `Preferences`, `Notifications`, `Profile`) consume real backend endpoints with comprehensive Loading, Error, Retry, and Empty state handling.
-4. **Attendance Placeholder**: The Attendance screen cleanly displays shift and verification pipeline prerequisites while keeping CameraX, GPS, and InsightFace deferred to subsequent milestones.
+1. **M4A — Graphical Geofence Management**:
+   - Supported Shapes: Circular (`centerLat`, `centerLng`, `radiusMeters`) and Polygonal ($n$-point coordinate vertices).
+   - Domain Model: `CampusGeofence(id, name, type, centerLat, centerLng, radiusMeters, polygonVertices, toleranceMeters, isActive)`.
+   - Geodesic Mathematics: High-precision Haversine formula and Point-in-Polygon ray-casting algorithm.
+2. **M4B — Android Staff Location Verification**:
+   - Location Provider: `StaffLocationProvider` wrapping Google Play Services `FusedLocationProviderClient` with high-accuracy streams (`Priority.PRIORITY_HIGH_ACCURACY`).
+   - Mock Location Detection: Inspects `Location.isMock` (API 31+) / `Location.isFromMockProvider` to block fake GPS tools.
+   - Accuracy Validation: Enforces $\le 30\text{m}$ accuracy threshold.
+   - Live Verification Radar: Real-time visual feedback of campus proximity in `AttendancePlaceholderScreen` and `AttendanceCheckInOutScreen`.
+   - Attendance Gating: Check-In/Check-Out actions are gated and enabled only when verified physically inside an institutional boundary.
 
 ---
 

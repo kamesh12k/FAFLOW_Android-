@@ -51,6 +51,9 @@ okhttp-logging = { group = "com.squareup.okhttp3", name = "logging-interceptor",
 # Security (EncryptedSharedPreferences)
 androidx-security-crypto = { group = "androidx.security", name = "security-crypto", version = "1.1.0-alpha06" }
 
+# Location (FusedLocationProviderClient)
+play-services-location = { group = "com.google.android.gms", name = "play-services-location", version = "21.3.0" }
+
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }

@@ -67,6 +67,9 @@ dependencies {
     // Security (Hardware-backed EncryptedSharedPreferences)
     implementation(libs.androidx.security.crypto)
 
+    // Location (GPS & Geofencing)
+    implementation(libs.play.services.location)
+
     testImplementation(libs.junit)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)

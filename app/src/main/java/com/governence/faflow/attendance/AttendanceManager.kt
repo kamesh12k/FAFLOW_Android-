@@ -1,7 +1,7 @@
 package com.governence.faflow.attendance
 
 import com.governence.faflow.domain.model.StaffAttendanceRecord
-import com.governence.faflow.location.StaffLocation
+import com.governence.faflow.location.StaffLiveLocation
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
 
@@ -32,13 +32,13 @@ interface StaffAttendanceManager {
     val recentAttendanceRecords: StateFlow<List<StaffAttendanceRecord>>
 
     suspend fun performCheckIn(
-        location: StaffLocation,
+        location: StaffLiveLocation,
         faceEmbedding: FloatArray,
         livenessScore: Float
     ): AttendanceCheckResult
 
     suspend fun performCheckOut(
-        location: StaffLocation,
+        location: StaffLiveLocation,
         faceEmbedding: FloatArray,
         livenessScore: Float
     ): AttendanceCheckResult

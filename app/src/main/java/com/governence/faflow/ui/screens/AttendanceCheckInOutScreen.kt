@@ -2,7 +2,6 @@ package com.governence.faflow.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -19,7 +18,11 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Face
 import androidx.compose.material.icons.filled.Fingerprint
+import androidx.compose.material.icons.filled.GpsFixed
+import androidx.compose.material.icons.filled.GpsNotFixed
+import androidx.compose.material.icons.filled.GpsOff
 import androidx.compose.material.icons.filled.LocationOn
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -27,37 +30,39 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.governence.faflow.location.GeofenceValidationResult
 import com.governence.faflow.ui.components.AppTopBar
 import com.governence.faflow.ui.components.PrimaryGradientButton
+import com.governence.faflow.ui.theme.DarkSurfaceVariant
 import com.governence.faflow.ui.theme.PrimaryBlue
 import com.governence.faflow.ui.theme.SecondaryTeal
+import com.governence.faflow.ui.theme.StatusError
 import com.governence.faflow.ui.theme.StatusSuccess
+import com.governence.faflow.ui.theme.StatusWarning
+import com.governence.faflow.ui.viewmodels.AttendanceViewModel
 
 @Composable
 fun AttendanceCheckInOutScreen(
+    viewModel: AttendanceViewModel,
     onNavigateBack: () -> Unit,
     onAttendanceSuccess: () -> Unit
 ) {
-    var isCheckingIn by remember { mutableStateOf(true) }
-    var locationVerified by remember { mutableStateOf(true) }
-    var faceMatched by remember { mutableStateOf(true) }
-    var livenessVerified by remember { mutableStateOf(true) }
+    val uiState by viewModel.uiState.collectAsState()
+    val geofenceResult by viewModel.geofenceResult.collectAsState()
+    val isInsideGeofence = geofenceResult is GeofenceValidationResult.Inside
 
     Scaffold(
         topBar = {
             AppTopBar(
-                title = if (isCheckingIn) "Staff Check-In" else "Staff Check-Out",
+                title = if (uiState.isCheckingIn) "Staff Check-In" else "Staff Check-Out",
                 canNavigateBack = true,
                 onNavigateBack = onNavigateBack
             )
@@ -71,12 +76,17 @@ fun AttendanceCheckInOutScreen(
                 .padding(16.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // Geofence & Location Banner
+            // Live Geofence Status Banner
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(16.dp),
                 colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surface
+                    containerColor = when (geofenceResult) {
+                        is GeofenceValidationResult.Inside -> Color(0x1A10B981)
+                        is GeofenceValidationResult.MockLocationDetected -> Color(0x1AEF4444)
+                        is GeofenceValidationResult.PoorAccuracy -> Color(0x1AF59E0B)
+                        else -> MaterialTheme.colorScheme.surface
+                    }
                 )
             ) {
                 Row(
@@ -85,34 +95,54 @@ fun AttendanceCheckInOutScreen(
                         .padding(16.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    val (icon, tint) = when (geofenceResult) {
+                        is GeofenceValidationResult.Inside -> Pair(Icons.Default.GpsFixed, StatusSuccess)
+                        is GeofenceValidationResult.Outside -> Pair(Icons.Default.LocationOn, StatusWarning)
+                        is GeofenceValidationResult.PoorAccuracy -> Pair(Icons.Default.GpsNotFixed, StatusWarning)
+                        is GeofenceValidationResult.MockLocationDetected -> Pair(Icons.Default.Warning, StatusError)
+                        else -> Pair(Icons.Default.GpsOff, StatusError)
+                    }
+
                     Box(
                         modifier = Modifier
                             .size(40.dp)
                             .clip(CircleShape)
-                            .background(Color(0x1A10B981)),
+                            .background(tint.copy(alpha = 0.15f)),
                         contentAlignment = Alignment.Center
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.LocationOn,
-                            contentDescription = null,
-                            tint = StatusSuccess,
-                            modifier = Modifier.size(24.dp)
-                        )
+                        Icon(imageVector = icon, contentDescription = null, tint = tint, modifier = Modifier.size(24.dp))
                     }
 
                     Spacer(modifier = Modifier.width(12.dp))
 
                     Column(modifier = Modifier.weight(1f)) {
+                        val titleText = when (val res = geofenceResult) {
+                            is GeofenceValidationResult.Inside -> "Campus Geofence Verified: ${res.geofence.name}"
+                            is GeofenceValidationResult.Outside -> "Outside Campus Boundary (${res.distanceMeters.toInt()}m away)"
+                            is GeofenceValidationResult.PoorAccuracy -> "GPS Accuracy Too Low (±${res.currentAccuracyMeters.toInt()}m)"
+                            is GeofenceValidationResult.MockLocationDetected -> "Fake GPS Spoofing Blocked"
+                            is GeofenceValidationResult.LocationDisabled -> "Location Services Disabled"
+                            is GeofenceValidationResult.PermissionDenied -> "Location Permission Required"
+                            GeofenceValidationResult.Loading -> "Acquiring High-Accuracy GPS Fix..."
+                        }
+
                         Text(
-                            text = "Campus Geofence: Main Academic Zone",
+                            text = titleText,
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface
+                            color = tint
                         )
+
+                        val subText = when (val res = geofenceResult) {
+                            is GeofenceValidationResult.Inside -> "Distance: ${res.distanceToCenterMeters.toInt()}m • Accuracy: ±${res.accuracyMeters.toInt()}m • Mock: None"
+                            is GeofenceValidationResult.MockLocationDetected -> "Anti-spoofing engine rejected mock location"
+                            else -> "Move inside institutional boundaries to enable attendance"
+                        }
+
                         Text(
-                            text = "GPS Accuracy: 4.2m • Mock Location: None",
+                            text = subText,
                             style = MaterialTheme.typography.bodySmall,
-                            color = StatusSuccess
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }
@@ -120,7 +150,7 @@ fun AttendanceCheckInOutScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Camera Viewport & Face Guide
+            // Camera Viewport & Face Guide Placeholder
             Box(
                 modifier = Modifier
                     .weight(1f)
@@ -133,7 +163,11 @@ fun AttendanceCheckInOutScreen(
                 Box(
                     modifier = Modifier
                         .size(width = 220.dp, height = 280.dp)
-                        .border(3.dp, SecondaryTeal, RoundedCornerShape(110.dp)),
+                        .border(
+                            width = 3.dp,
+                            color = if (isInsideGeofence) SecondaryTeal else Color.Gray,
+                            shape = RoundedCornerShape(110.dp)
+                        ),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
@@ -144,7 +178,7 @@ fun AttendanceCheckInOutScreen(
                     )
                 }
 
-                // InsightFace Verification Badge
+                // Biometric Status Notice
                 Box(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
@@ -155,14 +189,14 @@ fun AttendanceCheckInOutScreen(
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(
-                            imageVector = Icons.Default.CheckCircle,
+                            imageVector = if (isInsideGeofence) Icons.Default.CheckCircle else Icons.Default.LocationOn,
                             contentDescription = null,
-                            tint = StatusSuccess,
+                            tint = if (isInsideGeofence) StatusSuccess else StatusWarning,
                             modifier = Modifier.size(16.dp)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = "InsightFace: Dr. Kamesh V (98.6% match)",
+                            text = if (isInsideGeofence) "Geofence Validated • Biometric Ready" else "Awaiting Campus Location Verification",
                             style = MaterialTheme.typography.bodySmall,
                             color = Color.White,
                             fontWeight = FontWeight.SemiBold
@@ -173,12 +207,33 @@ fun AttendanceCheckInOutScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // 1-Click Verification Trigger
-            PrimaryGradientButton(
-                text = if (isCheckingIn) "Confirm Check-In (08:30 AM)" else "Confirm Check-Out",
-                icon = Icons.Default.Fingerprint,
-                onClick = onAttendanceSuccess
-            )
+            // Gated Action Trigger Button
+            if (isInsideGeofence) {
+                PrimaryGradientButton(
+                    text = if (uiState.isCheckingIn) "Confirm Shift Check-In" else "Confirm Shift Check-Out",
+                    icon = Icons.Default.Fingerprint,
+                    onClick = {
+                        if (uiState.isCheckingIn) {
+                            viewModel.performCheckIn(onAttendanceSuccess)
+                        } else {
+                            viewModel.performCheckOut(onAttendanceSuccess)
+                        }
+                    }
+                )
+            } else {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                ) {
+                    Text(
+                        text = "Attendance is gated: You must be physically inside an active campus geofence to register shift check-in.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(16.dp)
+                    )
+                }
+            }
         }
     }
 }

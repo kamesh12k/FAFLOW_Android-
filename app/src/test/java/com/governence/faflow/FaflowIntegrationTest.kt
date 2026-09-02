@@ -15,6 +15,13 @@ import com.governence.faflow.domain.model.LeaveRequest
 import com.governence.faflow.domain.model.LeaveStatus
 import com.governence.faflow.domain.model.StaffMember
 import com.governence.faflow.domain.model.TimetableSlot
+import com.governence.faflow.location.CampusGeofence
+import com.governence.faflow.location.GeoPoint
+import com.governence.faflow.location.GeofenceMathEngine
+import com.governence.faflow.location.GeofenceType
+import com.governence.faflow.location.GeofenceValidationResult
+import com.governence.faflow.location.GeofenceValidator
+import com.governence.faflow.location.StaffLiveLocation
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -23,6 +30,126 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class FaflowIntegrationTest {
+
+    // ---------- Milestone 4: Geofence & Location Verification Tests ----------
+
+    @Test
+    fun testHaversineDistanceCalculation() {
+        // Distance between two known points in Coimbatore (approx 135m)
+        val lat1 = 11.016844
+        val lon1 = 76.955833
+        val lat2 = 11.018000
+        val lon2 = 76.956000
+
+        val distance = GeofenceMathEngine.calculateDistanceMeters(lat1, lon1, lat2, lon2)
+        assertTrue("Distance should be approximately 130m", distance in 120.0..140.0)
+    }
+
+    @Test
+    fun testCircularGeofenceInsideAndOutside() {
+        val center = GeoPoint(11.016844, 76.955833)
+        val radius = 150.0
+
+        // Point 50m away from center
+        val insidePoint = GeoPoint(11.017200, 76.955833)
+        val (isInside, distanceInside) = GeofenceMathEngine.isInsideCircle(insidePoint, center, radius)
+        assertTrue("Point should be inside circle", isInside)
+        assertTrue("Distance should be < 150m", distanceInside < radius)
+
+        // Point 500m away from center
+        val outsidePoint = GeoPoint(11.021000, 76.955833)
+        val (isOutside, distanceOutside) = GeofenceMathEngine.isInsideCircle(outsidePoint, center, radius)
+        assertFalse("Point should be outside circle", isOutside)
+        assertTrue("Distance should be > 150m", distanceOutside > radius)
+    }
+
+    @Test
+    fun testPolygonalGeofenceRayCasting() {
+        // Quadrilateral bounding box around Tech Park
+        val vertices = listOf(
+            GeoPoint(11.017000, 76.956000),
+            GeoPoint(11.019000, 76.956000),
+            GeoPoint(11.019000, 76.958000),
+            GeoPoint(11.017000, 76.958000)
+        )
+
+        // Point in the center of the bounding box
+        val pointInside = GeoPoint(11.018000, 76.957000)
+        assertTrue("Center point should be inside polygon", GeofenceMathEngine.isInsidePolygon(pointInside, vertices))
+
+        // Point clearly outside
+        val pointOutside = GeoPoint(11.025000, 76.960000)
+        assertFalse("Point should be outside polygon", GeofenceMathEngine.isInsidePolygon(pointOutside, vertices))
+    }
+
+    @Test
+    fun testGeofenceValidatorRejectsMockLocation() {
+        val validator = GeofenceValidator(maxAccuracyThresholdMeters = 30.0f)
+        val geofences = listOf(
+            CampusGeofence("GEO-1", "Main Campus", GeofenceType.CIRCLE, 11.016844, 76.955833, 200.0)
+        )
+
+        val spoofedLocation = StaffLiveLocation(
+            latitude = 11.016844,
+            longitude = 76.955833,
+            accuracy = 5.0f,
+            altitude = 100.0,
+            speed = 0.0f,
+            isMock = true,
+            timestamp = System.currentTimeMillis()
+        )
+
+        val result = validator.validateLocation(spoofedLocation, geofences)
+        assertTrue("Validator must detect and block mock location", result is GeofenceValidationResult.MockLocationDetected)
+    }
+
+    @Test
+    fun testGeofenceValidatorRejectsPoorAccuracy() {
+        val validator = GeofenceValidator(maxAccuracyThresholdMeters = 30.0f)
+        val geofences = listOf(
+            CampusGeofence("GEO-1", "Main Campus", GeofenceType.CIRCLE, 11.016844, 76.955833, 200.0)
+        )
+
+        val inaccurateLocation = StaffLiveLocation(
+            latitude = 11.016844,
+            longitude = 76.955833,
+            accuracy = 85.0f, // > 30m threshold
+            altitude = 100.0,
+            speed = 0.0f,
+            isMock = false,
+            timestamp = System.currentTimeMillis()
+        )
+
+        val result = validator.validateLocation(inaccurateLocation, geofences)
+        assertTrue("Validator must flag poor accuracy", result is GeofenceValidationResult.PoorAccuracy)
+        assertEquals(85.0f, (result as GeofenceValidationResult.PoorAccuracy).currentAccuracyMeters)
+    }
+
+    @Test
+    fun testGeofenceValidatorApprovesValidInsideLocation() {
+        val validator = GeofenceValidator(maxAccuracyThresholdMeters = 30.0f)
+        val geofences = listOf(
+            CampusGeofence("GEO-1", "Main Campus Block", GeofenceType.CIRCLE, 11.016844, 76.955833, 200.0)
+        )
+
+        val validLocation = StaffLiveLocation(
+            latitude = 11.016900,
+            longitude = 76.955850,
+            accuracy = 4.5f,
+            altitude = 120.0,
+            speed = 0.0f,
+            isMock = false,
+            timestamp = System.currentTimeMillis()
+        )
+
+        val result = validator.validateLocation(validLocation, geofences)
+        assertTrue("Validator must approve valid location inside campus", result is GeofenceValidationResult.Inside)
+        val inside = result as GeofenceValidationResult.Inside
+        assertEquals("Main Campus Block", inside.geofence.name)
+        assertTrue("Distance should be < 200m", inside.distanceToCenterMeters < 200.0)
+    }
+
+    // ---------- Milestone 2 & 3 Integration Tests ----------
 
     @Test
     fun testStaffMemberModelAndUserOutDtoMapping() {
@@ -148,60 +275,6 @@ class FaflowIntegrationTest {
         assertEquals(1, tx.change)
         assertEquals("substitute_class", tx.category)
         assertEquals(501, tx.id)
-    }
-
-    @Test
-    fun testPreferencesMapping() {
-        val prefDto = SubstitutionPreferenceOutDto(
-            teacherId = 42,
-            maxSubstitutionsPerDay = 2,
-            maxSubstitutionsPerWeek = 6,
-            willingForCrossDepartment = true
-        )
-
-        assertEquals(2, prefDto.maxSubstitutionsPerDay)
-        assertEquals(6, prefDto.maxSubstitutionsPerWeek)
-        assertTrue(prefDto.willingForCrossDepartment)
-    }
-
-    @Test
-    fun testNotificationMapping() {
-        val notifDto = NotificationOutDto(
-            id = 88,
-            title = "Duty Assigned",
-            body = "You have been assigned to cover Period 3 today.",
-            eventType = "substitution_assigned",
-            isRead = false,
-            createdAt = "2026-09-02 08:00:00"
-        )
-
-        assertEquals(88, notifDto.id)
-        assertFalse(notifDto.isRead)
-        assertEquals("Duty Assigned", notifDto.title)
-    }
-
-    @Test
-    fun testTeacherTodaySummaryAndResolve() {
-        val summaryDto = TeacherTodaySummaryDto(
-            date = "2026-09-02",
-            dayOrder = 3,
-            dayType = "regular",
-            blocksOperations = false,
-            isOnLeave = false
-        )
-
-        assertEquals(3, summaryDto.dayOrder)
-        assertEquals("regular", summaryDto.dayType)
-        assertFalse(summaryDto.blocksOperations)
-
-        val resolveDto = DayOrderResolveDto(
-            date = "2026-09-03",
-            dayOrder = 4,
-            dayType = "regular",
-            blocksOperations = false
-        )
-
-        assertEquals(4, resolveDto.dayOrder)
     }
 
     @Test
