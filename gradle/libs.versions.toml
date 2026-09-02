@@ -54,8 +54,8 @@ androidx-security-crypto = { group = "androidx.security", name = "security-crypt
 # Location (FusedLocationProviderClient)
 play-services-location = { group = "com.google.android.gms", name = "play-services-location", version = "21.3.0" }
 
-# ONNX Runtime (InsightFace Inference)
-onnxruntime-android = { group = "com.microsoft.onnxruntime", name = "onnxruntime-android", version = "1.20.0" }
+# ONNX Runtime (InsightFace Inference with 16 KB Page Alignment)
+onnxruntime-android = { group = "com.microsoft.onnxruntime", name = "onnxruntime-android", version = "1.21.0" }
 
 # WorkManager (Background Attendance Synchronization)
 androidx-work-runtime-ktx = { group = "androidx.work", name = "work-runtime-ktx", version = "2.10.0" }
