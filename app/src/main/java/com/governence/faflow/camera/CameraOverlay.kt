@@ -20,6 +20,7 @@ import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.ZoomIn
+import androidx.compose.material.icons.filled.ZoomOut
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -58,13 +59,14 @@ fun CameraOverlay(
     ) {
         // Oval Framing Guide
         val borderColor = when (faceDetectionState) {
-            is FaceDetectionUiState.FaceDetected -> StatusSuccess
+            is FaceDetectionUiState.FacePositionValid -> StatusSuccess
+            is FaceDetectionUiState.FaceDetected -> SecondaryTeal
             is FaceDetectionUiState.MultipleFaces -> StatusError
-            is FaceDetectionUiState.FaceTooSmall -> StatusWarning
-            is FaceDetectionUiState.LowConfidence -> StatusWarning
+            is FaceDetectionUiState.FaceTooSmall, is FaceDetectionUiState.FaceTooLarge -> StatusWarning
+            is FaceDetectionUiState.FacePartiallyOutOfFrame, is FaceDetectionUiState.FaceOutsideGuide -> StatusWarning
             else -> when (cameraState) {
-                is CameraState.Ready, is CameraState.Processing -> SecondaryTeal
-                is CameraState.Initializing -> Color.White.copy(alpha = 0.5f)
+                is CameraState.Ready, is CameraState.Processing -> Color.White.copy(alpha = 0.6f)
+                is CameraState.Initializing -> Color.White.copy(alpha = 0.4f)
                 else -> StatusError
             }
         }
@@ -88,35 +90,40 @@ fun CameraOverlay(
         }
 
         // Developer Debug Overlay (Landmarks & Bounding Box)
-        if (showDebugOverlay && faceDetectionState is FaceDetectionUiState.FaceDetected) {
-            val face = faceDetectionState.primaryFace
-            Canvas(modifier = Modifier.fillMaxSize()) {
-                val scaleX = size.width / 640f
-                val scaleY = size.height / 480f
+        if (showDebugOverlay) {
+            val face = when (faceDetectionState) {
+                is FaceDetectionUiState.FacePositionValid -> faceDetectionState.primaryFace
+                is FaceDetectionUiState.FaceDetected -> faceDetectionState.primaryFace
+                else -> null
+            }
 
-                // Mirrored front-camera box
-                val left = (640f - face.boundingBox.right) * scaleX
-                val top = face.boundingBox.top * scaleY
-                val width = face.boundingBox.width * scaleX
-                val height = face.boundingBox.height * scaleY
+            if (face != null) {
+                Canvas(modifier = Modifier.fillMaxSize()) {
+                    val scaleX = size.width / 640f
+                    val scaleY = size.height / 480f
 
-                drawRect(
-                    color = Color.Green,
-                    topLeft = Offset(left, top),
-                    size = Size(width, height),
-                    style = Stroke(width = 2.dp.toPx())
-                )
+                    // Mirrored front-camera box
+                    val left = (640f - face.boundingBox.right) * scaleX
+                    val top = face.boundingBox.top * scaleY
+                    val width = face.boundingBox.width * scaleX
+                    val height = face.boundingBox.height * scaleY
 
-                face.landmarks?.toPointList()?.forEach { pt ->
-                    val lx = (640f - pt.x) * scaleX
-                    val ly = pt.y * scaleY
-                    drawCircle(color = Color.Yellow, radius = 4.dp.toPx(), center = Offset(lx, ly))
+                    drawRect(
+                        color = Color.Green,
+                        topLeft = Offset(left, top),
+                        size = Size(width, height),
+                        style = Stroke(width = 2.dp.toPx())
+                    )
+
+                    face.landmarks?.toPointList()?.forEach { pt ->
+                        val lx = (640f - pt.x) * scaleX
+                        val ly = pt.y * scaleY
+                        drawCircle(color = Color.Yellow, radius = 4.dp.toPx(), center = Offset(lx, ly))
+                    }
                 }
             }
-        }
 
-        // Top Developer Diagnostics Banner
-        if (showDebugOverlay) {
+            // Top Developer Diagnostics Banner
             Box(
                 modifier = Modifier
                     .align(Alignment.TopCenter)
@@ -144,12 +151,25 @@ fun CameraOverlay(
         ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 when (faceDetectionState) {
-                    is FaceDetectionUiState.FaceDetected -> {
+                    is FaceDetectionUiState.FacePositionValid -> {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(imageVector = Icons.Default.CheckCircle, contentDescription = null, tint = StatusSuccess, modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                text = "Face Detected • Keep still for capture",
+                                text = "Face position valid",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color.White,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                    }
+
+                    is FaceDetectionUiState.FaceDetected -> {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(imageVector = Icons.Default.CheckCircle, contentDescription = null, tint = SecondaryTeal, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Face detected — position yourself inside the guide",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = Color.White,
                                 fontWeight = FontWeight.SemiBold
@@ -162,7 +182,7 @@ fun CameraOverlay(
                             Icon(imageVector = Icons.Default.Group, contentDescription = null, tint = StatusError, modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                text = "Multiple Faces (${faceDetectionState.count}) • Only one person allowed",
+                                text = "Multiple faces detected — only one staff member should be visible",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = Color.White,
                                 fontWeight = FontWeight.SemiBold
@@ -175,7 +195,7 @@ fun CameraOverlay(
                             Icon(imageVector = Icons.Default.ZoomIn, contentDescription = null, tint = StatusWarning, modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                text = "Move closer to the camera",
+                                text = "Move closer",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = Color.White,
                                 fontWeight = FontWeight.SemiBold
@@ -183,12 +203,25 @@ fun CameraOverlay(
                         }
                     }
 
-                    is FaceDetectionUiState.LowConfidence -> {
+                    is FaceDetectionUiState.FaceTooLarge -> {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(imageVector = Icons.Default.ZoomOut, contentDescription = null, tint = StatusWarning, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Move farther away",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color.White,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                    }
+
+                    is FaceDetectionUiState.FacePartiallyOutOfFrame, is FaceDetectionUiState.FaceOutsideGuide -> {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(imageVector = Icons.Default.Warning, contentDescription = null, tint = StatusWarning, modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                text = "Low detection confidence • Improve lighting",
+                                text = "Center your face",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = Color.White,
                                 fontWeight = FontWeight.SemiBold
@@ -196,7 +229,20 @@ fun CameraOverlay(
                         }
                     }
 
-                    else -> {
+                    is FaceDetectionUiState.DetectionError -> {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(imageVector = Icons.Default.Warning, contentDescription = null, tint = StatusError, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = faceDetectionState.message,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color.White,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                    }
+
+                    FaceDetectionUiState.NoFace -> {
                         when (cameraState) {
                             is CameraState.Initializing -> {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -209,7 +255,7 @@ fun CameraOverlay(
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Icon(imageVector = Icons.Default.CameraAlt, contentDescription = null, tint = SecondaryTeal, modifier = Modifier.size(16.dp))
                                     Spacer(modifier = Modifier.width(8.dp))
-                                    Text("Position your face inside the guide", style = MaterialTheme.typography.bodySmall, color = Color.White, fontWeight = FontWeight.SemiBold)
+                                    Text("No face detected", style = MaterialTheme.typography.bodySmall, color = Color.White, fontWeight = FontWeight.SemiBold)
                                 }
                             }
                             is CameraState.Unavailable -> {

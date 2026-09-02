@@ -19,15 +19,18 @@ import java.util.Date
 import java.util.Locale
 
 /**
- * Real-time face detection UI states for the camera positioning overlay.
+ * Real-time face detection & positioning quality UI states for staff attendance.
  */
 sealed interface FaceDetectionUiState {
     data object NoFace : FaceDetectionUiState
     data class FaceDetected(val count: Int, val primaryFace: FaceDetectionResult) : FaceDetectionUiState
     data class MultipleFaces(val count: Int) : FaceDetectionUiState
     data object FaceTooSmall : FaceDetectionUiState
-    data object FaceOutOfFrame : FaceDetectionUiState
-    data object LowConfidence : FaceDetectionUiState
+    data object FaceTooLarge : FaceDetectionUiState
+    data object FacePartiallyOutOfFrame : FaceDetectionUiState
+    data object FaceOutsideGuide : FaceDetectionUiState
+    data class FacePositionValid(val primaryFace: FaceDetectionResult) : FaceDetectionUiState
+    data class DetectionError(val message: String) : FaceDetectionUiState
 }
 
 data class AttendanceUiState(
@@ -59,16 +62,27 @@ class AttendanceViewModel(
     val geofences: StateFlow<List<CampusGeofence>> = geofenceRepository.geofences
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    fun updateDetections(detections: List<FaceDetectionResult>) {
+    /**
+     * Evaluates detected faces against the positioning guide oval and quality standards.
+     */
+    fun updateDetections(detections: List<FaceDetectionResult>, frameWidth: Int = 640, frameHeight: Int = 480) {
         _faceDetectionState.value = when {
             detections.isEmpty() -> FaceDetectionUiState.NoFace
             detections.size > 1 -> FaceDetectionUiState.MultipleFaces(detections.size)
             else -> {
-                val primary = detections.first()
+                val face = detections.first()
+                val box = face.boundingBox
+
+                val isOutOfBounds = box.left < 10f || box.top < 10f || box.right > (frameWidth - 10f) || box.bottom > (frameHeight - 10f)
+                val faceWidthRatio = box.width / frameWidth.toFloat()
+
                 when {
-                    primary.confidence < 0.50f -> FaceDetectionUiState.LowConfidence
-                    !primary.quality.isAdequatelySized -> FaceDetectionUiState.FaceTooSmall
-                    else -> FaceDetectionUiState.FaceDetected(count = 1, primaryFace = primary)
+                    face.confidence < 0.50f -> FaceDetectionUiState.NoFace
+                    isOutOfBounds -> FaceDetectionUiState.FacePartiallyOutOfFrame
+                    faceWidthRatio < 0.20f -> FaceDetectionUiState.FaceTooSmall
+                    faceWidthRatio > 0.85f -> FaceDetectionUiState.FaceTooLarge
+                    !face.quality.isFrontal -> FaceDetectionUiState.FaceDetected(count = 1, primaryFace = face)
+                    else -> FaceDetectionUiState.FacePositionValid(primaryFace = face)
                 }
             }
         }
@@ -89,8 +103,8 @@ class AttendanceViewModel(
         }
     }
 
-    fun isFaceVerifiedForAttendance(): Boolean {
-        return faceDetectionState.value is FaceDetectionUiState.FaceDetected
+    fun isFacePositionValid(): Boolean {
+        return faceDetectionState.value is FaceDetectionUiState.FacePositionValid
     }
 
     fun performCheckIn(onSuccess: () -> Unit) {

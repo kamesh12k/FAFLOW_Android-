@@ -1,5 +1,6 @@
 package com.governence.faflow
 
+import android.graphics.Bitmap
 import android.graphics.ImageFormat
 import com.governence.faflow.camera.CameraFrame
 import com.governence.faflow.camera.CameraFrameProcessor
@@ -196,6 +197,20 @@ class FaflowIntegrationTest {
         val error: ModelState = ModelState.Error("Asset missing")
         assertTrue(error is ModelState.Error)
         assertEquals("Asset missing", (error as ModelState.Error).message)
+    }
+
+    @Test
+    fun testCoordinateTransformationAndPreviewMirroring() {
+        val frameWidth = 640f
+        val faceBox = FaceBox(left = 100f, top = 50f, right = 300f, bottom = 350f)
+
+        // In mirrored selfie preview: left becomes (frameWidth - right)
+        val mirroredLeft = frameWidth - faceBox.right
+        val mirroredRight = frameWidth - faceBox.left
+
+        assertEquals(340f, mirroredLeft, 0.01f)
+        assertEquals(540f, mirroredRight, 0.01f)
+        assertEquals(faceBox.width, mirroredRight - mirroredLeft, 0.01f)
     }
 
     // ---------- Milestone 5: CameraX Pipeline & Frame Processing Tests ----------

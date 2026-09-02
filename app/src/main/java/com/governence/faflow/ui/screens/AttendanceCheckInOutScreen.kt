@@ -19,6 +19,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CameraAlt
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Fingerprint
 import androidx.compose.material.icons.filled.GpsFixed
 import androidx.compose.material.icons.filled.GpsNotFixed
@@ -108,7 +109,7 @@ fun AttendanceCheckInOutScreen(
     }
     val cameraState by cameraController.cameraState.collectAsState()
 
-    val isReadyForAttendance = isLocationVerified && hasCameraPermission && faceDetectionState is FaceDetectionUiState.FaceDetected
+    val isPositionValid = isLocationVerified && hasCameraPermission && faceDetectionState is FaceDetectionUiState.FacePositionValid
 
     Scaffold(
         topBar = {
@@ -262,19 +263,36 @@ fun AttendanceCheckInOutScreen(
 
             Spacer(modifier = Modifier.height(14.dp))
 
-            // Action Button
-            if (isReadyForAttendance) {
-                PrimaryGradientButton(
-                    text = if (uiState.isCheckingIn) "Confirm Shift Check-In" else "Confirm Shift Check-Out",
-                    icon = Icons.Default.Fingerprint,
-                    onClick = {
-                        if (uiState.isCheckingIn) {
-                            viewModel.performCheckIn(onAttendanceSuccess)
-                        } else {
-                            viewModel.performCheckOut(onAttendanceSuccess)
+            // Action Status Card (Detection-only milestone: Preparation state, not submitting attendance)
+            if (isPositionValid) {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = StatusSuccess.copy(alpha = 0.15f))
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(imageVector = Icons.Default.CheckCircle, contentDescription = null, tint = StatusSuccess, modifier = Modifier.size(24.dp))
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column {
+                            Text(
+                                text = "Face Position Valid",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = StatusSuccess
+                            )
+                            Text(
+                                text = "SCRFD Detection Verified • Ready for Facial Alignment (M7)",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                         }
                     }
-                )
+                }
             } else {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
@@ -284,9 +302,12 @@ fun AttendanceCheckInOutScreen(
                     val promptText = when {
                         !isLocationVerified -> "Shift attendance is gated by campus geofencing. Please verify location first."
                         !hasCameraPermission -> "Grant camera permission to complete facial attendance capture."
-                        faceDetectionState is FaceDetectionUiState.MultipleFaces -> "Multiple faces detected. Only the authenticated staff member must be in frame."
-                        faceDetectionState is FaceDetectionUiState.FaceTooSmall -> "Please move closer to the camera."
-                        else -> "Align your face within the guide oval to register attendance."
+                        faceDetectionState is FaceDetectionUiState.MultipleFaces -> "Multiple faces detected — only one staff member should be visible."
+                        faceDetectionState is FaceDetectionUiState.FaceTooSmall -> "Move closer to the camera."
+                        faceDetectionState is FaceDetectionUiState.FaceTooLarge -> "Move farther away from the camera."
+                        faceDetectionState is FaceDetectionUiState.FacePartiallyOutOfFrame -> "Center your face within the camera guide."
+                        faceDetectionState is FaceDetectionUiState.FaceDetected -> "Face detected — position yourself inside the guide."
+                        else -> "No face detected. Align your face within the guide oval."
                     }
                     Text(
                         text = promptText,
