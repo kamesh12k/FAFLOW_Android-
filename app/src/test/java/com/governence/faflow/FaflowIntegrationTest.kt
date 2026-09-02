@@ -322,6 +322,39 @@ class FaflowIntegrationTest {
         assertFalse(GeofenceMathEngine.isInsidePolygon(outsidePoint, squareVertices))
     }
 
+    // ---------- Milestone 14: Production Rollout & Deployment Readiness Tests ----------
+
+    @Test
+    fun testProductionDeploymentSettingsParity() {
+        // Verify default institutional geofence creation
+        val campusZone = CampusGeofence(
+            id = "main-campus-1",
+            name = "Institutional Main Campus",
+            type = GeofenceType.CIRCLE,
+            centerLatitude = 11.016844,
+            centerLongitude = 76.955833,
+            radiusMeters = 200.0,
+            toleranceMeters = 15.0,
+            isActive = true
+        )
+
+        assertEquals("main-campus-1", campusZone.id)
+        assertTrue(campusZone.isActive)
+        assertEquals(200.0, campusZone.radiusMeters, 0.001)
+
+        // Evaluate inside point
+        val staffPoint = GeoPoint(11.0169, 76.9559)
+        val (isInside, isBoundary, distance) = GeofenceMathEngine.evaluateCircle(
+            point = staffPoint,
+            center = GeoPoint(campusZone.centerLatitude, campusZone.centerLongitude),
+            radiusMeters = campusZone.radiusMeters,
+            toleranceMeters = campusZone.toleranceMeters
+        )
+
+        assertTrue(isInside)
+        assertTrue(distance < 200.0)
+    }
+
     // ---------- Milestone 9: Backend Attendance Integration & Offline Sync Tests ----------
 
     @Test
