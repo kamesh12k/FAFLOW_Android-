@@ -2,6 +2,7 @@ package com.governence.faflow.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -10,15 +11,23 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CameraAlt
+import androidx.compose.material.icons.automirrored.filled.EventNote
+import androidx.compose.material.icons.filled.AccountBalanceWallet
+import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Face
-import androidx.compose.material.icons.filled.Group
-import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.EventNote
+import androidx.compose.material.icons.filled.Fingerprint
+import androidx.compose.material.icons.filled.LocationOn
+import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -30,6 +39,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -45,29 +55,36 @@ import com.governence.faflow.ui.theme.StatusWarning
 
 @Composable
 fun DashboardScreen(
-    onNavigateToStartAttendance: () -> Unit,
-    onNavigateToPersonList: () -> Unit,
+    onNavigateToCheckIn: () -> Unit,
+    onNavigateToTimetable: () -> Unit,
+    onNavigateToApplyLeave: () -> Unit,
+    onNavigateToLeaveHistory: () -> Unit,
+    onNavigateToCredits: () -> Unit,
+    onNavigateToSubstitution: () -> Unit,
     onNavigateToAttendanceHistory: () -> Unit,
+    onNavigateToFaceEnrollment: () -> Unit,
+    onNavigateToNotifications: () -> Unit,
+    onNavigateToProfile: () -> Unit,
     onNavigateToSettings: () -> Unit,
     onNavigateToSyncStatus: () -> Unit
 ) {
     Scaffold(
         topBar = {
             AppTopBar(
-                title = "Facial Attendance",
+                title = "FAFLOW Staff",
                 canNavigateBack = false,
                 actions = {
-                    IconButton(onClick = onNavigateToSyncStatus) {
+                    IconButton(onClick = onNavigateToNotifications) {
                         Icon(
-                            imageVector = Icons.Default.Sync,
-                            contentDescription = "Sync",
+                            imageVector = Icons.Default.Notifications,
+                            contentDescription = "Notifications",
                             tint = MaterialTheme.colorScheme.onBackground
                         )
                     }
-                    IconButton(onClick = onNavigateToSettings) {
+                    IconButton(onClick = onNavigateToProfile) {
                         Icon(
-                            imageVector = Icons.Default.Settings,
-                            contentDescription = "Settings",
+                            imageVector = Icons.Default.Person,
+                            contentDescription = "Profile",
                             tint = MaterialTheme.colorScheme.onBackground
                         )
                     }
@@ -83,6 +100,58 @@ fun DashboardScreen(
             contentPadding = PaddingValues(20.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+            // Staff Info & Day Order Banner
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(24.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surface
+                    ),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(20.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column {
+                                Text(
+                                    text = "Dr. Kamesh V",
+                                    style = MaterialTheme.typography.titleLarge,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Text(
+                                    text = "Associate Professor • Computer Science",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(PrimaryBlue.copy(alpha = 0.15f))
+                                    .padding(horizontal = 12.dp, vertical = 6.dp)
+                            ) {
+                                Text(
+                                    text = "DAY ORDER 3",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    color = PrimaryBlue
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Palgeo Geofenced Facial Attendance Card
             item {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
@@ -96,38 +165,57 @@ fun DashboardScreen(
                             .fillMaxWidth()
                             .padding(20.dp)
                     ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(8.dp)
+                                    .clip(CircleShape)
+                                    .background(StatusSuccess)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "Inside Campus: Main Academic Block (150m)",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = StatusSuccess,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
                         Text(
-                            text = "READY FOR ATTENDANCE",
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = "Launch Live Facial Attendance",
-                            style = MaterialTheme.typography.titleLarge,
+                            text = "Staff Shift Attendance",
+                            style = MaterialTheme.typography.headlineSmall,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface
                         )
+
                         Spacer(modifier = Modifier.height(4.dp))
+
                         Text(
-                            text = "Scan students with multi-face detection, ArcFace embedding extraction, and real-time anti-spoofing.",
+                            text = "Quick 1-touch facial verification with campus geofencing & anti-spoofing.",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
+
                         Spacer(modifier = Modifier.height(16.dp))
+
                         PrimaryGradientButton(
-                            text = "Start Session",
-                            icon = Icons.Default.CameraAlt,
-                            onClick = onNavigateToStartAttendance
+                            text = "Check In (Face + Geofence)",
+                            icon = Icons.Default.Fingerprint,
+                            onClick = onNavigateToCheckIn
                         )
                     }
                 }
             }
 
+            // Quick Academic Actions Grid / List
             item {
                 Text(
-                    text = "System Overview",
+                    text = "Academic & Workload Modules",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onBackground
@@ -136,37 +224,61 @@ fun DashboardScreen(
 
             item {
                 StatCard(
-                    title = "Enrolled Persons",
-                    value = "48 / 50",
-                    subtitle = "96% Biometric enrollment rate",
-                    icon = Icons.Default.Group,
+                    title = "Daily Timetable",
+                    value = "4 Teaching Periods",
+                    subtitle = "Day Order 3 • Periods 1, 3, 4, 5",
+                    icon = Icons.Default.CalendarMonth,
                     iconTint = PrimaryBlue,
                     iconBackground = CardHighlight,
-                    onClick = onNavigateToPersonList
+                    onClick = onNavigateToTimetable
                 )
             }
 
             item {
                 StatCard(
-                    title = "Attendance Today",
-                    value = "142",
-                    subtitle = "Across 4 active sessions",
-                    icon = Icons.Default.CheckCircle,
+                    title = "Faculty Leave Management",
+                    value = "Apply / History",
+                    subtitle = "Emergency leave detection & self-substitution",
+                    icon = Icons.AutoMirrored.Filled.EventNote,
+                    iconTint = StatusWarning,
+                    iconBackground = Color(0x1AF59E0B),
+                    onClick = onNavigateToApplyLeave
+                )
+            }
+
+            item {
+                StatCard(
+                    title = "Workload Credit Balance",
+                    value = "+6 Credits",
+                    subtitle = "+1 for substitute duties / -1 for covered leaves",
+                    icon = Icons.Default.AccountBalanceWallet,
                     iconTint = StatusSuccess,
                     iconBackground = Color(0x1A10B981),
-                    onClick = onNavigateToAttendanceHistory
+                    onClick = onNavigateToCredits
                 )
             }
 
             item {
                 StatCard(
-                    title = "Sync & Connectivity",
-                    value = "Online",
-                    subtitle = "0 pending offline sync records",
-                    icon = Icons.Default.Sync,
+                    title = "Substitution Allocation",
+                    value = "1 Duty Assigned",
+                    subtitle = "Period 4 • Covering for Prof. Raman",
+                    icon = Icons.Default.SwapHoriz,
+                    iconTint = SecondaryTeal,
+                    iconBackground = Color(0x1A06B6D4),
+                    onClick = onNavigateToSubstitution
+                )
+            }
+
+            item {
+                StatCard(
+                    title = "Monthly Attendance Ledger",
+                    value = "22 / 22 Days",
+                    subtitle = "100% On-Time Record this month",
+                    icon = Icons.Default.CheckCircle,
                     iconTint = StatusInfo,
                     iconBackground = Color(0x1A3B82F6),
-                    onClick = onNavigateToSyncStatus
+                    onClick = onNavigateToAttendanceHistory
                 )
             }
         }

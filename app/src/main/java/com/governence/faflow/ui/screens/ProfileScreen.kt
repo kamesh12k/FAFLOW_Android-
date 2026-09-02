@@ -1,7 +1,6 @@
 package com.governence.faflow.ui.screens
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -14,7 +13,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Face
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -25,23 +25,24 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.governence.faflow.ui.components.AppTopBar
 import com.governence.faflow.ui.components.PrimaryGradientButton
-import com.governence.faflow.ui.theme.StatusSuccess
+import com.governence.faflow.ui.components.ResultRow
 
 @Composable
-fun AttendanceResultScreen(
-    sessionId: String,
-    onNavigateToDashboard: () -> Unit
+fun ProfileScreen(
+    onNavigateBack: () -> Unit,
+    onNavigateToFaceEnrollment: () -> Unit,
+    onLogout: () -> Unit
 ) {
     Scaffold(
         topBar = {
             AppTopBar(
-                title = "Session Summary",
-                canNavigateBack = false
+                title = "Faculty Profile",
+                canNavigateBack = true,
+                onNavigateBack = onNavigateBack
             )
         },
         containerColor = MaterialTheme.colorScheme.background
@@ -50,81 +51,71 @@ fun AttendanceResultScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
-                .padding(24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
+                .padding(20.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Box(
                 modifier = Modifier
-                    .size(96.dp)
+                    .size(80.dp)
                     .clip(CircleShape)
-                    .background(Color(0x1A10B981)),
+                    .background(MaterialTheme.colorScheme.primaryContainer),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
-                    imageVector = Icons.Default.CheckCircle,
+                    imageVector = Icons.Default.Person,
                     contentDescription = null,
-                    tint = StatusSuccess,
-                    modifier = Modifier.size(56.dp)
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(48.dp)
                 )
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(16.dp))
 
             Text(
-                text = "Attendance Completed",
-                style = MaterialTheme.typography.headlineSmall,
+                text = "Dr. Kamesh V",
+                style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onBackground
             )
 
-            Spacer(modifier = Modifier.height(8.dp))
-
             Text(
-                text = "Session $sessionId successfully finalized and stored in Room database.",
+                text = "kamesh@institution.edu",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
 
-            Spacer(modifier = Modifier.height(32.dp))
+            Spacer(modifier = Modifier.height(24.dp))
 
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surface
-                )
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
             ) {
-                Column(modifier = Modifier.padding(20.dp)) {
-                    ResultRow("Total Present", "42 Students")
+                Column(modifier = Modifier.padding(16.dp)) {
+                    ResultRow("Department", "Computer Science")
                     Spacer(modifier = Modifier.height(8.dp))
-                    ResultRow("Absent", "3 Students")
+                    ResultRow("Role", "Teacher / Faculty")
                     Spacer(modifier = Modifier.height(8.dp))
-                    ResultRow("Avg Similarity Score", "98.2%")
+                    ResultRow("Biometric Face Profile", "Enrolled (512-dim ArcFace)")
                     Spacer(modifier = Modifier.height(8.dp))
-                    ResultRow("Liveness Rejections", "0 Detected")
-                    Spacer(modifier = Modifier.height(8.dp))
-                    ResultRow("Sync Status", "Queued for Sync")
+                    ResultRow("Workload Credit Balance", "+6 Credits")
                 }
             }
 
-            Spacer(modifier = Modifier.height(40.dp))
+            Spacer(modifier = Modifier.height(24.dp))
 
             PrimaryGradientButton(
-                text = "Done & Back to Dashboard",
-                onClick = onNavigateToDashboard
+                text = "Update Face Biometrics",
+                icon = Icons.Default.Face,
+                onClick = onNavigateToFaceEnrollment
+            )
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            PrimaryGradientButton(
+                text = "Sign Out",
+                onClick = onLogout
             )
         }
-    }
-}
-
-@Composable
-fun ResultRow(label: String, value: String) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween
-    ) {
-        Text(text = label, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text(text = value, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
     }
 }

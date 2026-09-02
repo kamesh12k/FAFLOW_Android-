@@ -26,28 +26,27 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.governence.faflow.domain.model.AttendanceStatus
-import com.governence.faflow.domain.model.StaffAttendanceRecord
+import com.governence.faflow.domain.model.LeaveRequest
+import com.governence.faflow.domain.model.LeaveStatus
 import com.governence.faflow.ui.components.AppTopBar
 import com.governence.faflow.ui.theme.StatusError
 import com.governence.faflow.ui.theme.StatusSuccess
 import com.governence.faflow.ui.theme.StatusWarning
 
 @Composable
-fun AttendanceHistoryScreen(
+fun LeaveHistoryScreen(
     onNavigateBack: () -> Unit
 ) {
-    val sampleRecords = listOf(
-        StaffAttendanceRecord("REC-1", 42, "2026-09-02", "08:28 AM", "04:32 PM", AttendanceStatus.PRESENT, 11.0171, 76.9560, "Main Academic Zone", 0.984f, 0.991f),
-        StaffAttendanceRecord("REC-2", 42, "2026-09-01", "08:30 AM", "04:30 PM", AttendanceStatus.PRESENT, 11.0170, 76.9559, "Main Academic Zone", 0.978f, 0.989f),
-        StaffAttendanceRecord("REC-3", 42, "2026-08-31", "08:42 AM", "04:35 PM", AttendanceStatus.LATE, 11.0172, 76.9561, "Main Academic Zone", 0.981f, 0.995f),
-        StaffAttendanceRecord("REC-4", 42, "2026-08-28", null, null, AttendanceStatus.ON_LEAVE, null, null, null, 0f, 0f)
+    val sampleLeaves = listOf(
+        LeaveRequest(1, 42, "2026-08-28", 2, 3, "Medical Checkup", LeaveStatus.APPROVED, false, "Prof. Priya Raman"),
+        LeaveRequest(2, 42, "2026-08-15", 5, 1, "University Symposium", LeaveStatus.APPROVED, false, "Prof. Arun Kumar"),
+        LeaveRequest(3, 42, "2026-09-05", 1, 4, "Personal Leave", LeaveStatus.PENDING, false, null)
     )
 
     Scaffold(
         topBar = {
             AppTopBar(
-                title = "Monthly Attendance Ledger",
+                title = "Leave Request History",
                 canNavigateBack = true,
                 onNavigateBack = onNavigateBack
             )
@@ -59,47 +58,53 @@ fun AttendanceHistoryScreen(
                 .fillMaxSize()
                 .padding(innerPadding),
             contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            items(sampleRecords) { record ->
+            items(sampleLeaves) { leave ->
                 Card(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(14.dp),
+                    shape = RoundedCornerShape(16.dp),
                     colors = CardDefaults.cardColors(
                         containerColor = MaterialTheme.colorScheme.surface
-                    )
+                    ),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
                 ) {
-                    Row(
+                    Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(16.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                            .padding(16.dp)
                     ) {
-                        Column {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
                             Text(
-                                text = record.date,
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.SemiBold,
+                                text = "${leave.date} • Period ${leave.periodNumber} (Day Order ${leave.dayOrder})",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onSurface
                             )
-                            Spacer(modifier = Modifier.height(2.dp))
-                            if (record.status == AttendanceStatus.ON_LEAVE) {
-                                Text(
-                                    text = "Approved Faculty Leave",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.primary
-                                )
-                            } else {
-                                Text(
-                                    text = "In: ${record.checkInTime ?: "--"} • Out: ${record.checkOutTime ?: "--"}",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
+                            StatusBadge(status = leave.status)
                         }
 
-                        StaffStatusBadge(status = record.status)
+                        Spacer(modifier = Modifier.height(6.dp))
+
+                        Text(
+                            text = "Reason: ${leave.reason}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+
+                        if (leave.substituteTeacherName != null) {
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                text = "Covered By: ${leave.substituteTeacherName}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
                     }
                 }
             }
@@ -108,13 +113,12 @@ fun AttendanceHistoryScreen(
 }
 
 @Composable
-fun StaffStatusBadge(status: AttendanceStatus) {
+fun StatusBadge(status: LeaveStatus) {
     val (bgColor, textColor, label) = when (status) {
-        AttendanceStatus.PRESENT -> Triple(Color(0x1A10B981), StatusSuccess, "PRESENT")
-        AttendanceStatus.LATE -> Triple(Color(0x1AF59E0B), StatusWarning, "LATE")
-        AttendanceStatus.HALF_DAY -> Triple(Color(0x1AF59E0B), StatusWarning, "HALF DAY")
-        AttendanceStatus.ON_LEAVE -> Triple(Color(0x1A3B82F6), MaterialTheme.colorScheme.primary, "ON LEAVE")
-        AttendanceStatus.ABSENT -> Triple(Color(0x1AEF4444), StatusError, "ABSENT")
+        LeaveStatus.APPROVED -> Triple(Color(0x1A10B981), StatusSuccess, "APPROVED")
+        LeaveStatus.PENDING -> Triple(Color(0x1AF59E0B), StatusWarning, "PENDING")
+        LeaveStatus.REJECTED -> Triple(Color(0x1AEF4444), StatusError, "REJECTED")
+        LeaveStatus.CANCELLED -> Triple(Color.Gray.copy(alpha = 0.15f), Color.Gray, "CANCELLED")
     }
 
     Box(

@@ -12,12 +12,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CameraAlt
-import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Face
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -41,25 +39,22 @@ import androidx.compose.ui.unit.dp
 import com.governence.faflow.ui.components.AppTopBar
 import com.governence.faflow.ui.components.PrimaryGradientButton
 import com.governence.faflow.ui.theme.DarkSurfaceVariant
-import com.governence.faflow.ui.theme.PrimaryBlue
 import com.governence.faflow.ui.theme.SecondaryTeal
 import com.governence.faflow.ui.theme.StatusSuccess
 
 @Composable
 fun FaceEnrollmentScreen(
-    personId: String,
-    personName: String,
     onNavigateBack: () -> Unit,
-    onEnrollmentComplete: (personId: String, status: String) -> Unit
+    onEnrollmentComplete: () -> Unit
 ) {
     var samplesCaptured by remember { mutableIntStateOf(3) }
     val totalRequiredSamples = 5
-    var currentGuidance by remember { mutableStateOf("Look straight into the camera") }
+    var currentGuidance by remember { mutableStateOf("Position your face inside the frame") }
 
     Scaffold(
         topBar = {
             AppTopBar(
-                title = "Face Enrollment",
+                title = "Staff Face Enrollment",
                 canNavigateBack = true,
                 onNavigateBack = onNavigateBack
             )
@@ -74,10 +69,10 @@ fun FaceEnrollmentScreen(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Text(
-                text = "Enrolling: $personName ($personId)",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onBackground
+                text = "Biometric Setup for Palgeo Facial Attendance",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center
             )
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -148,12 +143,12 @@ fun FaceEnrollmentScreen(
                 ) {
                     Column {
                         Text(
-                            text = "Samples Captured",
+                            text = "InsightFace 512-dim Samples",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Text(
-                            text = "$samplesCaptured of $totalRequiredSamples Samples",
+                            text = "$samplesCaptured of $totalRequiredSamples Samples Captured",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface
@@ -184,7 +179,7 @@ fun FaceEnrollmentScreen(
                     if (samplesCaptured < totalRequiredSamples) {
                         samplesCaptured += 1
                         if (samplesCaptured == totalRequiredSamples) {
-                            onEnrollmentComplete(personId, "SUCCESS")
+                            onEnrollmentComplete()
                         }
                     }
                 }

@@ -1,19 +1,47 @@
 package com.governence.faflow.attendance
 
-import com.governence.faflow.domain.model.AttendanceRecord
-import com.governence.faflow.domain.model.AttendanceSession
+import com.governence.faflow.domain.model.StaffAttendanceRecord
+import com.governence.faflow.location.StaffLocation
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
 
-/**
- * Contract for orchestrating attendance sessions and preventing duplicate marks.
- */
-interface AttendanceManager {
-    val activeSession: StateFlow<AttendanceSession?>
-    val liveVerifiedStudents: StateFlow<List<AttendanceRecord>>
+data class DailyShiftStatus(
+    val hasCheckedIn: Boolean = false,
+    val hasCheckedOut: Boolean = false,
+    val checkInTime: String? = null,
+    val checkOutTime: String? = null,
+    val totalWorkDuration: String? = null,
+    val currentStatus: String = "NOT_CHECKED_IN" // NOT_CHECKED_IN, CHECKED_IN, COMPLETED
+)
 
-    suspend fun startSession(title: String, classId: String, subject: String, operatorName: String): Result<AttendanceSession>
-    suspend fun markAttendance(personId: String, recognitionScore: Float, isLive: Boolean): Result<AttendanceRecord>
-    suspend fun endSession(): Result<AttendanceSession>
-    fun getSessionRecords(sessionId: String): Flow<List<AttendanceRecord>>
+sealed interface AttendanceCheckResult {
+    data class Success(val record: StaffAttendanceRecord, val message: String) : AttendanceCheckResult
+    data class GeofenceFailure(val message: String, val distanceMeters: Float) : AttendanceCheckResult
+    data class FaceMatchFailure(val similarityScore: Float, val threshold: Float) : AttendanceCheckResult
+    data class LivenessFailure(val reason: String) : AttendanceCheckResult
+    data class MockLocationFailure(val message: String) : AttendanceCheckResult
+    data class NetworkQueued(val record: StaffAttendanceRecord) : AttendanceCheckResult
+    data class Error(val message: String) : AttendanceCheckResult
+}
+
+/**
+ * Contract for Palgeo-Style Staff Check-In & Check-Out orchestration.
+ */
+interface StaffAttendanceManager {
+    val shiftStatus: StateFlow<DailyShiftStatus>
+    val recentAttendanceRecords: StateFlow<List<StaffAttendanceRecord>>
+
+    suspend fun performCheckIn(
+        location: StaffLocation,
+        faceEmbedding: FloatArray,
+        livenessScore: Float
+    ): AttendanceCheckResult
+
+    suspend fun performCheckOut(
+        location: StaffLocation,
+        faceEmbedding: FloatArray,
+        livenessScore: Float
+    ): AttendanceCheckResult
+
+    fun getMonthlyAttendanceHistory(): Flow<List<StaffAttendanceRecord>>
 }

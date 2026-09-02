@@ -25,6 +25,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.governence.faflow.ui.components.AppTopBar
 import com.governence.faflow.ui.components.PrimaryGradientButton
+import com.governence.faflow.ui.components.ResultRow
 import com.governence.faflow.ui.theme.StatusSuccess
 
 @Composable
