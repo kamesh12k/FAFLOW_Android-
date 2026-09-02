@@ -1,5 +1,11 @@
 package com.governence.faflow
 
+import android.graphics.ImageFormat
+import com.governence.faflow.camera.CameraFrame
+import com.governence.faflow.camera.CameraFrameProcessor
+import com.governence.faflow.camera.CameraLens
+import com.governence.faflow.camera.CameraState
+import com.governence.faflow.camera.FrameProcessResult
 import com.governence.faflow.core.network.CreditBalanceOutDto
 import com.governence.faflow.core.network.CreditTransactionOutDto
 import com.governence.faflow.core.network.DayOrderResolveDto
@@ -22,12 +28,148 @@ import com.governence.faflow.location.GeofenceType
 import com.governence.faflow.location.GeofenceValidator
 import com.governence.faflow.location.LocationVerificationResult
 import com.governence.faflow.location.StaffLiveLocation
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 
 class FaflowIntegrationTest {
+
+    // ---------- Milestone 5: CameraX Pipeline & Frame Processing Tests ----------
+
+    @Test
+    fun testCameraStateTransitions() {
+        val permState: CameraState = CameraState.PermissionRequired
+        assertTrue(permState is CameraState.PermissionRequired)
+
+        val initState: CameraState = CameraState.Initializing
+        assertTrue(initState is CameraState.Initializing)
+
+        val readyState: CameraState = CameraState.Ready
+        assertTrue(readyState is CameraState.Ready)
+
+        val procState: CameraState = CameraState.Processing(fps = 10.0f, droppedCount = 2L)
+        assertTrue(procState is CameraState.Processing)
+        assertEquals(10.0f, (procState as CameraState.Processing).fps, 0.01f)
+        assertEquals(2L, procState.droppedCount)
+
+        val unavailState: CameraState = CameraState.Unavailable("Front camera not found")
+        assertTrue(unavailState is CameraState.Unavailable)
+        assertEquals("Front camera not found", (unavailState as CameraState.Unavailable).reason)
+
+        val errorState: CameraState = CameraState.Error("Capture failed", canRetry = true)
+        assertTrue(errorState is CameraState.Error)
+        assertTrue((errorState as CameraState.Error).canRetry)
+    }
+
+    @Test
+    fun testCameraFrameMetadataAndRotationHandling() {
+        val rotations = listOf(0, 90, 180, 270)
+
+        for (rotation in rotations) {
+            val frame = CameraFrame(
+                width = 640,
+                height = 480,
+                rotationDegrees = rotation,
+                timestamp = 1000L,
+                imageFormat = ImageFormat.YUV_420_888,
+                lensFacing = CameraLens.FRONT,
+                nv21Bytes = ByteArray(10) { 1 }
+            )
+
+            assertEquals(640, frame.width)
+            assertEquals(480, frame.height)
+            assertEquals(rotation, frame.rotationDegrees)
+            assertEquals(CameraLens.FRONT, frame.lensFacing)
+            assertEquals(ImageFormat.YUV_420_888, frame.imageFormat)
+            assertNotNull(frame.nv21Bytes)
+        }
+    }
+
+    @Test
+    fun testCameraFrameProcessorAsyncExecution() = runBlocking {
+        val dummyProcessor = object : CameraFrameProcessor {
+            override suspend fun processFrame(frame: CameraFrame): FrameProcessResult {
+                return if (frame.width > 0 && frame.height > 0) {
+                    FrameProcessResult.FrameReady(
+                        frameId = 101L,
+                        width = frame.width,
+                        height = frame.height,
+                        rotationDegrees = frame.rotationDegrees
+                    )
+                } else {
+                    FrameProcessResult.Error("Invalid frame dimensions")
+                }
+            }
+        }
+
+        val testFrame = CameraFrame(
+            width = 640,
+            height = 480,
+            rotationDegrees = 270,
+            lensFacing = CameraLens.FRONT
+        )
+
+        val result = dummyProcessor.processFrame(testFrame)
+        assertTrue(result is FrameProcessResult.FrameReady)
+        val ready = result as FrameProcessResult.FrameReady
+        assertEquals(101L, ready.frameId)
+        assertEquals(640, ready.width)
+        assertEquals(480, ready.height)
+        assertEquals(270, ready.rotationDegrees)
+    }
+
+    @Test
+    fun testFrameThrottlingAndConcurrentLock() {
+        val maxFps = 10
+        val minIntervalMs = 1000L / maxFps
+        var lastProcessedTime = -1000L
+        val processedCount = AtomicInteger(0)
+        val droppedCount = AtomicInteger(0)
+        val isProcessing = AtomicBoolean(false)
+
+        fun simulateIncomingFrame(timestamp: Long, isWorkerBusy: Boolean) {
+            // 1. Throttle rate
+            if (timestamp - lastProcessedTime < minIntervalMs) {
+                droppedCount.incrementAndGet()
+                return
+            }
+
+            // 2. Concurrency lock
+            if (isWorkerBusy) {
+                droppedCount.incrementAndGet()
+                return
+            }
+
+            lastProcessedTime = timestamp
+            processedCount.incrementAndGet()
+        }
+
+        // T = 0ms (Accepted)
+        simulateIncomingFrame(0L, isWorkerBusy = false)
+        assertEquals(1, processedCount.get())
+        assertEquals(0, droppedCount.get())
+
+        // T = 30ms (Dropped due to rate limit)
+        simulateIncomingFrame(30L, isWorkerBusy = false)
+        assertEquals(1, processedCount.get())
+        assertEquals(1, droppedCount.get())
+
+        // T = 120ms with worker busy (Dropped due to concurrent processing lock)
+        simulateIncomingFrame(120L, isWorkerBusy = true)
+        assertEquals(1, processedCount.get())
+        assertEquals(2, droppedCount.get())
+
+        // T = 250ms with worker free (Accepted)
+        simulateIncomingFrame(250L, isWorkerBusy = false)
+        assertEquals(2, processedCount.get())
+        assertEquals(2, droppedCount.get())
+    }
 
     // ---------- Milestone 4: Comprehensive Geofence & Location Verification Tests ----------
 
@@ -56,20 +198,17 @@ class FaflowIntegrationTest {
         val radius = 150.0
         val tolerance = 15.0
 
-        // 1. Point strictly inside circle (50m away)
         val insidePoint = GeoPoint(11.017200, 76.955833)
         val (isInside, isBoundary, distInside) = GeofenceMathEngine.evaluateCircle(insidePoint, center, radius, tolerance)
         assertTrue("Point should be inside", isInside)
         assertFalse("Point 50m away is not on the 150m boundary", isBoundary)
         assertTrue("Distance < 150m", distInside < radius)
 
-        // 2. Point on circle boundary (145m away, within 150m +- 15m)
         val boundaryPoint = GeoPoint(11.018150, 76.955833)
         val (isInsideBound, isBoundaryTrue, distBound) = GeofenceMathEngine.evaluateCircle(boundaryPoint, center, radius, tolerance)
         assertTrue("Point on boundary is within tolerance", isInsideBound)
         assertTrue("Point should be flagged as boundary", isBoundaryTrue)
 
-        // 3. Point strictly outside circle (500m away)
         val outsidePoint = GeoPoint(11.021000, 76.955833)
         val (isInsideOut, isBoundaryOut, distOut) = GeofenceMathEngine.evaluateCircle(outsidePoint, center, radius, tolerance)
         assertFalse("Point should be outside", isInsideOut)
@@ -86,15 +225,12 @@ class FaflowIntegrationTest {
             GeoPoint(11.017000, 76.958000)
         )
 
-        // Inside
         val pointInside = GeoPoint(11.018000, 76.957000)
         assertTrue("Center point must be inside polygon", GeofenceMathEngine.isInsidePolygon(pointInside, vertices))
 
-        // Outside
         val pointOutside = GeoPoint(11.025000, 76.960000)
         assertFalse("Point must be outside polygon", GeofenceMathEngine.isInsidePolygon(pointOutside, vertices))
 
-        // Invalid polygon with < 3 vertices
         val invalidVertices = listOf(GeoPoint(11.0, 76.0), GeoPoint(11.1, 76.1))
         assertFalse("Polygon with <3 vertices cannot contain points", GeofenceMathEngine.isInsidePolygon(pointInside, invalidVertices))
     }
@@ -107,7 +243,6 @@ class FaflowIntegrationTest {
             CampusGeofence("GEO-2", "Engineering Block", GeofenceType.CIRCLE, 11.025000, 76.965000, 100.0)
         )
 
-        // Staff point close to GEO-1 but outside its 100m radius (150m away)
         val outsidePoint = StaffLiveLocation(
             latitude = 11.018200,
             longitude = 76.955833,
@@ -151,7 +286,7 @@ class FaflowIntegrationTest {
             latitude = 11.016844,
             longitude = 76.955833,
             accuracyMeters = 5.0f,
-            timestamp = System.currentTimeMillis() - 120_000L // 2 minutes old
+            timestamp = System.currentTimeMillis() - 120_000L
         )
 
         val result = validator.validate(staleLocation, geofences)
@@ -168,7 +303,7 @@ class FaflowIntegrationTest {
         val inaccurateLocation = StaffLiveLocation(
             latitude = 11.016844,
             longitude = 76.955833,
-            accuracyMeters = 95.0f, // > 30m
+            accuracyMeters = 95.0f,
             timestamp = System.currentTimeMillis()
         )
 

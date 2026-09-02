@@ -1,26 +1,52 @@
 # FAFLOW Staff Mobile: Architecture Specification & Integration Blueprint
 
-> **System Status**: **Milestone 4 Complete (Graphical Geofence + Staff Location Verification Subsystem)**  
+> **System Status**: **Milestone 5 Complete (Production CameraX Subsystem & Frame Analysis Pipeline)**  
 > **Target Audience**: College Faculty & Staff (Teachers, HODs, Lab Staff, Non-Teaching Staff)  
 > **Source of Truth**: Upstream FAFLOW FastAPI + PostgreSQL Backend (`https://github.com/kamesh12k/FACULTY_FLOW.git`)  
 > **Attendance Architecture**: Palgeo-style Geofenced Biometric Face Attendance  
 > **Geofence Engine**: Haversine Circle + Ray-Casting Point-in-Polygon (Jordan Curve Theorem) + Anti-Spoof Mock Location  
+> **Camera Subsystem**: Front-Camera CameraX (`Preview` + `ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST` + Throttled `CameraAnalyzer` + `CameraFrame` Abstraction)  
 > **Build Status**: `BUILD SUCCESSFUL` with 100% Unit Test Pass Rate and Zero Fake/Mock Data  
 
 ---
 
-## Milestone 4 Implementation Status
+## Milestone 5: Production CameraX Subsystem Architecture
 
-1. **M4A — Graphical Geofence Management**:
-   - Supported Shapes: Circular (`centerLat`, `centerLng`, `radiusMeters`) and Polygonal ($n$-point coordinate vertices).
-   - Domain Model: `CampusGeofence(id, name, type, centerLat, centerLng, radiusMeters, polygonVertices, toleranceMeters, isActive)`.
-   - Geodesic Mathematics: High-precision Haversine formula and Point-in-Polygon ray-casting algorithm.
-2. **M4B — Android Staff Location Verification**:
-   - Location Provider: `StaffLocationProvider` wrapping Google Play Services `FusedLocationProviderClient` with high-accuracy streams (`Priority.PRIORITY_HIGH_ACCURACY`).
-   - Mock Location Detection: Inspects `Location.isMock` (API 31+) / `Location.isFromMockProvider` to block fake GPS tools.
-   - Accuracy Validation: Enforces $\le 30\text{m}$ accuracy threshold.
-   - Live Verification Radar: Real-time visual feedback of campus proximity in `AttendancePlaceholderScreen` and `AttendanceCheckInOutScreen`.
-   - Attendance Gating: Check-In/Check-Out actions are gated and enabled only when verified physically inside an institutional boundary.
+```
+                    Staff Attendance Workflow
+                               │
+                               ▼
+                    M4 Geofence Validation
+                               │
+                         [ VERIFIED ]
+                               │
+                               ▼
+                       CameraX Subsystem
+                               │
+             ┌─────────────────┴─────────────────┐
+             ▼                                   ▼
+      CameraPreviewView                    ImageAnalysis
+     (Front-Camera Selfie)           (KEEP_ONLY_LATEST @ 10 FPS)
+             │                                   │
+             ▼                                   ▼
+       CameraOverlay                        CameraFrame
+   (Facial Guide Oval &               (Decoupled YUV/NV21 data,
+     Camera Readiness)                rotationDegrees, timestamp)
+                                                 │
+                                                 ▼
+                                       CameraFrameProcessor
+                                                 │
+                                                 ▼
+                                        (M6: SCRFD Detector)
+```
+
+### Key Components:
+1. **`CameraController`**: Explicitly binds `CameraSelector.LENS_FACING_FRONT` with lifecycle awareness. Automatically detects front-camera presence and unbinds on screen exit or backgrounding.
+2. **`CameraFrame`**: Pure, decoupled data class encapsulating frame metadata (`width`, `height`, `rotationDegrees`, `timestamp`, `lensFacing`, `nv21Bytes`, `bitmap`). Excludes any `ImageProxy` references from escaping the camera subsystem.
+3. **`CameraAnalyzer`**: High-performance `ImageAnalysis.Analyzer` with backpressure control (`STRATEGY_KEEP_ONLY_LATEST`), rate throttling ($10\text{ FPS} / 100\text{ms}$), atomic non-blocking concurrency locks, and immediate `imageProxy.close()` safety to prevent buffer starvation.
+4. **`CameraOverlay`**: Clean visual oval positioning guide rendering strictly non-AI camera readiness states ("Camera Ready", "Processing camera frame", "Position face inside guide").
+5. **Gating Integration**: Front-camera preview is activated **only** after physical presence is verified inside campus boundaries by the M4 Geofence Engine. If outside campus or fake GPS is detected, camera activation is strictly blocked.
+6. **Privacy & Security**: Zero frame disk persistence, zero background telemetry, and zero unauthenticated image uploads. Frames remain ephemeral in memory for on-device analysis.
 
 ---
 

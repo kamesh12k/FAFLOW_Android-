@@ -1,7 +1,10 @@
 package com.governence.faflow.ui.screens
 
+import android.Manifest
+import android.content.pm.PackageManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -15,14 +18,15 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Face
+import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Fingerprint
 import androidx.compose.material.icons.filled.GpsFixed
 import androidx.compose.material.icons.filled.GpsNotFixed
 import androidx.compose.material.icons.filled.GpsOff
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -32,17 +36,26 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
+import com.governence.faflow.camera.CameraController
+import com.governence.faflow.camera.CameraOverlay
+import com.governence.faflow.camera.CameraPreviewView
+import com.governence.faflow.camera.CameraState
 import com.governence.faflow.location.LocationVerificationResult
 import com.governence.faflow.ui.components.AppTopBar
 import com.governence.faflow.ui.components.PrimaryGradientButton
 import com.governence.faflow.ui.theme.PrimaryBlue
-import com.governence.faflow.ui.theme.SecondaryTeal
 import com.governence.faflow.ui.theme.StatusError
 import com.governence.faflow.ui.theme.StatusSuccess
 import com.governence.faflow.ui.theme.StatusWarning
@@ -54,9 +67,28 @@ fun AttendanceCheckInOutScreen(
     onNavigateBack: () -> Unit,
     onAttendanceSuccess: () -> Unit
 ) {
+    val context = LocalContext.current
     val uiState by viewModel.uiState.collectAsState()
     val verificationResult by viewModel.verificationResult.collectAsState()
-    val isVerified = viewModel.isLocationVerifiedForAttendance()
+    val isLocationVerified = viewModel.isLocationVerifiedForAttendance()
+
+    // Runtime Camera Permission Handling
+    var hasCameraPermission by remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+        )
+    }
+
+    val cameraPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        hasCameraPermission = granted
+    }
+
+    val cameraController = remember {
+        CameraController(context = context, targetFps = 10)
+    }
+    val cameraState by cameraController.cameraState.collectAsState()
 
     Scaffold(
         topBar = {
@@ -92,7 +124,7 @@ fun AttendanceCheckInOutScreen(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(16.dp),
+                        .padding(14.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     val (icon, tint) = when (verificationResult) {
@@ -106,22 +138,22 @@ fun AttendanceCheckInOutScreen(
 
                     Box(
                         modifier = Modifier
-                            .size(40.dp)
+                            .size(36.dp)
                             .clip(CircleShape)
                             .background(tint.copy(alpha = 0.15f)),
                         contentAlignment = Alignment.Center
                     ) {
-                        Icon(imageVector = icon, contentDescription = null, tint = tint, modifier = Modifier.size(24.dp))
+                        Icon(imageVector = icon, contentDescription = null, tint = tint, modifier = Modifier.size(20.dp))
                     }
 
                     Spacer(modifier = Modifier.width(12.dp))
 
                     Column(modifier = Modifier.weight(1f)) {
                         val titleText = when (val res = verificationResult) {
-                            is LocationVerificationResult.InsideGeofence -> "Campus Geofence Verified: ${res.geofenceName}"
+                            is LocationVerificationResult.InsideGeofence -> "Campus Verified: ${res.geofenceName}"
                             is LocationVerificationResult.Boundary -> "Boundary Verified: ${res.geofenceName}"
                             is LocationVerificationResult.OutsideAllGeofences -> "Outside Campus (${res.distanceToNearestMeters.toInt()}m away)"
-                            is LocationVerificationResult.AccuracyInsufficient -> "GPS Accuracy Too Low (±${res.currentAccuracyMeters.toInt()}m)"
+                            is LocationVerificationResult.AccuracyInsufficient -> "GPS Accuracy Low (±${res.currentAccuracyMeters.toInt()}m)"
                             is LocationVerificationResult.MockLocationDetected -> "Fake GPS Spoofing Blocked"
                             is LocationVerificationResult.StaleLocation -> "Stale GPS Fix"
                             is LocationVerificationResult.LocationServicesDisabled -> "Location Services Disabled"
@@ -140,10 +172,10 @@ fun AttendanceCheckInOutScreen(
                         )
 
                         val subText = when (val res = verificationResult) {
-                            is LocationVerificationResult.InsideGeofence -> "Distance: ${res.distanceToCenterMeters.toInt()}m • Accuracy: ±${res.accuracyMeters.toInt()}m • Mock: None"
-                            is LocationVerificationResult.Boundary -> "Boundary tolerance: ${res.distanceToBoundaryMeters.toInt()}m • Accuracy: ±${res.accuracyMeters.toInt()}m"
+                            is LocationVerificationResult.InsideGeofence -> "Accuracy: ±${res.accuracyMeters.toInt()}m • Mock: None"
+                            is LocationVerificationResult.Boundary -> "Within tolerance margin (±${res.accuracyMeters.toInt()}m)"
                             is LocationVerificationResult.MockLocationDetected -> "Anti-spoofing engine rejected mock location"
-                            else -> "Move inside institutional boundaries to enable attendance"
+                            else -> "Move inside institutional boundaries to activate camera"
                         }
 
                         Text(
@@ -155,9 +187,9 @@ fun AttendanceCheckInOutScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(14.dp))
 
-            // Camera Viewport & Face Guide Placeholder (CameraX & InsightFace strictly deferred to M5+)
+            // Camera Viewport & Overlay
             Box(
                 modifier = Modifier
                     .weight(1f)
@@ -166,56 +198,88 @@ fun AttendanceCheckInOutScreen(
                     .background(Color.Black),
                 contentAlignment = Alignment.Center
             ) {
-                // Face Oval Guide
-                Box(
-                    modifier = Modifier
-                        .size(width = 220.dp, height = 280.dp)
-                        .border(
-                            width = 3.dp,
-                            color = if (isVerified) SecondaryTeal else Color.Gray,
-                            shape = RoundedCornerShape(110.dp)
-                        ),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Face,
-                        contentDescription = null,
-                        tint = Color.White.copy(alpha = 0.35f),
-                        modifier = Modifier.size(90.dp)
-                    )
-                }
-
-                // Biometric Status Notice
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .padding(bottom = 20.dp)
-                        .clip(RoundedCornerShape(16.dp))
-                        .background(Color.Black.copy(alpha = 0.8f))
-                        .padding(horizontal = 16.dp, vertical = 8.dp)
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                if (!isLocationVerified) {
+                    // Location gating blocks camera activation
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.padding(24.dp)
+                    ) {
                         Icon(
-                            imageVector = if (isVerified) Icons.Default.CheckCircle else Icons.Default.LocationOn,
+                            imageVector = Icons.Default.LocationOn,
                             contentDescription = null,
-                            tint = if (isVerified) StatusSuccess else StatusWarning,
-                            modifier = Modifier.size(16.dp)
+                            tint = StatusWarning,
+                            modifier = Modifier.size(56.dp)
                         )
-                        Spacer(modifier = Modifier.width(8.dp))
+                        Spacer(modifier = Modifier.height(12.dp))
                         Text(
-                            text = if (isVerified) "Geofence Validated • Location Verified" else "Awaiting Campus Location Verification",
-                            style = MaterialTheme.typography.bodySmall,
+                            text = "Campus Location Verification Required",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
                             color = Color.White,
-                            fontWeight = FontWeight.SemiBold
+                            textAlign = TextAlign.Center
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = "Camera pipeline is active only when you are physically inside an authorized campus geofence perimeter.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color.Gray,
+                            textAlign = TextAlign.Center
                         )
                     }
+                } else if (!hasCameraPermission) {
+                    // Camera permission rationale view
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.padding(24.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.CameraAlt,
+                            contentDescription = null,
+                            tint = PrimaryBlue,
+                            modifier = Modifier.size(56.dp)
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text(
+                            text = "Camera Permission Required",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White,
+                            textAlign = TextAlign.Center
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = "FAFLOW requires front-camera access to capture your facial attendance frame securely on device.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color.Gray,
+                            textAlign = TextAlign.Center
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Button(
+                            onClick = { cameraPermissionLauncher.launch(Manifest.permission.CAMERA) },
+                            colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue)
+                        ) {
+                            Text("Grant Camera Access")
+                        }
+                    }
+                } else {
+                    // Real CameraX Front-Camera Preview
+                    CameraPreviewView(
+                        cameraController = cameraController,
+                        modifier = Modifier.fillMaxSize()
+                    )
+
+                    // Visual Positioning Guide Overlay
+                    CameraOverlay(
+                        cameraState = cameraState,
+                        modifier = Modifier.fillMaxSize()
+                    )
                 }
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(14.dp))
 
-            // Gated Action Trigger Button
-            if (isVerified) {
+            // Action Button
+            if (isLocationVerified && hasCameraPermission) {
                 PrimaryGradientButton(
                     text = if (uiState.isCheckingIn) "Confirm Shift Check-In" else "Confirm Shift Check-Out",
                     icon = Icons.Default.Fingerprint,
@@ -234,10 +298,15 @@ fun AttendanceCheckInOutScreen(
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
                 ) {
                     Text(
-                        text = "Attendance is gated: You must be physically inside an active campus geofence to register shift check-in.",
+                        text = if (!isLocationVerified) {
+                            "Shift attendance is gated by campus geofencing. Please verify location first."
+                        } else {
+                            "Grant camera permission to complete facial attendance capture."
+                        },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(16.dp)
+                        modifier = Modifier.padding(14.dp),
+                        textAlign = TextAlign.Center
                     )
                 }
             }
