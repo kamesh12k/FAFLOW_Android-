@@ -6,9 +6,14 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.governence.faflow.attendance.data.AttendanceRepository
 import com.governence.faflow.attendance.data.AttendanceSubmissionResult
+import com.governence.faflow.attendance.model.AttendancePipelineStatus
 import com.governence.faflow.attendance.sync.AttendanceSyncWorker
 import com.governence.faflow.core.network.AttendanceRecordOutDto
 import com.governence.faflow.core.network.NetworkResult
+import com.governence.faflow.core.security.DeviceIntegrityVerifier
+import com.governence.faflow.core.security.IntegrityState
+import com.governence.faflow.core.security.StandardDeviceIntegrityVerifier
+import com.governence.faflow.core.telemetry.AttendanceTelemetry
 import com.governence.faflow.domain.model.AttendanceStatus
 import com.governence.faflow.face.liveness.BiometricVerificationResult
 import com.governence.faflow.face.liveness.LivenessState
@@ -47,7 +52,7 @@ sealed interface FaceDetectionUiState {
 }
 
 /**
- * Comprehensive attendance gating and submission state machine.
+ * Attendance gating and submission state machine.
  */
 sealed interface AttendanceEligibilityState {
     data object CheckingRequirements : AttendanceEligibilityState
@@ -78,13 +83,15 @@ data class AttendanceUiState(
     val attendanceRecords: List<AttendanceRecordOutDto> = emptyList(),
     val isHistoryLoading: Boolean = false,
     val isSubmitting: Boolean = false,
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+    val isDebugOverlayVisible: Boolean = false
 )
 
 class AttendanceViewModel(
     private val geofenceRepository: GeofenceRepository,
     private val attendanceRepository: AttendanceRepository? = null,
     private val recognitionEngine: FaceRecognitionEngine? = null,
+    private val integrityVerifier: DeviceIntegrityVerifier? = null,
     private val appContext: Context? = null
 ) : ViewModel() {
 
@@ -124,8 +131,72 @@ class AttendanceViewModel(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     /**
-     * Combined attendance eligibility and transaction state machine.
+     * Comprehensive Milestone 10 Attendance Pipeline Status
      */
+    val pipelineStatus: StateFlow<AttendancePipelineStatus> = combine(
+        verificationResult,
+        faceDetectionState,
+        identityVerificationState,
+        livenessState,
+        _submissionState
+    ) { loc, face, identity, liveness, submission ->
+        when (submission) {
+            is AttendanceEligibilityState.Submitting -> {
+                if (_uiState.value.isCheckingIn) AttendancePipelineStatus.CheckingIn else AttendancePipelineStatus.CheckingOut
+            }
+            is AttendanceEligibilityState.ServerAccepted -> {
+                if (_uiState.value.isCheckingIn) AttendancePipelineStatus.CheckedIn(submission.record.checkInTime ?: "")
+                else AttendancePipelineStatus.CheckedOut(submission.record.checkOutTime ?: "", submission.record.workingHours)
+            }
+            is AttendanceEligibilityState.SavedOffline -> AttendancePipelineStatus.SavedOffline(submission.message)
+            is AttendanceEligibilityState.SyncPending -> AttendancePipelineStatus.SyncPending(submission.pendingCount)
+            is AttendanceEligibilityState.Syncing -> AttendancePipelineStatus.Syncing
+            is AttendanceEligibilityState.Blocked -> AttendancePipelineStatus.ServerRejected(submission.reason)
+            else -> {
+                when (loc) {
+                    is LocationVerificationResult.Loading -> AttendancePipelineStatus.Locating
+                    is LocationVerificationResult.MockLocationDetected -> AttendancePipelineStatus.MockLocationBlocked
+                    is LocationVerificationResult.AccuracyInsufficient -> AttendancePipelineStatus.PoorGpsAccuracy(loc.currentAccuracyMeters.toInt())
+                    is LocationVerificationResult.OutsideAllGeofences -> AttendancePipelineStatus.OutsideGeofence(loc.distanceToNearestMeters.toInt(), "Nearest Campus Boundary")
+                    is LocationVerificationResult.LocationServicesDisabled, is LocationVerificationResult.LocationUnavailable -> AttendancePipelineStatus.LocationUnavailable
+                    is LocationVerificationResult.PermissionDenied, is LocationVerificationResult.PermissionPermanentlyDenied -> AttendancePipelineStatus.RequestingPermissions
+                    is LocationVerificationResult.InsideGeofence, is LocationVerificationResult.Boundary -> {
+                        when (face) {
+                            is FaceDetectionUiState.MultipleFaces -> AttendancePipelineStatus.MultipleFaces(face.count)
+                            is FaceDetectionUiState.FaceTooSmall -> AttendancePipelineStatus.FaceTooSmall
+                            is FaceDetectionUiState.FacePartiallyOutOfFrame -> AttendancePipelineStatus.FaceOutOfFrame
+                            is FaceDetectionUiState.NoFace -> AttendancePipelineStatus.NoFace
+                            is FaceDetectionUiState.FaceDetected, is FaceDetectionUiState.FacePositionValid -> {
+                                when (identity) {
+                                    is StaffBiometricVerificationState.Aligning -> AttendancePipelineStatus.FaceAlignmentRequired
+                                    is StaffBiometricVerificationState.Embedding -> AttendancePipelineStatus.FaceVerification
+                                    is StaffBiometricVerificationState.VerificationFailed -> AttendancePipelineStatus.VerificationFailed(identity.reason)
+                                    is StaffBiometricVerificationState.Verified -> {
+                                        when (liveness) {
+                                            is LivenessState.ChallengeActive -> AttendancePipelineStatus.LivenessCheck(liveness.instructions, liveness.progress)
+                                            is LivenessState.SpoofSuspected -> AttendancePipelineStatus.VerificationFailed("Liveness rejected: ${liveness.reason}")
+                                            is LivenessState.Passed -> {
+                                                if (_uiState.value.isCheckingIn) {
+                                                    AttendancePipelineStatus.ReadyForCheckIn(identity.staffId, identity.similarity)
+                                                } else {
+                                                    AttendancePipelineStatus.ReadyForCheckOut(identity.staffId)
+                                                }
+                                            }
+                                            else -> AttendancePipelineStatus.FaceDetected
+                                        }
+                                    }
+                                    else -> AttendancePipelineStatus.FaceDetected
+                                }
+                            }
+                            else -> AttendancePipelineStatus.FaceDetected
+                        }
+                    }
+                    else -> AttendancePipelineStatus.Initializing
+                }
+            }
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), AttendancePipelineStatus.Initializing)
+
     val attendanceEligibilityState: StateFlow<AttendanceEligibilityState> = combine(
         verificationResult,
         faceDetectionState,
@@ -169,6 +240,10 @@ class AttendanceViewModel(
     init {
         loadTodaySummary()
         loadAttendanceHistory()
+    }
+
+    fun toggleDebugOverlay() {
+        _uiState.value = _uiState.value.copy(isDebugOverlayVisible = !_uiState.value.isDebugOverlayVisible)
     }
 
     fun loadTodaySummary() {
@@ -216,6 +291,7 @@ class AttendanceViewModel(
         frameWidth: Int = 640,
         frameHeight: Int = 480
     ) {
+        val startNs = System.nanoTime()
         val newState = when {
             detections.isEmpty() -> {
                 _identityVerificationState.value = StaffBiometricVerificationState.NoFace
@@ -281,13 +357,16 @@ class AttendanceViewModel(
             }
         }
         _faceDetectionState.value = newState
+        AttendanceTelemetry.recordMetric(AttendanceTelemetry.METRIC_SCRFD_DETECTION_MS, (System.nanoTime() - startNs) / 1_000_000)
     }
 
     private fun runRecognition(sourceBitmap: Bitmap, face: FaceDetectionResult, staffId: String) {
         viewModelScope.launch {
             _identityVerificationState.value = StaffBiometricVerificationState.Aligning
+            val startAlignNs = System.nanoTime()
             val result = recognitionEngine?.verifyStaffIdentity(sourceBitmap, face, staffId)
                 ?: StaffBiometricVerificationState.Unavailable("Recognition engine not configured")
+            AttendanceTelemetry.recordMetric(AttendanceTelemetry.METRIC_UMEYAMA_ALIGNMENT_MS, (System.nanoTime() - startAlignNs) / 1_000_000)
             _identityVerificationState.value = result
         }
     }
@@ -300,7 +379,7 @@ class AttendanceViewModel(
     }
 
     /**
-     * Executes authoritative shift Check-In with the backend, falling back to offline SQLite queueing.
+     * Executes shift Check-In with the backend, falling back to offline SQLite queueing.
      */
     fun performCheckIn(staffUserId: Int = 42, onSuccess: () -> Unit = {}) {
         val location = liveLocation.value
@@ -318,6 +397,7 @@ class AttendanceViewModel(
         viewModelScope.launch {
             _submissionState.value = AttendanceEligibilityState.Submitting
             _uiState.value = _uiState.value.copy(isSubmitting = true)
+            val netStartNs = System.nanoTime()
 
             if (attendanceRepository != null) {
                 when (val result = attendanceRepository.checkIn(
@@ -329,6 +409,7 @@ class AttendanceViewModel(
                     userId = staffUserId
                 )) {
                     is AttendanceSubmissionResult.Success -> {
+                        AttendanceTelemetry.recordMetric(AttendanceTelemetry.METRIC_NETWORK_SUBMISSION_MS, (System.nanoTime() - netStartNs) / 1_000_000)
                         _submissionState.value = AttendanceEligibilityState.ServerAccepted(result.record)
                         _uiState.value = _uiState.value.copy(
                             isCheckingIn = false,
@@ -375,7 +456,7 @@ class AttendanceViewModel(
     }
 
     /**
-     * Executes authoritative shift Check-Out with the backend, falling back to offline SQLite queueing.
+     * Executes shift Check-Out with the backend, falling back to offline SQLite queueing.
      */
     fun performCheckOut(staffUserId: Int = 42, onSuccess: () -> Unit = {}) {
         val location = liveLocation.value
@@ -393,6 +474,7 @@ class AttendanceViewModel(
         viewModelScope.launch {
             _submissionState.value = AttendanceEligibilityState.Submitting
             _uiState.value = _uiState.value.copy(isSubmitting = true)
+            val netStartNs = System.nanoTime()
 
             if (attendanceRepository != null) {
                 when (val result = attendanceRepository.checkOut(
@@ -404,6 +486,7 @@ class AttendanceViewModel(
                     userId = staffUserId
                 )) {
                     is AttendanceSubmissionResult.Success -> {
+                        AttendanceTelemetry.recordMetric(AttendanceTelemetry.METRIC_NETWORK_SUBMISSION_MS, (System.nanoTime() - netStartNs) / 1_000_000)
                         _submissionState.value = AttendanceEligibilityState.ServerAccepted(result.record)
                         _uiState.value = _uiState.value.copy(
                             isCheckingIn = true,

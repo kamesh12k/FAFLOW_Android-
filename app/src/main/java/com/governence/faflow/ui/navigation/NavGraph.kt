@@ -252,6 +252,7 @@ fun NavGraph(
 
             composable(Screen.AttendanceHistory.route) {
                 AttendanceHistoryScreen(
+                    viewModel = attendanceViewModel,
                     onNavigateBack = { navController.popBackStack() }
                 )
             }

@@ -64,6 +64,10 @@ import com.governence.faflow.core.network.AttendanceCheckInRequestDto
 import com.governence.faflow.core.network.AttendanceCheckOutRequestDto
 import com.governence.faflow.core.network.AttendanceRecordOutDto
 import com.governence.faflow.core.network.AttendanceTodaySummaryOutDto
+import com.governence.faflow.attendance.model.AttendancePipelineStatus
+import com.governence.faflow.core.security.DeviceIntegrityResult
+import com.governence.faflow.core.security.IntegrityState
+import com.governence.faflow.core.telemetry.AttendanceTelemetry
 import com.governence.faflow.location.GeofenceType
 import com.governence.faflow.location.GeofenceValidator
 import com.governence.faflow.location.LocationVerificationResult
@@ -84,6 +88,65 @@ import java.util.UUID
 import kotlin.math.sqrt
 
 class FaflowIntegrationTest {
+
+    // ---------- Milestone 10: Production Hardening, Audit Logs & Telemetry Tests ----------
+
+    @Test
+    fun testAttendancePipelineStatusHierarchy() {
+        val initial: AttendancePipelineStatus = AttendancePipelineStatus.Initializing
+        assertEquals("Initializing", initial.title)
+        assertFalse(initial.isError)
+
+        val outside: AttendancePipelineStatus = AttendancePipelineStatus.OutsideGeofence(120, "Main Campus Boundary")
+        assertEquals("Outside Campus Perimeter", outside.title)
+        assertTrue(outside.isError)
+
+        val readyIn: AttendancePipelineStatus = AttendancePipelineStatus.ReadyForCheckIn("42", 0.92f)
+        assertEquals("Ready for Check-In", readyIn.title)
+        assertTrue(readyIn.isActionable)
+
+        val checkedIn: AttendancePipelineStatus = AttendancePipelineStatus.CheckedIn("08:30 AM")
+        assertEquals("Checked In", checkedIn.title)
+
+        val checkedOut: AttendancePipelineStatus = AttendancePipelineStatus.CheckedOut("04:30 PM", "8h 0m")
+        assertEquals("Checked Out", checkedOut.title)
+
+        val mockBlocked: AttendancePipelineStatus = AttendancePipelineStatus.MockLocationBlocked
+        assertEquals("Fake GPS Detected", mockBlocked.title)
+        assertTrue(mockBlocked.isError)
+    }
+
+    @Test
+    fun testDeviceIntegrityResultModel() {
+        val verified = DeviceIntegrityResult(
+            state = IntegrityState.VERIFIED,
+            attestationToken = "VALID_TOKEN_XYZ",
+            message = "Hardware integrity verified"
+        )
+        assertEquals(IntegrityState.VERIFIED, verified.state)
+        assertEquals("VALID_TOKEN_XYZ", verified.attestationToken)
+
+        val failed = DeviceIntegrityResult(
+            state = IntegrityState.FAILED,
+            attestationToken = null,
+            message = "Device rooted"
+        )
+        assertEquals(IntegrityState.FAILED, failed.state)
+        assertNull(failed.attestationToken)
+    }
+
+    @Test
+    fun testAttendanceTelemetryMetricsCollection() {
+        AttendanceTelemetry.clear()
+        AttendanceTelemetry.recordMetric(AttendanceTelemetry.METRIC_SCRFD_DETECTION_MS, 42L)
+        AttendanceTelemetry.recordMetric(AttendanceTelemetry.METRIC_UMEYAMA_ALIGNMENT_MS, 8L)
+        AttendanceTelemetry.recordMetric(AttendanceTelemetry.METRIC_ARCFACE_EMBEDDING_MS, 65L)
+
+        assertEquals(42L, AttendanceTelemetry.getMetric(AttendanceTelemetry.METRIC_SCRFD_DETECTION_MS))
+        assertEquals(8L, AttendanceTelemetry.getMetric(AttendanceTelemetry.METRIC_UMEYAMA_ALIGNMENT_MS))
+        assertEquals(65L, AttendanceTelemetry.getMetric(AttendanceTelemetry.METRIC_ARCFACE_EMBEDDING_MS))
+        assertEquals(0L, AttendanceTelemetry.getMetric("non_existent_metric"))
+    }
 
     // ---------- Milestone 9: Backend Attendance Integration & Offline Sync Tests ----------
 
