@@ -242,3 +242,60 @@ data class AttendanceTodaySummaryOutDto(
     @Json(name = "working_duration") val workingDuration: String? = null,
     @Json(name = "record") val record: AttendanceRecordOutDto? = null
 )
+
+// ---------- Geofence DTOs ----------
+
+@JsonClass(generateAdapter = true)
+data class GeofenceOutDto(
+    @Json(name = "id") val id: Int,
+    @Json(name = "name") val name: String,
+    @Json(name = "description") val description: String? = null,
+    @Json(name = "type") val type: String = "circle",
+    @Json(name = "center_latitude") val centerLatitude: Double,
+    @Json(name = "center_longitude") val centerLongitude: Double,
+    @Json(name = "radius_meters") val radiusMeters: Double = 150.0,
+    @Json(name = "polygon_vertices") val polygonVertices: List<List<Double>>? = null,
+    @Json(name = "tolerance_meters") val toleranceMeters: Double = 15.0,
+    @Json(name = "area_sq_meters") val areaSqMeters: Double? = null,
+    @Json(name = "perimeter_meters") val perimeterMeters: Double? = null,
+    @Json(name = "is_active") val isActive: Boolean = true,
+    @Json(name = "created_at") val createdAt: String? = null,
+    @Json(name = "updated_at") val updatedAt: String? = null
+)
+
+@JsonClass(generateAdapter = true)
+data class GeofenceCreateDto(
+    @Json(name = "name") val name: String,
+    @Json(name = "description") val description: String? = null,
+    @Json(name = "type") val type: String = "circle",
+    @Json(name = "center_latitude") val centerLatitude: Double? = null,
+    @Json(name = "center_longitude") val centerLongitude: Double? = null,
+    @Json(name = "radius_meters") val radiusMeters: Double? = null,
+    @Json(name = "polygon_vertices") val polygonVertices: List<List<Double>>? = null,
+    @Json(name = "tolerance_meters") val toleranceMeters: Double = 15.0
+)
+
+@JsonClass(generateAdapter = true)
+data class GeofenceUpdateDto(
+    @Json(name = "name") val name: String? = null,
+    @Json(name = "description") val description: String? = null,
+    @Json(name = "center_latitude") val centerLatitude: Double? = null,
+    @Json(name = "center_longitude") val centerLongitude: Double? = null,
+    @Json(name = "radius_meters") val radiusMeters: Double? = null,
+    @Json(name = "polygon_vertices") val polygonVertices: List<List<Double>>? = null,
+    @Json(name = "tolerance_meters") val toleranceMeters: Double? = null,
+    @Json(name = "is_active") val isActive: Boolean? = null
+)
+
+// ---------- Supervisor Live Status DTOs ----------
+
+@JsonClass(generateAdapter = true)
+data class SupervisorLiveStatusOutDto(
+    @Json(name = "date") val date: String,
+    @Json(name = "total_staff") val totalStaff: Int,
+    @Json(name = "present_count") val presentCount: Int,
+    @Json(name = "absent_count") val absentCount: Int,
+    @Json(name = "currently_active_count") val currentlyActiveCount: Int,
+    @Json(name = "checked_out_count") val checkedOutCount: Int,
+    @Json(name = "records") val records: List<AttendanceRecordOutDto> = emptyList()
+)

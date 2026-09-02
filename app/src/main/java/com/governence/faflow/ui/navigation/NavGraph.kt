@@ -20,6 +20,7 @@ import com.governence.faflow.ui.screens.AttendancePlaceholderScreen
 import com.governence.faflow.ui.screens.CreditsScreen
 import com.governence.faflow.ui.screens.DashboardScreen
 import com.governence.faflow.ui.screens.FaceEnrollmentScreen
+import com.governence.faflow.ui.screens.GeofenceAdminScreen
 import com.governence.faflow.ui.screens.LeaveHistoryScreen
 import com.governence.faflow.ui.screens.LoginScreen
 import com.governence.faflow.ui.screens.MoreScreen
@@ -34,6 +35,7 @@ import com.governence.faflow.ui.screens.TimetableScreen
 import com.governence.faflow.ui.viewmodels.AttendanceViewModel
 import com.governence.faflow.ui.viewmodels.CreditsViewModel
 import com.governence.faflow.ui.viewmodels.DashboardViewModel
+import com.governence.faflow.ui.viewmodels.GeofenceAdminViewModel
 import com.governence.faflow.ui.viewmodels.LeaveViewModel
 import com.governence.faflow.ui.viewmodels.NotificationsViewModel
 import com.governence.faflow.ui.viewmodels.PreferencesViewModel
@@ -94,6 +96,11 @@ fun NavGraph(
     val attendanceViewModel = remember {
         AttendanceViewModel(
             geofenceRepository = appContainer.geofenceRepository
+        )
+    }
+    val geofenceAdminViewModel = remember {
+        GeofenceAdminViewModel(
+            apiService = appContainer.apiService
         )
     }
 
@@ -185,7 +192,8 @@ fun NavGraph(
                     onNavigateToPreferences = { navController.navigate(Screen.Preferences.route) },
                     onNavigateToNotifications = { navController.navigate(Screen.Notifications.route) },
                     onNavigateToProfile = { navController.navigate(Screen.Profile.route) },
-                    onNavigateToSettings = { navController.navigate(Screen.Settings.route) }
+                    onNavigateToSettings = { navController.navigate(Screen.Settings.route) },
+                    onNavigateToGeofenceAdmin = { navController.navigate(Screen.GeofenceAdmin.route) }
                 )
             }
 
@@ -288,6 +296,13 @@ fun NavGraph(
 
             composable(Screen.SyncStatus.route) {
                 SyncStatusScreen(
+                    onNavigateBack = { navController.popBackStack() }
+                )
+            }
+
+            composable(Screen.GeofenceAdmin.route) {
+                GeofenceAdminScreen(
+                    viewModel = geofenceAdminViewModel,
                     onNavigateBack = { navController.popBackStack() }
                 )
             }

@@ -139,4 +139,36 @@ interface FaflowApiService {
         @Query("limit") limit: Int = 30,
         @Query("offset") offset: Int = 0
     ): Response<List<AttendanceRecordOutDto>>
+
+    @GET("attendance/admin/live-status")
+    suspend fun getSupervisorLiveStatus(
+        @Query("date") date: String? = null,
+        @Query("department_id") departmentId: Int? = null,
+        @Query("status") status: String? = null
+    ): Response<SupervisorLiveStatusOutDto>
+
+    // ---------- Geofences ----------
+    @GET("geofences/active")
+    suspend fun getActiveGeofences(): Response<List<GeofenceOutDto>>
+
+    @GET("geofences/")
+    suspend fun listAllGeofences(
+        @Query("is_active") isActive: Boolean? = null
+    ): Response<List<GeofenceOutDto>>
+
+    @POST("geofences/")
+    suspend fun createGeofence(
+        @Body request: GeofenceCreateDto
+    ): Response<GeofenceOutDto>
+
+    @PUT("geofences/{geofence_id}")
+    suspend fun updateGeofence(
+        @Path("geofence_id") geofenceId: Int,
+        @Body request: GeofenceUpdateDto
+    ): Response<GeofenceOutDto>
+
+    @DELETE("geofences/{geofence_id}")
+    suspend fun deleteGeofence(
+        @Path("geofence_id") geofenceId: Int
+    ): Response<StatusOkDto>
 }

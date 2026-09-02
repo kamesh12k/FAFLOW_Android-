@@ -64,6 +64,9 @@ import com.governence.faflow.core.network.AttendanceCheckInRequestDto
 import com.governence.faflow.core.network.AttendanceCheckOutRequestDto
 import com.governence.faflow.core.network.AttendanceRecordOutDto
 import com.governence.faflow.core.network.AttendanceTodaySummaryOutDto
+import com.governence.faflow.core.network.GeofenceCreateDto
+import com.governence.faflow.core.network.GeofenceOutDto
+import com.governence.faflow.core.network.SupervisorLiveStatusOutDto
 import com.governence.faflow.attendance.model.AttendancePipelineStatus
 import com.governence.faflow.core.security.DeviceIntegrityResult
 import com.governence.faflow.core.security.IntegrityState
@@ -212,6 +215,65 @@ class FaflowIntegrationTest {
         // Verify completion to SYNCED
         val completed = inSync.copy(syncStatus = SyncStatus.SYNCED)
         assertEquals(SyncStatus.SYNCED, completed.syncStatus)
+    }
+
+    // ---------- Milestone 12: Production Geofence Admin & Supervisor Live Status Tests ----------
+
+    @Test
+    fun testGeofenceAdminDtoModels() {
+        val createDto = GeofenceCreateDto(
+            name = "North Science Campus",
+            description = "Main science block polygon",
+            type = "polygon",
+            polygonVertices = listOf(
+                listOf(11.016, 76.955),
+                listOf(11.017, 76.955),
+                listOf(11.017, 76.956),
+                listOf(11.016, 76.956)
+            ),
+            toleranceMeters = 12.0
+        )
+
+        assertEquals("North Science Campus", createDto.name)
+        assertEquals("polygon", createDto.type)
+        assertEquals(4, createDto.polygonVertices?.size)
+        assertEquals(12.0, createDto.toleranceMeters, 0.001)
+
+        val outDto = GeofenceOutDto(
+            id = 101,
+            name = "North Science Campus",
+            type = "polygon",
+            centerLatitude = 11.0165,
+            centerLongitude = 76.9555,
+            radiusMeters = 120.0,
+            areaSqMeters = 12500.0,
+            perimeterMeters = 450.0,
+            isActive = true
+        )
+
+        assertEquals(101, outDto.id)
+        assertTrue(outDto.isActive)
+        assertEquals(12500.0, outDto.areaSqMeters ?: 0.0, 0.1)
+    }
+
+    @Test
+    fun testSupervisorLiveStatusOutDtoModel() {
+        val liveStatus = SupervisorLiveStatusOutDto(
+            date = "2026-09-02",
+            totalStaff = 45,
+            presentCount = 38,
+            absentCount = 7,
+            currentlyActiveCount = 32,
+            checkedOutCount = 6,
+            records = emptyList()
+        )
+
+        assertEquals("2026-09-02", liveStatus.date)
+        assertEquals(45, liveStatus.totalStaff)
+        assertEquals(38, liveStatus.presentCount)
+        assertEquals(7, liveStatus.absentCount)
+        assertEquals(32, liveStatus.currentlyActiveCount)
+        assertEquals(6, liveStatus.checkedOutCount)
     }
 
     // ---------- Milestone 9: Backend Attendance Integration & Offline Sync Tests ----------

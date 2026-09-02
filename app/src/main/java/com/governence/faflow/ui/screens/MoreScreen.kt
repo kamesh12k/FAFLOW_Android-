@@ -58,7 +58,8 @@ fun MoreScreen(
     onNavigateToPreferences: () -> Unit,
     onNavigateToNotifications: () -> Unit,
     onNavigateToProfile: () -> Unit,
-    onNavigateToSettings: () -> Unit
+    onNavigateToSettings: () -> Unit,
+    onNavigateToGeofenceAdmin: () -> Unit = {}
 ) {
     Scaffold(
         topBar = {
@@ -123,6 +124,34 @@ fun MoreScreen(
                             iconTint = SecondaryTeal,
                             iconBg = Color(0x1A06B6D4),
                             onClick = onNavigateToSubstitution
+                        )
+                    }
+                }
+            }
+
+            item {
+                Text(
+                    text = "Campus Operations & Administration",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                ) {
+                    Column {
+                        MoreMenuItem(
+                            title = "Campus Geofence Perimeters",
+                            subtitle = "Configure circular & polygon attendance boundaries",
+                            icon = Icons.Default.Tune,
+                            iconTint = SecondaryTeal,
+                            iconBg = Color(0x1A06B6D4),
+                            onClick = onNavigateToGeofenceAdmin
                         )
                     }
                 }

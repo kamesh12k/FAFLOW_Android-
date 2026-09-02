@@ -33,6 +33,8 @@ sealed class Screen(val route: String) {
     data object Settings : Screen("settings")
     data object SyncStatus : Screen("sync_status")
     data object FaceEnrollment : Screen("face_enrollment")
+    data object GeofenceAdmin : Screen("geofence_admin")
+    data object SupervisorLiveStatus : Screen("supervisor_live_status")
 }
 
 sealed class BottomNavItem(

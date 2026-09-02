@@ -1,16 +1,16 @@
 # FAFLOW Staff Mobile: Architecture Specification & Integration Blueprint
 
-> **System Status**: **Milestone 10 Complete (Production Hardening, Audit Logs & Performance Telemetry)**  
+> **System Status**: **Milestone 12 Complete (Production Integration + Admin Geofence Management + Device Certification)**  
 > **Target Audience**: College Faculty & Staff (Teachers, HODs, Lab Staff, Non-Teaching Staff)  
 > **Source of Truth**: Upstream FAFLOW FastAPI + PostgreSQL Backend (`https://github.com/kamesh12k/FACULTY_FLOW.git`)  
 > **Attendance Architecture**: Palgeo-style Geofenced Biometric Face Attendance with Authoritative Server Ledger  
-> **Geofence Engine**: Haversine Circle + Ray-Casting Point-in-Polygon (Jordan Curve Theorem) + Anti-Spoof Mock Location  
+> **Geofence Engine**: Haversine Circle + Ray-Casting Point-in-Polygon (Jordan Curve Theorem) + Anti-Spoof Mock Location + Interactive Admin Visualizer  
 > **Camera Subsystem**: Front-Camera CameraX (`Preview` + `ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST` + Throttled `CameraAnalyzer` + `CameraFrame` Abstraction)  
 > **Detection Engine**: InsightFace SCRFD 500M ONNX Model (`[1, 3, 640, 640]` NCHW, Multi-Stride 8/16/32 Anchor Decoding, IoU NMS, 5-Point Facial Landmarks)  
 > **Alignment & Recognition**: 5-Point Umeyama Similarity Transform to Canonical $112 \times 112$ + MobileFaceNet ArcFace 512-D Embedding + $L_2$ Normalization + Cosine Similarity Matching + Android Keystore Encrypted Local Enrollment  
 > **Liveness & PAD Defense**: Multi-Layer Anti-Spoofing (Temporal Observation Window + Photostatic Variance Analysis + 3D Head Pose Yaw/Pitch/Roll Tracking + Randomized Active Challenges + Pluggable Deep PAD Model Abstraction)  
-> **Backend & Sync Layer**: Authoritative FastAPI Endpoints (`/attendance/check-in`, `/attendance/check-out`, `/attendance/today`, `/attendance/my`, `/attendance/admin/live-status`) + Server-Side Geofence Validation + UUID Idempotency + Local SQLite Queue + Android `WorkManager` Background Sync  
-> **Production Hardening**: 28-State End-to-End Pipeline (`AttendancePipelineStatus`) + Hardware Device Attestation Abstraction (`DeviceIntegrityVerifier`) + Structured Audit Logs (`AuditLog`) + Non-Sensitive Telemetry (`AttendanceTelemetry`) + ProGuard/R8 Optimization  
+> **Backend & Sync Layer**: Authoritative FastAPI Endpoints (`/attendance/check-in`, `/attendance/check-out`, `/attendance/today`, `/attendance/my`, `/attendance/admin/live-status`, `/geofences/`) + Server-Side Geofence Validation + UUID Idempotency + Local SQLite Queue + Android `WorkManager` Background Sync  
+> **Production Hardening**: 28-State End-to-End Pipeline (`AttendancePipelineStatus`) + Hardware Device Attestation Abstraction (`DeviceIntegrityVerifier`) + Structured Audit Logs (`AuditLog`) + Non-Sensitive Telemetry (`AttendanceTelemetry`) + ProGuard/R8 Optimization + Campus Geofence Admin Screen  
 > **Build Status**: `BUILD SUCCESSFUL` with 100% Unit Test Pass Rate across Android & FastAPI Test Suites  
 
 ---
