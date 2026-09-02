@@ -53,7 +53,14 @@ import androidx.core.content.ContextCompat
 import com.governence.faflow.camera.CameraController
 import com.governence.faflow.camera.CameraOverlay
 import com.governence.faflow.camera.CameraPreviewView
+import com.governence.faflow.face.alignment.UmeyamaFaceAligner
+import com.governence.faflow.face.embedding.ArcFaceEmbedder
+import com.governence.faflow.face.enrollment.LocalFaceEnrollmentRepository
+import com.governence.faflow.face.matching.CosineFaceMatcher
+import com.governence.faflow.face.model.ArcFaceModelManager
 import com.governence.faflow.face.model.ScrfdModelManager
+import com.governence.faflow.face.model.StaffBiometricVerificationState
+import com.governence.faflow.face.recognition.FaceRecognitionEngine
 import com.governence.faflow.face.scrfd.ScrfdFaceDetector
 import com.governence.faflow.location.LocationVerificationResult
 import com.governence.faflow.ui.components.AppTopBar
@@ -68,6 +75,7 @@ import com.governence.faflow.ui.viewmodels.FaceDetectionUiState
 @Composable
 fun AttendanceCheckInOutScreen(
     viewModel: AttendanceViewModel,
+    staffId: String = "42",
     onNavigateBack: () -> Unit,
     onAttendanceSuccess: () -> Unit
 ) {
@@ -75,20 +83,42 @@ fun AttendanceCheckInOutScreen(
     val uiState by viewModel.uiState.collectAsState()
     val verificationResult by viewModel.verificationResult.collectAsState()
     val faceDetectionState by viewModel.faceDetectionState.collectAsState()
+    val biometricState by viewModel.biometricState.collectAsState()
     val isLocationVerified = viewModel.isLocationVerifiedForAttendance()
 
-    // SCRFD Model Manager & Face Detector
-    val modelManager = remember { ScrfdModelManager(context) }
-    val faceDetector = remember { ScrfdFaceDetector(modelManager) }
+    // Model Managers & Face AI Subsystem
+    val scrfdModelManager = remember { ScrfdModelManager(context) }
+    val faceDetector = remember { ScrfdFaceDetector(scrfdModelManager) }
+    val arcFaceModelManager = remember { ArcFaceModelManager(context) }
+    val faceEmbedder = remember { ArcFaceEmbedder(arcFaceModelManager) }
+    val aligner = remember { UmeyamaFaceAligner() }
+    val enrollmentRepo = remember { LocalFaceEnrollmentRepository(context) }
+    val matcher = remember { CosineFaceMatcher() }
+
+    val recognitionEngine = remember {
+        FaceRecognitionEngine(
+            aligner = aligner,
+            embedder = faceEmbedder,
+            matcher = matcher,
+            enrollmentRepository = enrollmentRepo
+        )
+    }
+
     val latencyMs by faceDetector.inferenceLatencyMs.collectAsState()
     val detections by faceDetector.latestDetections.collectAsState()
 
     LaunchedEffect(Unit) {
-        modelManager.initializeModels()
+        scrfdModelManager.initializeModels()
+        arcFaceModelManager.initializeModels()
     }
 
     LaunchedEffect(detections) {
-        viewModel.updateDetections(detections)
+        val face = detections.firstOrNull()
+        viewModel.updateDetections(
+            detections = detections,
+            sourceBitmap = face?.alignedBitmap,
+            staffId = staffId
+        )
     }
 
     // Runtime Camera Permission Handling
@@ -109,7 +139,7 @@ fun AttendanceCheckInOutScreen(
     }
     val cameraState by cameraController.cameraState.collectAsState()
 
-    val isPositionValid = isLocationVerified && hasCameraPermission && faceDetectionState is FaceDetectionUiState.FacePositionValid
+    val isBiometricVerified = biometricState is StaffBiometricVerificationState.Verified
 
     Scaffold(
         topBar = {
@@ -263,59 +293,125 @@ fun AttendanceCheckInOutScreen(
 
             Spacer(modifier = Modifier.height(14.dp))
 
-            // Action Status Card (Detection-only milestone: Preparation state, not submitting attendance)
-            if (isPositionValid) {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(containerColor = StatusSuccess.copy(alpha = 0.15f))
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically
+            // Action Status Card (Milestone 7: Identity Recognition Status)
+            when (val bio = biometricState) {
+                is StaffBiometricVerificationState.Verified -> {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(containerColor = StatusSuccess.copy(alpha = 0.15f))
                     ) {
-                        Icon(imageVector = Icons.Default.CheckCircle, contentDescription = null, tint = StatusSuccess, modifier = Modifier.size(24.dp))
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Column {
-                            Text(
-                                text = "Face Position Valid",
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.Bold,
-                                color = StatusSuccess
-                            )
-                            Text(
-                                text = "SCRFD Detection Verified • Ready for Facial Alignment (M7)",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(imageVector = Icons.Default.CheckCircle, contentDescription = null, tint = StatusSuccess, modifier = Modifier.size(24.dp))
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column {
+                                Text(
+                                    text = "Identity Verified (Staff #${bio.staffId})",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = StatusSuccess
+                                )
+                                Text(
+                                    text = "Cosine Similarity: ${(bio.similarity * 100).toInt()}% (Threshold ${(bio.threshold * 100).toInt()}%)",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
                         }
                     }
                 }
-            } else {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-                ) {
-                    val promptText = when {
-                        !isLocationVerified -> "Shift attendance is gated by campus geofencing. Please verify location first."
-                        !hasCameraPermission -> "Grant camera permission to complete facial attendance capture."
-                        faceDetectionState is FaceDetectionUiState.MultipleFaces -> "Multiple faces detected — only one staff member should be visible."
-                        faceDetectionState is FaceDetectionUiState.FaceTooSmall -> "Move closer to the camera."
-                        faceDetectionState is FaceDetectionUiState.FaceTooLarge -> "Move farther away from the camera."
-                        faceDetectionState is FaceDetectionUiState.FacePartiallyOutOfFrame -> "Center your face within the camera guide."
-                        faceDetectionState is FaceDetectionUiState.FaceDetected -> "Face detected — position yourself inside the guide."
-                        else -> "No face detected. Align your face within the guide oval."
+
+                is StaffBiometricVerificationState.VerificationFailed -> {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(containerColor = StatusError.copy(alpha = 0.15f))
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(imageVector = Icons.Default.Warning, contentDescription = null, tint = StatusError, modifier = Modifier.size(24.dp))
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column {
+                                Text(
+                                    text = "Biometric Verification Failed",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = StatusError
+                                )
+                                Text(
+                                    text = bio.reason,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
                     }
-                    Text(
-                        text = promptText,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(14.dp),
-                        textAlign = TextAlign.Center
-                    )
+                }
+
+                is StaffBiometricVerificationState.NoEnrollment -> {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(containerColor = StatusWarning.copy(alpha = 0.15f))
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(imageVector = Icons.Default.Warning, contentDescription = null, tint = StatusWarning, modifier = Modifier.size(24.dp))
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column {
+                                Text(
+                                    text = "No Biometric Profile Enrolled",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = StatusWarning
+                                )
+                                Text(
+                                    text = "Please complete face enrollment before checking in.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                }
+
+                else -> {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                    ) {
+                        val promptText = when {
+                            !isLocationVerified -> "Shift attendance is gated by campus geofencing. Please verify location first."
+                            !hasCameraPermission -> "Grant camera permission to complete facial attendance capture."
+                            faceDetectionState is FaceDetectionUiState.MultipleFaces -> "Multiple faces detected — only one staff member should be visible."
+                            faceDetectionState is FaceDetectionUiState.FaceTooSmall -> "Move closer to the camera."
+                            faceDetectionState is FaceDetectionUiState.FaceTooLarge -> "Move farther away from the camera."
+                            faceDetectionState is FaceDetectionUiState.FacePartiallyOutOfFrame -> "Center your face within the camera guide."
+                            faceDetectionState is FaceDetectionUiState.FaceDetected -> "Face detected — position yourself inside the guide."
+                            else -> "No face detected. Align your face within the guide oval."
+                        }
+                        Text(
+                            text = promptText,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(14.dp),
+                            textAlign = TextAlign.Center
+                        )
+                    }
                 }
             }
         }

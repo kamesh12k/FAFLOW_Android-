@@ -76,6 +76,23 @@ data class FaceDetectionResult(
 )
 
 /**
+ * Full biometric verification state machine for attendance gating.
+ */
+sealed interface StaffBiometricVerificationState {
+    data class Unavailable(val reason: String) : StaffBiometricVerificationState
+    data class NoEnrollment(val staffId: String) : StaffBiometricVerificationState
+    data object NoFace : StaffBiometricVerificationState
+    data class MultipleFaces(val count: Int) : StaffBiometricVerificationState
+    data object FaceTooSmall : StaffBiometricVerificationState
+    data object FaceTooLarge : StaffBiometricVerificationState
+    data object FaceOutOfFrame : StaffBiometricVerificationState
+    data object Aligning : StaffBiometricVerificationState
+    data object Embedding : StaffBiometricVerificationState
+    data class VerificationFailed(val similarity: Float, val threshold: Float, val reason: String) : StaffBiometricVerificationState
+    data class Verified(val staffId: String, val similarity: Float, val threshold: Float) : StaffBiometricVerificationState
+}
+
+/**
  * Metric result from matching an embedding against registered profiles.
  */
 data class FaceMatchResult(

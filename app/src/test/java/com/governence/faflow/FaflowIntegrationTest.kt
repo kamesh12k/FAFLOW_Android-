@@ -1,6 +1,5 @@
 package com.governence.faflow
 
-import android.graphics.Bitmap
 import android.graphics.ImageFormat
 import com.governence.faflow.camera.CameraFrame
 import com.governence.faflow.camera.CameraFrameProcessor
@@ -25,11 +24,17 @@ import com.governence.faflow.domain.model.TimetableSlot
 import com.governence.faflow.face.ModelInfo
 import com.governence.faflow.face.ModelTask
 import com.governence.faflow.face.ModelState
+import com.governence.faflow.face.alignment.FaceAlignmentConfig
+import com.governence.faflow.face.alignment.UmeyamaFaceAligner
+import com.governence.faflow.face.embedding.ArcFaceEmbedder
+import com.governence.faflow.face.embedding.FaceRecognitionConfig
+import com.governence.faflow.face.enrollment.StaffFaceEnrollment
+import com.governence.faflow.face.matching.CosineFaceMatcher
 import com.governence.faflow.face.model.FaceBox
 import com.governence.faflow.face.model.FaceDetectionResult
 import com.governence.faflow.face.model.FaceLandmarks
 import com.governence.faflow.face.model.FacePoint
-import com.governence.faflow.face.model.ScrfdModelMetadata
+import com.governence.faflow.face.model.StaffBiometricVerificationState
 import com.governence.faflow.face.scrfd.LetterboxInfo
 import com.governence.faflow.face.scrfd.ScrfdCandidate
 import com.governence.faflow.face.scrfd.ScrfdDecoder
@@ -46,12 +51,229 @@ import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
+import kotlin.math.sqrt
 
 class FaflowIntegrationTest {
+
+    // ---------- Milestone 7: Face Alignment & On-Device Recognition Tests ----------
+
+    @Test
+    fun testUmeyamaIdentityTransform() {
+        val aligner = UmeyamaFaceAligner()
+        val canonical = FaceAlignmentConfig.REFERENCE_LANDMARKS
+        val transform = aligner.estimateSimilarityTransform(src = canonical, dst = canonical)
+
+        assertNotNull("Identity transform must not be null", transform)
+        // Scale = 1.0, Rotation = 0.0, Translation = 0.0
+        assertEquals(1.0f, transform!!.scale, 0.01f)
+        assertEquals(1.0f, transform.a, 0.01f) // scale * cos(0)
+        assertEquals(0.0f, transform.b, 0.01f) // -scale * sin(0)
+        assertEquals(0.0f, transform.tx, 0.01f) // tx
+        assertEquals(0.0f, transform.c, 0.01f) // scale * sin(0)
+        assertEquals(1.0f, transform.d, 0.01f) // scale * cos(0)
+        assertEquals(0.0f, transform.ty, 0.01f) // ty
+    }
+
+    @Test
+    fun testUmeyamaTranslation() {
+        val aligner = UmeyamaFaceAligner()
+        val canonical = FaceAlignmentConfig.REFERENCE_LANDMARKS
+        val translated = canonical.map { FacePoint(it.x + 20f, it.y + 30f) }
+
+        // Mapping translated -> canonical should have tx = -20, ty = -30
+        val transform = aligner.estimateSimilarityTransform(src = translated, dst = canonical)
+        assertNotNull(transform)
+
+        assertEquals(1.0f, transform!!.scale, 0.01f)
+        assertEquals(1.0f, transform.a, 0.01f)
+        assertEquals(1.0f, transform.d, 0.01f)
+        assertEquals(-20.0f, transform.tx, 0.1f)
+        assertEquals(-30.0f, transform.ty, 0.1f)
+    }
+
+    @Test
+    fun testUmeyamaScale() {
+        val aligner = UmeyamaFaceAligner()
+        val canonical = FaceAlignmentConfig.REFERENCE_LANDMARKS
+        val scaled = canonical.map { FacePoint(it.x * 2.0f, it.y * 2.0f) }
+
+        // Mapping scaled (2x) -> canonical (1x) should have scale factor = 0.5
+        val transform = aligner.estimateSimilarityTransform(src = scaled, dst = canonical)
+        assertNotNull(transform)
+
+        assertEquals(0.5f, transform!!.scale, 0.01f)
+        assertEquals(0.5f, transform.a, 0.01f)
+        assertEquals(0.5f, transform.d, 0.01f)
+    }
+
+    @Test
+    fun testFivePointLandmarkOrderingValidation() {
+        val aligner = UmeyamaFaceAligner()
+
+        // Valid landmarks
+        val validLandmarks = FaceLandmarks(
+            leftEye = FacePoint(180f, 150f),
+            rightEye = FacePoint(240f, 150f),
+            nose = FacePoint(210f, 180f),
+            leftMouth = FacePoint(190f, 210f),
+            rightMouth = FacePoint(230f, 210f)
+        )
+        assertNull("Valid landmarks should return null error", aligner.validateLandmarks(validLandmarks, 640, 480))
+
+        // Inverted eye order (left eye x > right eye x)
+        val invertedEyes = validLandmarks.copy(
+            leftEye = FacePoint(240f, 150f),
+            rightEye = FacePoint(180f, 150f)
+        )
+        assertNotNull("Inverted eyes must fail validation", aligner.validateLandmarks(invertedEyes, 640, 480))
+
+        // Nose above eyes
+        val invertedNose = validLandmarks.copy(nose = FacePoint(210f, 120f))
+        assertNotNull("Nose above eyes must fail validation", aligner.validateLandmarks(invertedNose, 640, 480))
+
+        // Mouth above nose
+        val invertedMouth = validLandmarks.copy(
+            leftMouth = FacePoint(190f, 170f),
+            rightMouth = FacePoint(230f, 170f)
+        )
+        assertNotNull("Mouth above nose must fail validation", aligner.validateLandmarks(invertedMouth, 640, 480))
+    }
+
+    @Test
+    fun testEmbeddingNormalization() {
+        val rawVector = floatArrayOf(3.0f, 4.0f, 0.0f, 0.0f) // Magnitude = 5.0
+        val normalized = ArcFaceEmbedder.l2Normalize(rawVector)
+
+        assertEquals(0.6f, normalized[0], 0.001f)
+        assertEquals(0.8f, normalized[1], 0.001f)
+        assertEquals(0.0f, normalized[2], 0.001f)
+
+        var norm = 0.0
+        for (v in normalized) norm += (v * v).toDouble()
+        assertEquals(1.0, sqrt(norm), 0.0001)
+    }
+
+    @Test
+    fun testZeroVectorNormalization() {
+        val zeroVector = FloatArray(512) { 0.0f }
+        val normalized = ArcFaceEmbedder.l2Normalize(zeroVector)
+
+        assertEquals(512, normalized.size)
+        for (v in normalized) {
+            assertEquals(0.0f, v, 0.0f)
+            assertFalse(v.isNaN())
+            assertFalse(v.isInfinite())
+        }
+    }
+
+    @Test
+    fun testNaNAndInfinityEmbeddingSanitization() {
+        val nanVector = floatArrayOf(1.0f, Float.NaN, 3.0f)
+        val sanitizedNan = ArcFaceEmbedder.l2Normalize(nanVector)
+        for (v in sanitizedNan) {
+            assertEquals(0.0f, v, 0.0f)
+        }
+
+        val infVector = floatArrayOf(1.0f, Float.POSITIVE_INFINITY, 3.0f)
+        val sanitizedInf = ArcFaceEmbedder.l2Normalize(infVector)
+        for (v in sanitizedInf) {
+            assertEquals(0.0f, v, 0.0f)
+        }
+    }
+
+    @Test
+    fun testCosineSimilarityIdenticalVectors() {
+        val matcher = CosineFaceMatcher()
+        val vecA = floatArrayOf(0.6f, 0.8f, 0.0f)
+        val vecB = floatArrayOf(0.6f, 0.8f, 0.0f)
+
+        val sim = matcher.computeCosineSimilarity(vecA, vecB)
+        assertEquals(1.0f, sim, 0.001f)
+    }
+
+    @Test
+    fun testCosineSimilarityOrthogonalVectors() {
+        val matcher = CosineFaceMatcher()
+        val vecA = floatArrayOf(1.0f, 0.0f, 0.0f)
+        val vecB = floatArrayOf(0.0f, 1.0f, 0.0f)
+
+        val sim = matcher.computeCosineSimilarity(vecA, vecB)
+        assertEquals(0.0f, sim, 0.001f)
+    }
+
+    @Test
+    fun testCosineSimilarityOppositeVectors() {
+        val matcher = CosineFaceMatcher()
+        val vecA = floatArrayOf(1.0f, 0.0f)
+        val vecB = floatArrayOf(-1.0f, 0.0f)
+
+        val sim = matcher.computeCosineSimilarity(vecA, vecB)
+        assertEquals(-1.0f, sim, 0.001f)
+    }
+
+    @Test
+    fun testCosineSimilarityDimensionMismatch() {
+        val matcher = CosineFaceMatcher()
+        val vecA = floatArrayOf(1.0f, 0.0f)
+        val vecB = floatArrayOf(1.0f, 0.0f, 0.0f)
+
+        val sim = matcher.computeCosineSimilarity(vecA, vecB)
+        assertEquals(0.0f, sim, 0.0f)
+    }
+
+    @Test
+    fun testFaceMatcherThreshold() {
+        val matcher = CosineFaceMatcher(FaceRecognitionConfig(similarityThreshold = 0.60f))
+        val live = floatArrayOf(0.7f, 0.714f)
+        val enrolled = floatArrayOf(0.7f, 0.714f)
+
+        val result = matcher.verifyOneToOne(live, enrolled)
+        assertTrue(result.isMatched)
+        assertTrue(result.similarityScore >= 0.60f)
+
+        val different = floatArrayOf(-0.7f, 0.714f)
+        val failedResult = matcher.verifyOneToOne(different, enrolled)
+        assertFalse(failedResult.isMatched)
+    }
+
+    @Test
+    fun testStaffFaceEnrollmentDataModel() {
+        val enrollment = StaffFaceEnrollment(
+            staffId = "42",
+            staffName = "Dr. Kamesh V",
+            embedding = FloatArray(512) { 0.1f },
+            modelVersion = "InsightFace-ArcFace-v1",
+            alignmentVersion = "Umeyama-112x112-v1",
+            createdAt = 1000L,
+            updatedAt = 1000L
+        )
+
+        val duplicate = enrollment.copy()
+        assertEquals(enrollment, duplicate)
+        assertEquals(enrollment.hashCode(), duplicate.hashCode())
+    }
+
+    @Test
+    fun testStaffBiometricVerificationStateMachine() {
+        val unavail: StaffBiometricVerificationState = StaffBiometricVerificationState.Unavailable("Model missing")
+        assertTrue(unavail is StaffBiometricVerificationState.Unavailable)
+
+        val noEnroll: StaffBiometricVerificationState = StaffBiometricVerificationState.NoEnrollment("42")
+        assertTrue(noEnroll is StaffBiometricVerificationState.NoEnrollment)
+
+        val verified: StaffBiometricVerificationState = StaffBiometricVerificationState.Verified("42", 0.88f, 0.60f)
+        assertTrue(verified is StaffBiometricVerificationState.Verified)
+        assertEquals("42", (verified as StaffBiometricVerificationState.Verified).staffId)
+        assertEquals(0.88f, verified.similarity, 0.001f)
+
+        val failed: StaffBiometricVerificationState = StaffBiometricVerificationState.VerificationFailed(0.42f, 0.60f, "Low score")
+        assertTrue(failed is StaffBiometricVerificationState.VerificationFailed)
+    }
 
     // ---------- Milestone 6: InsightFace SCRFD Face Detection Tests ----------
 

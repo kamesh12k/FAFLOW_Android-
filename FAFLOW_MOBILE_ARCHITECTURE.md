@@ -1,17 +1,18 @@
 # FAFLOW Staff Mobile: Architecture Specification & Integration Blueprint
 
-> **System Status**: **Milestone 6 Complete (InsightFace SCRFD On-Device Face Detection Subsystem)**  
+> **System Status**: **Milestone 7 Complete (InsightFace 5-Point Umeyama Alignment + On-Device ArcFace Recognition)**  
 > **Target Audience**: College Faculty & Staff (Teachers, HODs, Lab Staff, Non-Teaching Staff)  
 > **Source of Truth**: Upstream FAFLOW FastAPI + PostgreSQL Backend (`https://github.com/kamesh12k/FACULTY_FLOW.git`)  
 > **Attendance Architecture**: Palgeo-style Geofenced Biometric Face Attendance  
 > **Geofence Engine**: Haversine Circle + Ray-Casting Point-in-Polygon (Jordan Curve Theorem) + Anti-Spoof Mock Location  
 > **Camera Subsystem**: Front-Camera CameraX (`Preview` + `ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST` + Throttled `CameraAnalyzer` + `CameraFrame` Abstraction)  
-> **Face AI Subsystem**: InsightFace SCRFD 500M ONNX Model (`[1, 3, 640, 640]` NCHW, Multi-Stride 8/16/32 Anchor Decoding, IoU NMS, 5-Point Facial Landmarks)  
+> **Detection Engine**: InsightFace SCRFD 500M ONNX Model (`[1, 3, 640, 640]` NCHW, Multi-Stride 8/16/32 Anchor Decoding, IoU NMS, 5-Point Facial Landmarks)  
+> **Alignment & Recognition**: 5-Point Umeyama Similarity Transform to Canonical $112 \times 112$ + MobileFaceNet ArcFace 512-D Embedding + $L_2$ Normalization + Cosine Similarity Matching + Android Keystore Encrypted Local Enrollment  
 > **Build Status**: `BUILD SUCCESSFUL` with 100% Unit Test Pass Rate and Zero Fake/Mock Data  
 
 ---
 
-## Milestone 6: InsightFace SCRFD On-Device Face Detection Architecture
+## Milestone 7: InsightFace 5-Point Face Alignment & On-Device Face Recognition Architecture
 
 ```
                  CameraX Subsystem
@@ -20,56 +21,63 @@
                    CameraFrame
                         │
                         ▼
-                ScrfdPreprocessor
-     (Rotation + Letterbox to 640x640 +
-       (x - 127.5)/128.0 NCHW Tensor)
-                        │
-                        ▼
-               ONNX Runtime Mobile
-          (SCRFD 500M KPS ONNX Model)
-                        │
-                        ▼
-                  ScrfdDecoder
-      (Multi-Stride 8/16/32 Anchors +
-       Un-letterbox to native frame)
-                        │
-                        ▼
-                ScrfdPostprocessor
-        (Score Filter >= 0.50 + IoU NMS
-           Threshold 0.40 + Quality)
+                ScrfdFaceDetector
+           (SCRFD 500M ONNX Detection)
                         │
                         ▼
                FaceDetectionResult
-          (Bounding Box + 5 Landmarks +
-              FaceDetectionUiState)
+           (Bounding Box + 5 Landmarks)
                         │
                         ▼
-             Attendance Check-In Screen
-           (Guided Facial Framing Overlay)
+               UmeyamaFaceAligner
+        (Geometric Validation + 2D Least
+         Squares Similarity Transformation)
                         │
                         ▼
-          (Future M7: Umeyama Alignment)
+             112x112 Aligned Face
+                        │
+                        ▼
+              EmbeddingPreprocessor
+       (RGB NCHW Tensor [1, 3, 112, 112] +
+         (x - 127.5)/128.0 Normalization)
+                        │
+                        ▼
+               ArcFaceEmbedder
+        (ONNX Runtime MobileFaceNet +
+         L2 Normalization E / ||E||_2)
+                        │
+                        ▼
+              512-D Normalized Vector
+                        │
+                        ▼
+               CosineFaceMatcher
+         (Dot Product vs Encrypted Staff
+           Template from EncryptedSharedPrefs)
+                        │
+                        ▼
+         StaffBiometricVerificationState
+             (Verified / Failed / NoEnroll)
 ```
 
 ### Key Architectural Specifications:
-1. **Model Provenance**: Official InsightFace SCRFD 500M model (`scrfd_500m_kps.onnx`) with 5-point facial landmark regression. Non-commercial/academic research license documented in `face/models/MODEL_PROVENANCE.md`.
-2. **Preprocessing**: Normalizes RGB channels via $(x - 127.5f) / 128.0f$ in NCHW float tensor format (`[1, 3, 640, 640]`). Maintains exact aspect ratio using gray letterboxing $(padX, padY)$.
-3. **Multi-Stride Anchor Grid**:
-   - Stride 8: $80 \times 80 \times 2 = 12,800$ anchors
-   - Stride 16: $40 \times 40 \times 2 = 3,200$ anchors
-   - Stride 32: $20 \times 20 \times 2 = 800$ anchors
-   - Total: **16,800 anchors** evaluated per inference pass.
-4. **Postprocessing & NMS**:
-   - Score thresholding ($\ge 0.50$).
-   - Non-Maximum Suppression with IoU threshold $0.40$.
-   - Un-letterboxing transforms coordinates back to native image dimensions.
-5. **Detection State Machine**:
-   - `NoFace`: Prompts staff to position face within the guide.
-   - `FaceDetected(count = 1)`: Prompts staff to keep still; enables shift check-in action.
-   - `MultipleFaces(count)`: Flags security warning; blocks check-in until only 1 person is in frame.
-   - `FaceTooSmall`: Prompts staff to move closer.
-   - `LowConfidence`: Prompts staff to adjust device lighting.
-6. **Strict Decoupling**: No ArcFace embeddings, no identity matching, and no liveness verification are executed in M6. Zero frame persistence or remote upload.
+1. **Canonical 5-Point Umeyama Alignment**:
+   - Reference Template: ArcFace canonical reference points $(112 \times 112)$ for left eye, right eye, nose tip, left mouth, right mouth.
+   - Robust least-squares covariance decomposition calculating scale $s$, rotation angle $\theta$, and translation $(tx, ty)$.
+   - Geometric Validation: Enforces inter-pupillary distance $\ge 12\text{px}$, left eye $x <$ right eye $x$, nose $y >$ eye mid $y$, and mouth corners below nose tip.
+2. **Feature Extractor (ArcFace / MobileFaceNet)**:
+   - Input: $112 \times 112$ RGB Float32 in NCHW layout (`[1, 3, 112, 112]`).
+   - Normalization: $(x - 127.5) / 128.0$.
+   - Output: 512-dimensional embedding vector.
+   - Robust $L_2$ normalization: $E_{\text{norm}} = E / \max(\|E\|_2, 10^{-12})$ with zero/near-zero vector protection and NaN/Infinity sanitization.
+3. **1-to-1 Cosine Similarity Verification**:
+   - Cosine metric: $\text{sim}(A, B) = \text{dot}(A, B) / (\|A\| \cdot \|B\|)$.
+   - Configurable threshold (default $0.60$, institutional validation required).
+4. **Encrypted Local Enrollment Storage**:
+   - `LocalFaceEnrollmentRepository` stores encrypted template payloads using Android `EncryptedSharedPreferences` (AES256_GCM + AES256_SIV).
+   - Zero raw camera frame persistence; zero biometric data in standard logs.
+5. **Strict Boundary Adherence**:
+   - Face detection $\neq$ Face recognition $\neq$ Liveness $\neq$ Attendance authorization.
+   - Attendance submission is gated and prepared, strictly awaiting Milestone 9 anti-spoofing and backend integration.
 
 ---
 

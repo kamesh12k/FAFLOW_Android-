@@ -1,10 +1,13 @@
 package com.governence.faflow.ui.viewmodels
 
+import android.graphics.Bitmap
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.governence.faflow.domain.model.AttendanceStatus
 import com.governence.faflow.domain.model.StaffAttendanceRecord
 import com.governence.faflow.face.model.FaceDetectionResult
+import com.governence.faflow.face.model.StaffBiometricVerificationState
+import com.governence.faflow.face.recognition.FaceRecognitionEngine
 import com.governence.faflow.faflow.data.GeofenceRepository
 import com.governence.faflow.location.CampusGeofence
 import com.governence.faflow.location.LocationVerificationResult
@@ -14,6 +17,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -44,7 +48,8 @@ data class AttendanceUiState(
 )
 
 class AttendanceViewModel(
-    private val geofenceRepository: GeofenceRepository
+    private val geofenceRepository: GeofenceRepository,
+    private val recognitionEngine: FaceRecognitionEngine? = null
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(AttendanceUiState())
@@ -52,6 +57,9 @@ class AttendanceViewModel(
 
     private val _faceDetectionState = MutableStateFlow<FaceDetectionUiState>(FaceDetectionUiState.NoFace)
     val faceDetectionState: StateFlow<FaceDetectionUiState> = _faceDetectionState.asStateFlow()
+
+    private val _biometricState = MutableStateFlow<StaffBiometricVerificationState>(StaffBiometricVerificationState.NoFace)
+    val biometricState: StateFlow<StaffBiometricVerificationState> = _biometricState.asStateFlow()
 
     val verificationResult: StateFlow<LocationVerificationResult> = geofenceRepository.verificationResult
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), LocationVerificationResult.Loading)
@@ -65,10 +73,22 @@ class AttendanceViewModel(
     /**
      * Evaluates detected faces against the positioning guide oval and quality standards.
      */
-    fun updateDetections(detections: List<FaceDetectionResult>, frameWidth: Int = 640, frameHeight: Int = 480) {
-        _faceDetectionState.value = when {
-            detections.isEmpty() -> FaceDetectionUiState.NoFace
-            detections.size > 1 -> FaceDetectionUiState.MultipleFaces(detections.size)
+    fun updateDetections(
+        detections: List<FaceDetectionResult>,
+        sourceBitmap: Bitmap? = null,
+        staffId: String? = null,
+        frameWidth: Int = 640,
+        frameHeight: Int = 480
+    ) {
+        val newState = when {
+            detections.isEmpty() -> {
+                _biometricState.value = StaffBiometricVerificationState.NoFace
+                FaceDetectionUiState.NoFace
+            }
+            detections.size > 1 -> {
+                _biometricState.value = StaffBiometricVerificationState.MultipleFaces(detections.size)
+                FaceDetectionUiState.MultipleFaces(detections.size)
+            }
             else -> {
                 val face = detections.first()
                 val box = face.boundingBox
@@ -77,14 +97,43 @@ class AttendanceViewModel(
                 val faceWidthRatio = box.width / frameWidth.toFloat()
 
                 when {
-                    face.confidence < 0.50f -> FaceDetectionUiState.NoFace
-                    isOutOfBounds -> FaceDetectionUiState.FacePartiallyOutOfFrame
-                    faceWidthRatio < 0.20f -> FaceDetectionUiState.FaceTooSmall
-                    faceWidthRatio > 0.85f -> FaceDetectionUiState.FaceTooLarge
-                    !face.quality.isFrontal -> FaceDetectionUiState.FaceDetected(count = 1, primaryFace = face)
-                    else -> FaceDetectionUiState.FacePositionValid(primaryFace = face)
+                    face.confidence < 0.50f -> {
+                        _biometricState.value = StaffBiometricVerificationState.NoFace
+                        FaceDetectionUiState.NoFace
+                    }
+                    isOutOfBounds -> {
+                        _biometricState.value = StaffBiometricVerificationState.FaceOutOfFrame
+                        FaceDetectionUiState.FacePartiallyOutOfFrame
+                    }
+                    faceWidthRatio < 0.20f -> {
+                        _biometricState.value = StaffBiometricVerificationState.FaceTooSmall
+                        FaceDetectionUiState.FaceTooSmall
+                    }
+                    faceWidthRatio > 0.85f -> {
+                        _biometricState.value = StaffBiometricVerificationState.FaceTooLarge
+                        FaceDetectionUiState.FaceTooLarge
+                    }
+                    !face.quality.isFrontal -> {
+                        FaceDetectionUiState.FaceDetected(count = 1, primaryFace = face)
+                    }
+                    else -> {
+                        if (sourceBitmap != null && staffId != null && recognitionEngine != null) {
+                            runRecognition(sourceBitmap, face, staffId)
+                        }
+                        FaceDetectionUiState.FacePositionValid(primaryFace = face)
+                    }
                 }
             }
+        }
+        _faceDetectionState.value = newState
+    }
+
+    private fun runRecognition(sourceBitmap: Bitmap, face: FaceDetectionResult, staffId: String) {
+        viewModelScope.launch {
+            _biometricState.value = StaffBiometricVerificationState.Aligning
+            val result = recognitionEngine?.verifyStaffIdentity(sourceBitmap, face, staffId)
+                ?: StaffBiometricVerificationState.Unavailable("Recognition engine not configured")
+            _biometricState.value = result
         }
     }
 
@@ -103,8 +152,8 @@ class AttendanceViewModel(
         }
     }
 
-    fun isFacePositionValid(): Boolean {
-        return faceDetectionState.value is FaceDetectionUiState.FacePositionValid
+    fun isBiometricallyVerified(): Boolean {
+        return biometricState.value is StaffBiometricVerificationState.Verified
     }
 
     fun performCheckIn(onSuccess: () -> Unit) {
