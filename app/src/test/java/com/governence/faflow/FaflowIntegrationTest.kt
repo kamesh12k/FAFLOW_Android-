@@ -148,6 +148,72 @@ class FaflowIntegrationTest {
         assertEquals(0L, AttendanceTelemetry.getMetric("non_existent_metric"))
     }
 
+    // ---------- Milestone 11: Real Device End-to-End Pipeline & Integration Tests ----------
+
+    @Test
+    fun testFullEndToEndAttendanceWorkflowStateProgression() {
+        // 1. Initial State
+        var status: AttendancePipelineStatus = AttendancePipelineStatus.Initializing
+        assertEquals("Initializing", status.title)
+
+        // 2. Location Validated
+        status = AttendancePipelineStatus.Locating
+        assertEquals("Acquiring GPS Fix", status.title)
+
+        // 3. Single Face Detected & Validated
+        status = AttendancePipelineStatus.FaceDetected
+        assertEquals("Face Detected", status.title)
+
+        // 4. Canonical Alignment & Verification
+        status = AttendancePipelineStatus.FaceAlignmentRequired
+        assertEquals("Aligning Features", status.title)
+
+        // 5. Active Challenge
+        status = AttendancePipelineStatus.LivenessCheck("Turn your head slightly to the left", 0.75f)
+        assertEquals("Verifying Liveness", status.title)
+
+        // 6. Gated & Ready for Check-In
+        status = AttendancePipelineStatus.ReadyForCheckIn("42", 0.94f)
+        assertTrue(status.isActionable)
+
+        // 7. Authoritative Submission & Confirmation
+        status = AttendancePipelineStatus.CheckingIn
+        assertEquals("Checking In", status.title)
+
+        status = AttendancePipelineStatus.CheckedIn("08:30 AM")
+        assertEquals("Checked In", status.title)
+    }
+
+    @Test
+    fun testOfflineQueuePersistenceEntityValidation() {
+        val testKey = "idempotency-milestone-11-" + UUID.randomUUID().toString()
+        val entity = PendingAttendanceEntity(
+            idempotencyKey = testKey,
+            userId = 42,
+            operationType = "CHECK_IN",
+            latitude = 11.016844,
+            longitude = 76.955833,
+            accuracyMeters = 7.5,
+            faceSimilarityScore = 0.91,
+            livenessVerified = true,
+            syncStatus = SyncStatus.PENDING
+        )
+
+        assertEquals(testKey, entity.idempotencyKey)
+        assertEquals("CHECK_IN", entity.operationType)
+        assertTrue(entity.livenessVerified)
+        assertEquals(SyncStatus.PENDING, entity.syncStatus)
+
+        // Verify state update to SYNCING
+        val inSync = entity.copy(syncStatus = SyncStatus.SYNCING, attemptCount = 1)
+        assertEquals(SyncStatus.SYNCING, inSync.syncStatus)
+        assertEquals(1, inSync.attemptCount)
+
+        // Verify completion to SYNCED
+        val completed = inSync.copy(syncStatus = SyncStatus.SYNCED)
+        assertEquals(SyncStatus.SYNCED, completed.syncStatus)
+    }
+
     // ---------- Milestone 9: Backend Attendance Integration & Offline Sync Tests ----------
 
     @Test

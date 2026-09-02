@@ -21,6 +21,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccessTime
+import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.CloudDone
@@ -158,7 +159,16 @@ fun AttendanceCheckInOutScreen(
             AppTopBar(
                 title = if (uiState.isCheckingIn) "Staff Shift Check-In" else "Staff Shift Check-Out",
                 canNavigateBack = true,
-                onNavigateBack = onNavigateBack
+                onNavigateBack = onNavigateBack,
+                actions = {
+                    IconButton(onClick = { viewModel.toggleDebugOverlay() }) {
+                        Icon(
+                            imageVector = Icons.Default.BugReport,
+                            contentDescription = "Diagnostics",
+                            tint = if (uiState.isDebugOverlayVisible) StatusSuccess else Color.White
+                        )
+                    }
+                }
             )
         },
         containerColor = MaterialTheme.colorScheme.background
@@ -297,7 +307,7 @@ fun AttendanceCheckInOutScreen(
                         cameraState = cameraState,
                         faceDetectionState = faceDetectionState,
                         livenessState = livenessState,
-                        showDebugOverlay = false,
+                        showDebugOverlay = uiState.isDebugOverlayVisible,
                         inferenceLatencyMs = latencyMs,
                         modifier = Modifier.fillMaxSize()
                     )
