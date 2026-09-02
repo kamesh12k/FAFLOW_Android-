@@ -35,6 +35,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.governence.faflow.domain.model.TimetableSlot
 import com.governence.faflow.ui.components.AppTopBar
+import com.governence.faflow.ui.components.EmptyStateView
+import com.governence.faflow.ui.components.ErrorRetryView
 import com.governence.faflow.ui.theme.PrimaryBlue
 import com.governence.faflow.ui.viewmodels.TimetableViewModel
 
@@ -93,6 +95,11 @@ fun TimetableScreen(
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
                 }
+            } else if (state.errorMessage != null && state.allSlots.isEmpty()) {
+                ErrorRetryView(
+                    message = state.errorMessage!!,
+                    onRetry = { viewModel.retry() }
+                )
             } else {
                 // 5 Periods Schedule List
                 LazyColumn(

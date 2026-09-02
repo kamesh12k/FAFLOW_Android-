@@ -1,5 +1,8 @@
 package com.governence.faflow.ui.navigation
 
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
@@ -9,14 +12,17 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import com.governence.faflow.auth.ui.AuthViewModel
 import com.governence.faflow.core.di.AppContainer
+import com.governence.faflow.ui.components.MainBottomNavigation
 import com.governence.faflow.ui.screens.ApplyLeaveScreen
 import com.governence.faflow.ui.screens.AttendanceCheckInOutScreen
 import com.governence.faflow.ui.screens.AttendanceHistoryScreen
+import com.governence.faflow.ui.screens.AttendancePlaceholderScreen
 import com.governence.faflow.ui.screens.CreditsScreen
 import com.governence.faflow.ui.screens.DashboardScreen
 import com.governence.faflow.ui.screens.FaceEnrollmentScreen
 import com.governence.faflow.ui.screens.LeaveHistoryScreen
 import com.governence.faflow.ui.screens.LoginScreen
+import com.governence.faflow.ui.screens.MoreScreen
 import com.governence.faflow.ui.screens.NotificationsScreen
 import com.governence.faflow.ui.screens.PreferencesScreen
 import com.governence.faflow.ui.screens.ProfileScreen
@@ -85,169 +91,196 @@ fun NavGraph(
         )
     }
 
-    NavHost(
-        navController = navController,
-        startDestination = Screen.Splash.route,
-        modifier = modifier
-    ) {
-        composable(Screen.Splash.route) {
-            SplashScreen(
-                onNavigateToLogin = {
-                    navController.navigate(Screen.Login.route) {
-                        popUpTo(Screen.Splash.route) { inclusive = true }
+    Scaffold(
+        modifier = modifier.fillMaxSize(),
+        bottomBar = {
+            MainBottomNavigation(navController = navController)
+        }
+    ) { innerPadding ->
+        NavHost(
+            navController = navController,
+            startDestination = Screen.Splash.route,
+            modifier = Modifier.padding(innerPadding)
+        ) {
+            // Auth & Splash
+            composable(Screen.Splash.route) {
+                SplashScreen(
+                    onNavigateToLogin = {
+                        navController.navigate(Screen.Login.route) {
+                            popUpTo(Screen.Splash.route) { inclusive = true }
+                        }
+                    },
+                    onNavigateToDashboard = {
+                        navController.navigate(Screen.Home.route) {
+                            popUpTo(Screen.Splash.route) { inclusive = true }
+                        }
                     }
-                },
-                onNavigateToDashboard = {
-                    navController.navigate(Screen.Dashboard.route) {
-                        popUpTo(Screen.Splash.route) { inclusive = true }
+                )
+            }
+
+            composable(Screen.Login.route) {
+                LoginScreen(
+                    authViewModel = authViewModel,
+                    onLoginSuccess = {
+                        dashboardViewModel.loadDashboardData()
+                        timetableViewModel.loadTimetable()
+                        leaveViewModel.loadMyLeaves()
+                        creditsViewModel.loadCredits()
+                        substitutionViewModel.loadDuties()
+                        preferencesViewModel.loadPreferences()
+                        notificationsViewModel.loadNotifications()
+                        navController.navigate(Screen.Home.route) {
+                            popUpTo(Screen.Login.route) { inclusive = true }
+                        }
                     }
-                }
-            )
-        }
+                )
+            }
 
-        composable(Screen.Login.route) {
-            LoginScreen(
-                authViewModel = authViewModel,
-                onLoginSuccess = {
-                    dashboardViewModel.loadDashboardData()
-                    timetableViewModel.loadTimetable()
-                    leaveViewModel.loadMyLeaves()
-                    creditsViewModel.loadCredits()
-                    substitutionViewModel.loadDuties()
-                    preferencesViewModel.loadPreferences()
-                    notificationsViewModel.loadNotifications()
-                    navController.navigate(Screen.Dashboard.route) {
-                        popUpTo(Screen.Login.route) { inclusive = true }
+            // Primary Bottom Nav Tab 1: Home (Dashboard)
+            composable(Screen.Home.route) {
+                DashboardScreen(
+                    viewModel = dashboardViewModel,
+                    onNavigateToCheckIn = { navController.navigate(Screen.AttendanceCheckInOut.route) },
+                    onNavigateToTimetable = { navController.navigate(Screen.Timetable.route) },
+                    onNavigateToApplyLeave = { navController.navigate(Screen.ApplyLeave.route) },
+                    onNavigateToLeaveHistory = { navController.navigate(Screen.LeaveHistory.route) },
+                    onNavigateToCredits = { navController.navigate(Screen.Credits.route) },
+                    onNavigateToSubstitution = { navController.navigate(Screen.Substitution.route) },
+                    onNavigateToAttendanceHistory = { navController.navigate(Screen.AttendanceHistory.route) },
+                    onNavigateToNotifications = { navController.navigate(Screen.Notifications.route) },
+                    onNavigateToProfile = { navController.navigate(Screen.Profile.route) }
+                )
+            }
+
+            // Primary Bottom Nav Tab 2: Timetable
+            composable(Screen.Timetable.route) {
+                TimetableScreen(
+                    viewModel = timetableViewModel,
+                    onNavigateBack = { navController.popBackStack() }
+                )
+            }
+
+            // Primary Bottom Nav Tab 3: Attendance Placeholder
+            composable(Screen.Attendance.route) {
+                AttendancePlaceholderScreen(
+                    onNavigateToHistory = { navController.navigate(Screen.AttendanceHistory.route) }
+                )
+            }
+
+            // Primary Bottom Nav Tab 4: More (Faculty Hub)
+            composable(Screen.More.route) {
+                MoreScreen(
+                    onNavigateToApplyLeave = { navController.navigate(Screen.ApplyLeave.route) },
+                    onNavigateToLeaveHistory = { navController.navigate(Screen.LeaveHistory.route) },
+                    onNavigateToCredits = { navController.navigate(Screen.Credits.route) },
+                    onNavigateToSubstitution = { navController.navigate(Screen.Substitution.route) },
+                    onNavigateToPreferences = { navController.navigate(Screen.Preferences.route) },
+                    onNavigateToNotifications = { navController.navigate(Screen.Notifications.route) },
+                    onNavigateToProfile = { navController.navigate(Screen.Profile.route) },
+                    onNavigateToSettings = { navController.navigate(Screen.Settings.route) }
+                )
+            }
+
+            // Feature Sub-Screens
+            composable(Screen.ApplyLeave.route) {
+                ApplyLeaveScreen(
+                    viewModel = leaveViewModel,
+                    onNavigateBack = { navController.popBackStack() },
+                    onLeaveSubmitted = {
+                        navController.navigate(Screen.LeaveHistory.route) {
+                            popUpTo(Screen.Home.route)
+                        }
                     }
-                }
-            )
-        }
+                )
+            }
 
-        composable(Screen.Dashboard.route) {
-            DashboardScreen(
-                viewModel = dashboardViewModel,
-                onNavigateToCheckIn = { navController.navigate(Screen.AttendanceCheckInOut.route) },
-                onNavigateToTimetable = { navController.navigate(Screen.Timetable.route) },
-                onNavigateToApplyLeave = { navController.navigate(Screen.ApplyLeave.route) },
-                onNavigateToLeaveHistory = { navController.navigate(Screen.LeaveHistory.route) },
-                onNavigateToCredits = { navController.navigate(Screen.Credits.route) },
-                onNavigateToSubstitution = { navController.navigate(Screen.Substitution.route) },
-                onNavigateToAttendanceHistory = { navController.navigate(Screen.AttendanceHistory.route) },
-                onNavigateToFaceEnrollment = { navController.navigate(Screen.FaceEnrollment.route) },
-                onNavigateToNotifications = { navController.navigate(Screen.Notifications.route) },
-                onNavigateToProfile = { navController.navigate(Screen.Profile.route) },
-                onNavigateToSettings = { navController.navigate(Screen.Settings.route) },
-                onNavigateToSyncStatus = { navController.navigate(Screen.SyncStatus.route) }
-            )
-        }
+            composable(Screen.LeaveHistory.route) {
+                LeaveHistoryScreen(
+                    viewModel = leaveViewModel,
+                    onNavigateBack = { navController.popBackStack() }
+                )
+            }
 
-        // Palgeo Staff Attendance Screens
-        composable(Screen.AttendanceCheckInOut.route) {
-            AttendanceCheckInOutScreen(
-                onNavigateBack = { navController.popBackStack() },
-                onAttendanceSuccess = {
-                    navController.navigate(Screen.Dashboard.route) {
-                        popUpTo(Screen.Dashboard.route) { inclusive = true }
+            composable(Screen.Credits.route) {
+                CreditsScreen(
+                    viewModel = creditsViewModel,
+                    onNavigateBack = { navController.popBackStack() }
+                )
+            }
+
+            composable(Screen.Substitution.route) {
+                SubstitutionScreen(
+                    viewModel = substitutionViewModel,
+                    onNavigateBack = { navController.popBackStack() }
+                )
+            }
+
+            composable(Screen.Preferences.route) {
+                PreferencesScreen(
+                    viewModel = preferencesViewModel,
+                    onNavigateBack = { navController.popBackStack() }
+                )
+            }
+
+            composable(Screen.Notifications.route) {
+                NotificationsScreen(
+                    viewModel = notificationsViewModel,
+                    onNavigateBack = { navController.popBackStack() }
+                )
+            }
+
+            composable(Screen.Profile.route) {
+                ProfileScreen(
+                    authViewModel = authViewModel,
+                    onNavigateBack = { navController.popBackStack() },
+                    onNavigateToFaceEnrollment = { navController.navigate(Screen.FaceEnrollment.route) },
+                    onLogout = {
+                        navController.navigate(Screen.Login.route) {
+                            popUpTo(Screen.Home.route) { inclusive = true }
+                        }
                     }
-                }
-            )
-        }
+                )
+            }
 
-        composable(Screen.AttendanceHistory.route) {
-            AttendanceHistoryScreen(
-                onNavigateBack = { navController.popBackStack() }
-            )
-        }
+            composable(Screen.AttendanceHistory.route) {
+                AttendanceHistoryScreen(
+                    onNavigateBack = { navController.popBackStack() }
+                )
+            }
 
-        composable(Screen.FaceEnrollment.route) {
-            FaceEnrollmentScreen(
-                onNavigateBack = { navController.popBackStack() },
-                onEnrollmentComplete = {
-                    navController.navigate(Screen.Dashboard.route) {
-                        popUpTo(Screen.Dashboard.route) { inclusive = true }
+            composable(Screen.AttendanceCheckInOut.route) {
+                AttendanceCheckInOutScreen(
+                    onNavigateBack = { navController.popBackStack() },
+                    onAttendanceSuccess = {
+                        navController.navigate(Screen.Home.route) {
+                            popUpTo(Screen.Home.route) { inclusive = true }
+                        }
                     }
-                }
-            )
-        }
+                )
+            }
 
-        // FAFLOW Core Staff Modules
-        composable(Screen.Timetable.route) {
-            TimetableScreen(
-                viewModel = timetableViewModel,
-                onNavigateBack = { navController.popBackStack() }
-            )
-        }
-
-        composable(Screen.ApplyLeave.route) {
-            ApplyLeaveScreen(
-                viewModel = leaveViewModel,
-                onNavigateBack = { navController.popBackStack() },
-                onLeaveSubmitted = {
-                    navController.navigate(Screen.LeaveHistory.route) {
-                        popUpTo(Screen.Dashboard.route)
+            composable(Screen.FaceEnrollment.route) {
+                FaceEnrollmentScreen(
+                    onNavigateBack = { navController.popBackStack() },
+                    onEnrollmentComplete = {
+                        navController.navigate(Screen.Home.route) {
+                            popUpTo(Screen.Home.route) { inclusive = true }
+                        }
                     }
-                }
-            )
-        }
+                )
+            }
 
-        composable(Screen.LeaveHistory.route) {
-            LeaveHistoryScreen(
-                viewModel = leaveViewModel,
-                onNavigateBack = { navController.popBackStack() }
-            )
-        }
+            composable(Screen.Settings.route) {
+                SettingsScreen(
+                    onNavigateBack = { navController.popBackStack() }
+                )
+            }
 
-        composable(Screen.Credits.route) {
-            CreditsScreen(
-                viewModel = creditsViewModel,
-                onNavigateBack = { navController.popBackStack() }
-            )
-        }
-
-        composable(Screen.Substitution.route) {
-            SubstitutionScreen(
-                viewModel = substitutionViewModel,
-                onNavigateBack = { navController.popBackStack() }
-            )
-        }
-
-        composable(Screen.Preferences.route) {
-            PreferencesScreen(
-                viewModel = preferencesViewModel,
-                onNavigateBack = { navController.popBackStack() }
-            )
-        }
-
-        composable(Screen.Notifications.route) {
-            NotificationsScreen(
-                viewModel = notificationsViewModel,
-                onNavigateBack = { navController.popBackStack() }
-            )
-        }
-
-        composable(Screen.Profile.route) {
-            ProfileScreen(
-                authViewModel = authViewModel,
-                onNavigateBack = { navController.popBackStack() },
-                onNavigateToFaceEnrollment = { navController.navigate(Screen.FaceEnrollment.route) },
-                onLogout = {
-                    navController.navigate(Screen.Login.route) {
-                        popUpTo(Screen.Dashboard.route) { inclusive = true }
-                    }
-                }
-            )
-        }
-
-        composable(Screen.Settings.route) {
-            SettingsScreen(
-                onNavigateBack = { navController.popBackStack() }
-            )
-        }
-
-        composable(Screen.SyncStatus.route) {
-            SyncStatusScreen(
-                onNavigateBack = { navController.popBackStack() }
-            )
+            composable(Screen.SyncStatus.route) {
+                SyncStatusScreen(
+                    onNavigateBack = { navController.popBackStack() }
+                )
+            }
         }
     }
 }

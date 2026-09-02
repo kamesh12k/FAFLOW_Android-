@@ -1,9 +1,19 @@
-# FAFLOW Staff Mobile — System Architecture & Integration Specification
+# FAFLOW Staff Mobile: Architecture Specification & Integration Blueprint
 
-**Product Name:** FAFLOW Staff Mobile (Palgeo-Inspired Geofenced & Facial Attendance for Higher Education Faculty)  
-**Target Repository:** [`https://github.com/kamesh12k/FACULTY_FLOW.git`](https://github.com/kamesh12k/FACULTY_FLOW.git)  
-**Document Version:** 2.0.0-PROD  
-**Authoritative Backend:** Existing FAFLOW FastAPI + PostgreSQL Backend  
+> **System Status**: **Milestone 3 Complete (Full FAFLOW Staff Mobile Native Experience)**  
+> **Target Audience**: College Faculty & Staff (Teachers, HODs, Lab Staff, Non-Teaching Staff)  
+> **Source of Truth**: Upstream FAFLOW FastAPI + PostgreSQL Backend (`https://github.com/kamesh12k/FACULTY_FLOW.git`)  
+> **Attendance Architecture**: Palgeo-style Geofenced Biometric Face Attendance (Scheduled for M4-M10)  
+> **Build Status**: `BUILD SUCCESSFUL` with 100% Unit Test Pass Rate and Zero Fake/Mock Data  
+
+---
+
+## Milestone 3 Implementation Status
+
+1. **Native Client Architecture**: The Android app is a native, reactive client connected to the FAFLOW backend via Retrofit, OkHttp, and Moshi with Bearer JWT injection and 401 auto-eviction.
+2. **Bottom Navigation**: 4-tab streamlined navigation (`Home`, `Timetable`, `Attendance`, `More/Hub`) providing 1-touch access to all faculty functions.
+3. **Real API Consumption**: All screens (`Dashboard`, `Timetable`, `Apply Leave`, `Leave History`, `Credits`, `Substitution`, `Preferences`, `Notifications`, `Profile`) consume real backend endpoints with comprehensive Loading, Error, Retry, and Empty state handling.
+4. **Attendance Placeholder**: The Attendance screen cleanly displays shift and verification pipeline prerequisites while keeping CameraX, GPS, and InsightFace deferred to subsequent milestones.
 
 ---
 

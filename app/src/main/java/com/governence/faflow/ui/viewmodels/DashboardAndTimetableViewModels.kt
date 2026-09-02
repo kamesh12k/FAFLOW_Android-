@@ -18,6 +18,7 @@ import kotlinx.coroutines.launch
 
 data class DashboardUiState(
     val isLoading: Boolean = false,
+    val isRefreshing: Boolean = false,
     val staff: StaffMember? = null,
     val todaySummary: TeacherTodaySummaryDto? = null,
     val todaySlots: List<TimetableSlot> = emptyList(),
@@ -38,17 +39,30 @@ class DashboardViewModel(
     val uiState: StateFlow<DashboardUiState> = _uiState.asStateFlow()
 
     init {
-        loadDashboardData()
+        loadDashboardData(isRefresh = false)
     }
 
-    fun loadDashboardData() {
+    fun retry() {
+        loadDashboardData(isRefresh = false)
+    }
+
+    fun refresh() {
+        loadDashboardData(isRefresh = true)
+    }
+
+    fun loadDashboardData(isRefresh: Boolean = false) {
         val currentStaff = authRepository.getStoredStaffInfo()
-        _uiState.value = _uiState.value.copy(isLoading = true, staff = currentStaff, errorMessage = null)
+        _uiState.value = _uiState.value.copy(
+            isLoading = !isRefresh,
+            isRefreshing = isRefresh,
+            staff = currentStaff,
+            errorMessage = null
+        )
 
         viewModelScope.launch {
             val staffId = currentStaff?.id ?: return@launch
 
-            // 1. Fetch Today's Day Order & Summary
+            // 1. Fetch Today's Day Order & Summary from FAFLOW
             when (val summaryRes = academicSummaryRepository.getMyTodaySummary()) {
                 is NetworkResult.Success -> {
                     val summary = summaryRes.data
@@ -66,7 +80,8 @@ class DashboardViewModel(
                     }
                 }
                 is NetworkResult.Error -> {
-                    _uiState.value = _uiState.value.copy(errorMessage = summaryRes.message)
+                    val msg = if (summaryRes.code == -1) "Unable to connect to FAFLOW server. Check network." else summaryRes.message
+                    _uiState.value = _uiState.value.copy(errorMessage = msg)
                 }
                 NetworkResult.Loading -> Unit
             }
@@ -89,7 +104,7 @@ class DashboardViewModel(
                 NetworkResult.Loading -> Unit
             }
 
-            _uiState.value = _uiState.value.copy(isLoading = false)
+            _uiState.value = _uiState.value.copy(isLoading = false, isRefreshing = false)
         }
     }
 }
@@ -114,6 +129,10 @@ class TimetableViewModel(
         loadTimetable()
     }
 
+    fun retry() {
+        loadTimetable()
+    }
+
     fun loadTimetable() {
         val staffId = authRepository.getStoredStaffInfo()?.id ?: return
         _uiState.value = _uiState.value.copy(isLoading = true, errorMessage = null)
@@ -129,7 +148,8 @@ class TimetableViewModel(
                     )
                 }
                 is NetworkResult.Error -> {
-                    _uiState.value = _uiState.value.copy(isLoading = false, errorMessage = result.message)
+                    val msg = if (result.code == -1) "Unable to connect to server. Check network." else result.message
+                    _uiState.value = _uiState.value.copy(isLoading = false, errorMessage = msg)
                 }
                 NetworkResult.Loading -> Unit
             }

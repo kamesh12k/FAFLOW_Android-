@@ -43,6 +43,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.governence.faflow.ui.components.AppTopBar
+import com.governence.faflow.ui.components.ErrorRetryView
 import com.governence.faflow.ui.components.PrimaryGradientButton
 import com.governence.faflow.ui.components.StatCard
 import com.governence.faflow.ui.theme.CardHighlight
@@ -52,6 +53,9 @@ import com.governence.faflow.ui.theme.StatusInfo
 import com.governence.faflow.ui.theme.StatusSuccess
 import com.governence.faflow.ui.theme.StatusWarning
 import com.governence.faflow.ui.viewmodels.DashboardViewModel
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 @Composable
 fun DashboardScreen(
@@ -63,13 +67,11 @@ fun DashboardScreen(
     onNavigateToCredits: () -> Unit,
     onNavigateToSubstitution: () -> Unit,
     onNavigateToAttendanceHistory: () -> Unit,
-    onNavigateToFaceEnrollment: () -> Unit,
     onNavigateToNotifications: () -> Unit,
-    onNavigateToProfile: () -> Unit,
-    onNavigateToSettings: () -> Unit,
-    onNavigateToSyncStatus: () -> Unit
+    onNavigateToProfile: () -> Unit
 ) {
     val state by viewModel.uiState.collectAsState()
+    val todayDateFormatted = SimpleDateFormat("EEEE, d MMMM yyyy", Locale.getDefault()).format(Date())
 
     Scaffold(
         topBar = {
@@ -105,6 +107,12 @@ fun DashboardScreen(
             ) {
                 CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
             }
+        } else if (state.errorMessage != null && state.staff == null) {
+            ErrorRetryView(
+                message = state.errorMessage!!,
+                onRetry = { viewModel.retry() },
+                modifier = Modifier.padding(innerPadding)
+            )
         } else {
             LazyColumn(
                 modifier = Modifier
@@ -128,6 +136,13 @@ fun DashboardScreen(
                                 .fillMaxWidth()
                                 .padding(20.dp)
                         ) {
+                            Text(
+                                text = todayDateFormatted,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -169,7 +184,7 @@ fun DashboardScreen(
                     }
                 }
 
-                // Palgeo Geofenced Facial Attendance Integration Placeholder
+                // Palgeo Attendance Status Banner Placeholder
                 item {
                     Card(
                         modifier = Modifier.fillMaxWidth(),
@@ -230,7 +245,7 @@ fun DashboardScreen(
                     }
                 }
 
-                // Real FAFLOW Academic & Workload Modules
+                // Academic & Workload Modules
                 item {
                     Text(
                         text = "Academic & Workload Modules",
@@ -243,7 +258,7 @@ fun DashboardScreen(
                 item {
                     val slotsCount = state.todaySlots.size
                     val subtitle = if (slotsCount > 0) {
-                        "${slotsCount} periods scheduled today"
+                        "${slotsCount} teaching periods scheduled today"
                     } else {
                         "View full 6-day timetable matrix"
                     }

@@ -17,6 +17,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -34,6 +36,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.governence.faflow.domain.model.CreditTransaction
 import com.governence.faflow.ui.components.AppTopBar
+import com.governence.faflow.ui.components.EmptyStateView
+import com.governence.faflow.ui.components.ErrorRetryView
 import com.governence.faflow.ui.theme.StatusError
 import com.governence.faflow.ui.theme.StatusSuccess
 import com.governence.faflow.ui.viewmodels.CreditsViewModel
@@ -55,10 +59,16 @@ fun CreditsScreen(
         },
         containerColor = MaterialTheme.colorScheme.background
     ) { innerPadding ->
-        if (state.isLoading) {
+        if (state.isLoading && state.transactions.isEmpty()) {
             Box(modifier = Modifier.fillMaxSize().padding(innerPadding), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
             }
+        } else if (state.errorMessage != null && state.transactions.isEmpty()) {
+            ErrorRetryView(
+                message = state.errorMessage!!,
+                onRetry = { viewModel.loadCredits() },
+                modifier = Modifier.padding(innerPadding)
+            )
         } else {
             LazyColumn(
                 modifier = Modifier
@@ -117,10 +127,10 @@ fun CreditsScreen(
 
                 if (state.transactions.isEmpty()) {
                     item {
-                        Text(
-                            text = "No credit transactions logged yet.",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        EmptyStateView(
+                            title = "No Transactions",
+                            description = "No credit adjustments or duties recorded yet.",
+                            icon = Icons.Default.AccountBalanceWallet
                         )
                     }
                 } else {

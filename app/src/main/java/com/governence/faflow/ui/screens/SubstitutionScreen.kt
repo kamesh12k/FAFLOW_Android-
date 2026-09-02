@@ -35,6 +35,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.governence.faflow.ui.components.AppTopBar
+import com.governence.faflow.ui.components.EmptyStateView
+import com.governence.faflow.ui.components.ErrorRetryView
 import com.governence.faflow.ui.theme.PrimaryBlue
 import com.governence.faflow.ui.theme.SecondaryTeal
 import com.governence.faflow.ui.viewmodels.SubstitutionViewModel
@@ -56,10 +58,16 @@ fun SubstitutionScreen(
         },
         containerColor = MaterialTheme.colorScheme.background
     ) { innerPadding ->
-        if (state.isLoading) {
+        if (state.isLoading && state.duties.isEmpty()) {
             Box(modifier = Modifier.fillMaxSize().padding(innerPadding), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
             }
+        } else if (state.errorMessage != null && state.duties.isEmpty()) {
+            ErrorRetryView(
+                message = state.errorMessage!!,
+                onRetry = { viewModel.loadDuties() },
+                modifier = Modifier.padding(innerPadding)
+            )
         } else {
             LazyColumn(
                 modifier = Modifier
@@ -79,18 +87,11 @@ fun SubstitutionScreen(
 
                 if (state.duties.isEmpty()) {
                     item {
-                        Card(
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(16.dp),
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-                        ) {
-                            Text(
-                                text = "No substitute classes currently assigned.",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(16.dp)
-                            )
-                        }
+                        EmptyStateView(
+                            title = "No Duties Assigned",
+                            description = "You currently have no pending substitution duties assigned.",
+                            icon = Icons.Default.SwapHoriz
+                        )
                     }
                 } else {
                     items(state.duties) { duty ->
