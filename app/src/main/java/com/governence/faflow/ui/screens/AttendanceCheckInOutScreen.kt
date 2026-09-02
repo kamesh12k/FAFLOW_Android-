@@ -25,6 +25,7 @@ import androidx.compose.material.icons.filled.GpsFixed
 import androidx.compose.material.icons.filled.GpsNotFixed
 import androidx.compose.material.icons.filled.GpsOff
 import androidx.compose.material.icons.filled.LocationOn
+import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -56,19 +57,19 @@ import com.governence.faflow.camera.CameraPreviewView
 import com.governence.faflow.face.alignment.UmeyamaFaceAligner
 import com.governence.faflow.face.embedding.ArcFaceEmbedder
 import com.governence.faflow.face.enrollment.LocalFaceEnrollmentRepository
+import com.governence.faflow.face.liveness.LivenessEngine
 import com.governence.faflow.face.matching.CosineFaceMatcher
 import com.governence.faflow.face.model.ArcFaceModelManager
 import com.governence.faflow.face.model.ScrfdModelManager
-import com.governence.faflow.face.model.StaffBiometricVerificationState
 import com.governence.faflow.face.recognition.FaceRecognitionEngine
 import com.governence.faflow.face.scrfd.ScrfdFaceDetector
 import com.governence.faflow.location.LocationVerificationResult
 import com.governence.faflow.ui.components.AppTopBar
-import com.governence.faflow.ui.components.PrimaryGradientButton
 import com.governence.faflow.ui.theme.PrimaryBlue
 import com.governence.faflow.ui.theme.StatusError
 import com.governence.faflow.ui.theme.StatusSuccess
 import com.governence.faflow.ui.theme.StatusWarning
+import com.governence.faflow.ui.viewmodels.AttendanceEligibilityState
 import com.governence.faflow.ui.viewmodels.AttendanceViewModel
 import com.governence.faflow.ui.viewmodels.FaceDetectionUiState
 
@@ -83,7 +84,9 @@ fun AttendanceCheckInOutScreen(
     val uiState by viewModel.uiState.collectAsState()
     val verificationResult by viewModel.verificationResult.collectAsState()
     val faceDetectionState by viewModel.faceDetectionState.collectAsState()
-    val biometricState by viewModel.biometricState.collectAsState()
+    val identityState by viewModel.identityVerificationState.collectAsState()
+    val livenessState by viewModel.livenessState.collectAsState()
+    val eligibilityState by viewModel.attendanceEligibilityState.collectAsState()
     val isLocationVerified = viewModel.isLocationVerifiedForAttendance()
 
     // Model Managers & Face AI Subsystem
@@ -94,13 +97,15 @@ fun AttendanceCheckInOutScreen(
     val aligner = remember { UmeyamaFaceAligner() }
     val enrollmentRepo = remember { LocalFaceEnrollmentRepository(context) }
     val matcher = remember { CosineFaceMatcher() }
+    val livenessEngine = remember { LivenessEngine() }
 
     val recognitionEngine = remember {
         FaceRecognitionEngine(
             aligner = aligner,
             embedder = faceEmbedder,
             matcher = matcher,
-            enrollmentRepository = enrollmentRepo
+            enrollmentRepository = enrollmentRepo,
+            livenessEngine = livenessEngine
         )
     }
 
@@ -138,8 +143,6 @@ fun AttendanceCheckInOutScreen(
         CameraController(context = context, frameProcessor = faceDetector, targetFps = 10)
     }
     val cameraState by cameraController.cameraState.collectAsState()
-
-    val isBiometricVerified = biometricState is StaffBiometricVerificationState.Verified
 
     Scaffold(
         topBar = {
@@ -284,6 +287,7 @@ fun AttendanceCheckInOutScreen(
                     CameraOverlay(
                         cameraState = cameraState,
                         faceDetectionState = faceDetectionState,
+                        livenessState = livenessState,
                         showDebugOverlay = false,
                         inferenceLatencyMs = latencyMs,
                         modifier = Modifier.fillMaxSize()
@@ -293,9 +297,9 @@ fun AttendanceCheckInOutScreen(
 
             Spacer(modifier = Modifier.height(14.dp))
 
-            // Action Status Card (Milestone 7: Identity Recognition Status)
-            when (val bio = biometricState) {
-                is StaffBiometricVerificationState.Verified -> {
+            // Action Status Card (Milestone 8: VerifiedAndReady Gating State)
+            when (val elig = eligibilityState) {
+                is AttendanceEligibilityState.VerifiedAndReady -> {
                     Card(
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(16.dp),
@@ -307,17 +311,17 @@ fun AttendanceCheckInOutScreen(
                                 .padding(16.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Icon(imageVector = Icons.Default.CheckCircle, contentDescription = null, tint = StatusSuccess, modifier = Modifier.size(24.dp))
+                            Icon(imageVector = Icons.Default.CheckCircle, contentDescription = null, tint = StatusSuccess, modifier = Modifier.size(28.dp))
                             Spacer(modifier = Modifier.width(12.dp))
                             Column {
                                 Text(
-                                    text = "Identity Verified (Staff #${bio.staffId})",
+                                    text = "Verified & Ready for Attendance",
                                     style = MaterialTheme.typography.titleSmall,
                                     fontWeight = FontWeight.Bold,
                                     color = StatusSuccess
                                 )
                                 Text(
-                                    text = "Cosine Similarity: ${(bio.similarity * 100).toInt()}% (Threshold ${(bio.threshold * 100).toInt()}%)",
+                                    text = "Identity Matched (${(elig.similarity * 100).toInt()}%) • Liveness Verified (Anti-Spoof Passed)",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -326,7 +330,7 @@ fun AttendanceCheckInOutScreen(
                     }
                 }
 
-                is StaffBiometricVerificationState.VerificationFailed -> {
+                is AttendanceEligibilityState.Blocked -> {
                     Card(
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(16.dp),
@@ -342,44 +346,13 @@ fun AttendanceCheckInOutScreen(
                             Spacer(modifier = Modifier.width(12.dp))
                             Column {
                                 Text(
-                                    text = "Biometric Verification Failed",
+                                    text = "Biometric Verification Blocked",
                                     style = MaterialTheme.typography.titleSmall,
                                     fontWeight = FontWeight.Bold,
                                     color = StatusError
                                 )
                                 Text(
-                                    text = bio.reason,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
-                    }
-                }
-
-                is StaffBiometricVerificationState.NoEnrollment -> {
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(16.dp),
-                        colors = CardDefaults.cardColors(containerColor = StatusWarning.copy(alpha = 0.15f))
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(16.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(imageVector = Icons.Default.Warning, contentDescription = null, tint = StatusWarning, modifier = Modifier.size(24.dp))
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Column {
-                                Text(
-                                    text = "No Biometric Profile Enrolled",
-                                    style = MaterialTheme.typography.titleSmall,
-                                    fontWeight = FontWeight.Bold,
-                                    color = StatusWarning
-                                )
-                                Text(
-                                    text = "Please complete face enrollment before checking in.",
+                                    text = elig.reason,
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -394,15 +367,13 @@ fun AttendanceCheckInOutScreen(
                         shape = RoundedCornerShape(16.dp),
                         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
                     ) {
-                        val promptText = when {
-                            !isLocationVerified -> "Shift attendance is gated by campus geofencing. Please verify location first."
-                            !hasCameraPermission -> "Grant camera permission to complete facial attendance capture."
-                            faceDetectionState is FaceDetectionUiState.MultipleFaces -> "Multiple faces detected — only one staff member should be visible."
-                            faceDetectionState is FaceDetectionUiState.FaceTooSmall -> "Move closer to the camera."
-                            faceDetectionState is FaceDetectionUiState.FaceTooLarge -> "Move farther away from the camera."
-                            faceDetectionState is FaceDetectionUiState.FacePartiallyOutOfFrame -> "Center your face within the camera guide."
-                            faceDetectionState is FaceDetectionUiState.FaceDetected -> "Face detected — position yourself inside the guide."
-                            else -> "No face detected. Align your face within the guide oval."
+                        val promptText = when (elig) {
+                            AttendanceEligibilityState.LocationRequired -> "Shift attendance is gated by campus geofencing. Please verify location first."
+                            AttendanceEligibilityState.SingleFaceRequired -> "Multiple faces detected — only one staff member should be visible."
+                            AttendanceEligibilityState.FaceRequired -> "Position your face inside the guide oval."
+                            AttendanceEligibilityState.IdentityVerificationRequired -> "Verifying staff identity..."
+                            AttendanceEligibilityState.LivenessRequired -> "Complete active liveness motion challenge..."
+                            else -> "Initializing biometric attendance subsystem..."
                         }
                         Text(
                             text = promptText,

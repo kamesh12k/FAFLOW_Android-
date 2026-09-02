@@ -5,6 +5,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.governence.faflow.domain.model.AttendanceStatus
 import com.governence.faflow.domain.model.StaffAttendanceRecord
+import com.governence.faflow.face.liveness.BiometricVerificationResult
+import com.governence.faflow.face.liveness.LivenessState
+import com.governence.faflow.face.liveness.PresentationAttackRisk
 import com.governence.faflow.face.model.FaceDetectionResult
 import com.governence.faflow.face.model.StaffBiometricVerificationState
 import com.governence.faflow.face.recognition.FaceRecognitionEngine
@@ -16,6 +19,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -35,6 +39,20 @@ sealed interface FaceDetectionUiState {
     data object FaceOutsideGuide : FaceDetectionUiState
     data class FacePositionValid(val primaryFace: FaceDetectionResult) : FaceDetectionUiState
     data class DetectionError(val message: String) : FaceDetectionUiState
+}
+
+/**
+ * Overall attendance gating state combining location, face, identity, and liveness.
+ */
+sealed interface AttendanceEligibilityState {
+    data object CheckingRequirements : AttendanceEligibilityState
+    data object LocationRequired : AttendanceEligibilityState
+    data object FaceRequired : AttendanceEligibilityState
+    data object SingleFaceRequired : AttendanceEligibilityState
+    data object IdentityVerificationRequired : AttendanceEligibilityState
+    data object LivenessRequired : AttendanceEligibilityState
+    data class VerifiedAndReady(val staffId: String, val similarity: Float, val livenessScore: Float) : AttendanceEligibilityState
+    data class Blocked(val reason: String) : AttendanceEligibilityState
 }
 
 data class AttendanceUiState(
@@ -58,8 +76,23 @@ class AttendanceViewModel(
     private val _faceDetectionState = MutableStateFlow<FaceDetectionUiState>(FaceDetectionUiState.NoFace)
     val faceDetectionState: StateFlow<FaceDetectionUiState> = _faceDetectionState.asStateFlow()
 
-    private val _biometricState = MutableStateFlow<StaffBiometricVerificationState>(StaffBiometricVerificationState.NoFace)
-    val biometricState: StateFlow<StaffBiometricVerificationState> = _biometricState.asStateFlow()
+    private val _identityVerificationState = MutableStateFlow<StaffBiometricVerificationState>(StaffBiometricVerificationState.NoFace)
+    val identityVerificationState: StateFlow<StaffBiometricVerificationState> = _identityVerificationState.asStateFlow()
+
+    private val _livenessState = MutableStateFlow<LivenessState>(LivenessState.WaitingForFace)
+    val livenessState: StateFlow<LivenessState> = _livenessState.asStateFlow()
+
+    private val _biometricVerificationState = MutableStateFlow(
+        BiometricVerificationResult(
+            staffId = "",
+            identityVerified = false,
+            similarityScore = 0f,
+            livenessVerified = false,
+            livenessScore = 0f,
+            presentationAttackRisk = PresentationAttackRisk.LOW
+        )
+    )
+    val biometricVerificationState: StateFlow<BiometricVerificationResult> = _biometricVerificationState.asStateFlow()
 
     val verificationResult: StateFlow<LocationVerificationResult> = geofenceRepository.verificationResult
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), LocationVerificationResult.Loading)
@@ -71,7 +104,45 @@ class AttendanceViewModel(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     /**
-     * Evaluates detected faces against the positioning guide oval and quality standards.
+     * Combined attendance eligibility state machine.
+     */
+    val attendanceEligibilityState: StateFlow<AttendanceEligibilityState> = combine(
+        verificationResult,
+        faceDetectionState,
+        identityVerificationState,
+        livenessState
+    ) { loc, face, identity, liveness ->
+        val isLocValid = when (loc) {
+            is LocationVerificationResult.InsideGeofence, is LocationVerificationResult.Boundary -> true
+            else -> false
+        }
+
+        when {
+            !isLocValid -> {
+                when (loc) {
+                    is LocationVerificationResult.MockLocationDetected -> AttendanceEligibilityState.Blocked("Fake GPS Spoofing Detected")
+                    is LocationVerificationResult.AccuracyInsufficient -> AttendanceEligibilityState.Blocked("GPS accuracy insufficient (±${loc.currentAccuracyMeters.toInt()}m)")
+                    else -> AttendanceEligibilityState.LocationRequired
+                }
+            }
+            face is FaceDetectionUiState.MultipleFaces -> AttendanceEligibilityState.SingleFaceRequired
+            face !is FaceDetectionUiState.FacePositionValid && face !is FaceDetectionUiState.FaceDetected -> AttendanceEligibilityState.FaceRequired
+            identity is StaffBiometricVerificationState.VerificationFailed -> AttendanceEligibilityState.Blocked(identity.reason)
+            identity is StaffBiometricVerificationState.NoEnrollment -> AttendanceEligibilityState.Blocked("Biometric profile not enrolled for staff member #${identity.staffId}")
+            identity !is StaffBiometricVerificationState.Verified -> AttendanceEligibilityState.IdentityVerificationRequired
+            liveness is LivenessState.SpoofSuspected -> AttendanceEligibilityState.Blocked("Presentation attack suspected: ${liveness.reason}")
+            liveness is LivenessState.TimedOut -> AttendanceEligibilityState.Blocked("Liveness challenge timed out. Please try again.")
+            liveness !is LivenessState.Passed -> AttendanceEligibilityState.LivenessRequired
+            else -> AttendanceEligibilityState.VerifiedAndReady(
+                staffId = (identity as StaffBiometricVerificationState.Verified).staffId,
+                similarity = identity.similarity,
+                livenessScore = (liveness as LivenessState.Passed).livenessScore
+            )
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), AttendanceEligibilityState.CheckingRequirements)
+
+    /**
+     * Evaluates detected faces against the positioning guide oval, identity recognition, and liveness.
      */
     fun updateDetections(
         detections: List<FaceDetectionResult>,
@@ -82,11 +153,15 @@ class AttendanceViewModel(
     ) {
         val newState = when {
             detections.isEmpty() -> {
-                _biometricState.value = StaffBiometricVerificationState.NoFace
+                _identityVerificationState.value = StaffBiometricVerificationState.NoFace
+                _livenessState.value = LivenessState.WaitingForFace
+                recognitionEngine?.livenessEngine?.reset()
                 FaceDetectionUiState.NoFace
             }
             detections.size > 1 -> {
-                _biometricState.value = StaffBiometricVerificationState.MultipleFaces(detections.size)
+                _identityVerificationState.value = StaffBiometricVerificationState.MultipleFaces(detections.size)
+                _livenessState.value = LivenessState.FaceNotSuitable("Multiple faces visible")
+                recognitionEngine?.livenessEngine?.reset()
                 FaceDetectionUiState.MultipleFaces(detections.size)
             }
             else -> {
@@ -98,29 +173,46 @@ class AttendanceViewModel(
 
                 when {
                     face.confidence < 0.50f -> {
-                        _biometricState.value = StaffBiometricVerificationState.NoFace
+                        _identityVerificationState.value = StaffBiometricVerificationState.NoFace
                         FaceDetectionUiState.NoFace
                     }
                     isOutOfBounds -> {
-                        _biometricState.value = StaffBiometricVerificationState.FaceOutOfFrame
+                        _identityVerificationState.value = StaffBiometricVerificationState.FaceOutOfFrame
                         FaceDetectionUiState.FacePartiallyOutOfFrame
                     }
                     faceWidthRatio < 0.20f -> {
-                        _biometricState.value = StaffBiometricVerificationState.FaceTooSmall
+                        _identityVerificationState.value = StaffBiometricVerificationState.FaceTooSmall
                         FaceDetectionUiState.FaceTooSmall
                     }
                     faceWidthRatio > 0.85f -> {
-                        _biometricState.value = StaffBiometricVerificationState.FaceTooLarge
+                        _identityVerificationState.value = StaffBiometricVerificationState.FaceTooLarge
                         FaceDetectionUiState.FaceTooLarge
                     }
-                    !face.quality.isFrontal -> {
-                        FaceDetectionUiState.FaceDetected(count = 1, primaryFace = face)
-                    }
                     else -> {
-                        if (sourceBitmap != null && staffId != null && recognitionEngine != null) {
+                        // 1. Evaluate Identity Match
+                        if (sourceBitmap != null && staffId != null && recognitionEngine != null && _identityVerificationState.value !is StaffBiometricVerificationState.Verified) {
                             runRecognition(sourceBitmap, face, staffId)
                         }
-                        FaceDetectionUiState.FacePositionValid(primaryFace = face)
+
+                        // 2. Evaluate Live Liveness Pipeline
+                        if (recognitionEngine != null) {
+                            val liveState = recognitionEngine.livenessEngine.processFrame(face)
+                            _livenessState.value = liveState
+
+                            if (staffId != null) {
+                                _biometricVerificationState.value = recognitionEngine.evaluateBiometricAuthorization(
+                                    staffId = staffId,
+                                    identityState = _identityVerificationState.value,
+                                    livenessState = liveState
+                                )
+                            }
+                        }
+
+                        if (!face.quality.isFrontal) {
+                            FaceDetectionUiState.FaceDetected(count = 1, primaryFace = face)
+                        } else {
+                            FaceDetectionUiState.FacePositionValid(primaryFace = face)
+                        }
                     }
                 }
             }
@@ -130,10 +222,10 @@ class AttendanceViewModel(
 
     private fun runRecognition(sourceBitmap: Bitmap, face: FaceDetectionResult, staffId: String) {
         viewModelScope.launch {
-            _biometricState.value = StaffBiometricVerificationState.Aligning
+            _identityVerificationState.value = StaffBiometricVerificationState.Aligning
             val result = recognitionEngine?.verifyStaffIdentity(sourceBitmap, face, staffId)
                 ?: StaffBiometricVerificationState.Unavailable("Recognition engine not configured")
-            _biometricState.value = result
+            _identityVerificationState.value = result
         }
     }
 
@@ -146,14 +238,9 @@ class AttendanceViewModel(
 
     fun isLocationVerifiedForAttendance(): Boolean {
         return when (verificationResult.value) {
-            is LocationVerificationResult.InsideGeofence -> true
-            is LocationVerificationResult.Boundary -> true
+            is LocationVerificationResult.InsideGeofence, is LocationVerificationResult.Boundary -> true
             else -> false
         }
-    }
-
-    fun isBiometricallyVerified(): Boolean {
-        return biometricState.value is StaffBiometricVerificationState.Verified
     }
 
     fun performCheckIn(onSuccess: () -> Unit) {

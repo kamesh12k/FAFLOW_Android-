@@ -1,6 +1,6 @@
 # FAFLOW Staff Mobile: Architecture Specification & Integration Blueprint
 
-> **System Status**: **Milestone 7 Complete (InsightFace 5-Point Umeyama Alignment + On-Device ArcFace Recognition)**  
+> **System Status**: **Milestone 8 Complete (Production-Grade On-Device Liveness & Presentation Attack Detection)**  
 > **Target Audience**: College Faculty & Staff (Teachers, HODs, Lab Staff, Non-Teaching Staff)  
 > **Source of Truth**: Upstream FAFLOW FastAPI + PostgreSQL Backend (`https://github.com/kamesh12k/FACULTY_FLOW.git`)  
 > **Attendance Architecture**: Palgeo-style Geofenced Biometric Face Attendance  
@@ -8,11 +8,12 @@
 > **Camera Subsystem**: Front-Camera CameraX (`Preview` + `ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST` + Throttled `CameraAnalyzer` + `CameraFrame` Abstraction)  
 > **Detection Engine**: InsightFace SCRFD 500M ONNX Model (`[1, 3, 640, 640]` NCHW, Multi-Stride 8/16/32 Anchor Decoding, IoU NMS, 5-Point Facial Landmarks)  
 > **Alignment & Recognition**: 5-Point Umeyama Similarity Transform to Canonical $112 \times 112$ + MobileFaceNet ArcFace 512-D Embedding + $L_2$ Normalization + Cosine Similarity Matching + Android Keystore Encrypted Local Enrollment  
+> **Liveness & PAD Defense**: Multi-Layer Anti-Spoofing (Temporal Observation Window + Photostatic Variance Analysis + 3D Head Pose Yaw/Pitch/Roll Tracking + Randomized Active Challenges + Pluggable Deep PAD Model Abstraction)  
 > **Build Status**: `BUILD SUCCESSFUL` with 100% Unit Test Pass Rate and Zero Fake/Mock Data  
 
 ---
 
-## Milestone 7: InsightFace 5-Point Face Alignment & On-Device Face Recognition Architecture
+## Milestone 8: On-Device Face Liveness & Presentation Attack Defense Architecture
 
 ```
                  CameraX Subsystem
@@ -28,56 +29,45 @@
                FaceDetectionResult
            (Bounding Box + 5 Landmarks)
                         │
+        ┌───────────────┴───────────────┐
+        ▼                               ▼
+   ArcFace Pipeline             Liveness Engine
+  (Umeyama Alignment           (Temporal Motion Window
+          +                            +
+   ArcFace Embedding            Head Pose Yaw/Pitch/Roll
+          +                            +
+   Cosine Match vs              Randomized Active Challenges:
+   Encrypted Template)          TURN_LEFT, TURN_RIGHT, LOOK_UP,
+        │                       LOOK_DOWN, BLINK)
+        ▼                               │
+Staff Identity Verified                 ▼
+        │                       Liveness Verified (Anti-Spoof Passed)
+        └───────────────┬───────────────┘
                         ▼
-               UmeyamaFaceAligner
-        (Geometric Validation + 2D Least
-         Squares Similarity Transformation)
+         BiometricVerificationResult
+       (isAttendanceEligible = true)
                         │
                         ▼
-             112x112 Aligned Face
-                        │
-                        ▼
-              EmbeddingPreprocessor
-       (RGB NCHW Tensor [1, 3, 112, 112] +
-         (x - 127.5)/128.0 Normalization)
-                        │
-                        ▼
-               ArcFaceEmbedder
-        (ONNX Runtime MobileFaceNet +
-         L2 Normalization E / ||E||_2)
-                        │
-                        ▼
-              512-D Normalized Vector
-                        │
-                        ▼
-               CosineFaceMatcher
-         (Dot Product vs Encrypted Staff
-           Template from EncryptedSharedPrefs)
-                        │
-                        ▼
-         StaffBiometricVerificationState
-             (Verified / Failed / NoEnroll)
+           AttendanceEligibilityState
+              (VerifiedAndReady)
 ```
 
 ### Key Architectural Specifications:
-1. **Canonical 5-Point Umeyama Alignment**:
-   - Reference Template: ArcFace canonical reference points $(112 \times 112)$ for left eye, right eye, nose tip, left mouth, right mouth.
-   - Robust least-squares covariance decomposition calculating scale $s$, rotation angle $\theta$, and translation $(tx, ty)$.
-   - Geometric Validation: Enforces inter-pupillary distance $\ge 12\text{px}$, left eye $x <$ right eye $x$, nose $y >$ eye mid $y$, and mouth corners below nose tip.
-2. **Feature Extractor (ArcFace / MobileFaceNet)**:
-   - Input: $112 \times 112$ RGB Float32 in NCHW layout (`[1, 3, 112, 112]`).
-   - Normalization: $(x - 127.5) / 128.0$.
-   - Output: 512-dimensional embedding vector.
-   - Robust $L_2$ normalization: $E_{\text{norm}} = E / \max(\|E\|_2, 10^{-12})$ with zero/near-zero vector protection and NaN/Infinity sanitization.
-3. **1-to-1 Cosine Similarity Verification**:
-   - Cosine metric: $\text{sim}(A, B) = \text{dot}(A, B) / (\|A\| \cdot \|B\|)$.
-   - Configurable threshold (default $0.60$, institutional validation required).
-4. **Encrypted Local Enrollment Storage**:
-   - `LocalFaceEnrollmentRepository` stores encrypted template payloads using Android `EncryptedSharedPreferences` (AES256_GCM + AES256_SIV).
-   - Zero raw camera frame persistence; zero biometric data in standard logs.
-5. **Strict Boundary Adherence**:
-   - Face detection $\neq$ Face recognition $\neq$ Liveness $\neq$ Attendance authorization.
-   - Attendance submission is gated and prepared, strictly awaiting Milestone 9 anti-spoofing and backend integration.
+1. **Multi-Layered Liveness Defense Strategy**:
+   - **Layer 1: Temporal Face Tracking**: Tracks $N = 20$ recent frame observations to verify continuous facial presence and geometry.
+   - **Layer 2: Photostatic Jitter & Static Attack Detection**: Computes temporal landmark variance; flags zero-variance static 2D photo attacks (`SpoofSuspected(PRINT_ATTACK)`).
+   - **Layer 3: 3D Head Pose Angles**: Real-time geometric estimation of yaw, pitch, and roll angles from 5-point facial landmarks.
+   - **Layer 4: Randomized Active Challenge-Response**: Dynamic randomized sequences (e.g. `TURN_LEFT` $\rightarrow$ `TURN_RIGHT`) with timeout enforcement and live progress bars.
+   - **Layer 5: Pluggable Deep Anti-Spoof Model**: Clean abstraction (`AntiSpoofModel` & `AntiSpoofModelManager`) prepared for dedicated ONNX anti-spoof inference weights.
+2. **Attendance Eligibility State Machine**:
+   - `LocationRequired` (requires GPS fix inside active campus geofence).
+   - `FaceRequired` / `SingleFaceRequired` (rejects multiple faces in frame).
+   - `IdentityVerificationRequired` (requires $\ge 60\%$ ArcFace cosine similarity against enrolled template).
+   - `LivenessRequired` (requires active challenge completion and low PAD risk).
+   - `VerifiedAndReady` (all location and biometric requirements satisfied).
+   - `Blocked` (mock GPS spoofing, low accuracy, biometric mismatch, or PAD attack detected).
+3. **Strict Boundary Adherence**:
+   - Verified biometric state is gated at `VerifiedAndReady`; network attendance submission is handled in the upcoming backend integration milestone.
 
 ---
 

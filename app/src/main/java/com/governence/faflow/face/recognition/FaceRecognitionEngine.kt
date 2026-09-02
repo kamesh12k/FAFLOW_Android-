@@ -7,6 +7,10 @@ import com.governence.faflow.face.alignment.FaceAligner
 import com.governence.faflow.face.alignment.UmeyamaFaceAligner
 import com.governence.faflow.face.embedding.FaceRecognitionConfig
 import com.governence.faflow.face.enrollment.FaceEnrollmentRepository
+import com.governence.faflow.face.liveness.BiometricVerificationResult
+import com.governence.faflow.face.liveness.LivenessEngine
+import com.governence.faflow.face.liveness.LivenessState
+import com.governence.faflow.face.liveness.PresentationAttackRisk
 import com.governence.faflow.face.matching.CosineFaceMatcher
 import com.governence.faflow.face.model.FaceDetectionResult
 import com.governence.faflow.face.model.StaffBiometricVerificationState
@@ -14,14 +18,15 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 /**
- * End-to-end on-device face recognition pipeline coordinator.
- * Orchestrates: Detection Validation -> 5-Point Umeyama Alignment -> ArcFace Embedding -> Cosine Verification.
+ * End-to-end on-device biometric verification engine.
+ * Orchestrates: Detection Validation -> 5-Point Umeyama Alignment -> ArcFace Embedding -> Cosine Verification -> Presentation Attack Defense.
  */
 class FaceRecognitionEngine(
     private val aligner: FaceAligner = UmeyamaFaceAligner(),
     private val embedder: FaceEmbedder,
     private val matcher: FaceMatcher = CosineFaceMatcher(),
     private val enrollmentRepository: FaceEnrollmentRepository,
+    val livenessEngine: LivenessEngine = LivenessEngine(),
     private val config: FaceRecognitionConfig = FaceRecognitionConfig.DEFAULT
 ) {
 
@@ -35,19 +40,15 @@ class FaceRecognitionEngine(
     ): StaffBiometricVerificationState = withContext(Dispatchers.Default) {
         // 1. Verify Local Staff Enrollment Exists
         val enrollment = enrollmentRepository.getEnrollment(staffId)
-        if (enrollment == null) {
-            return@withContext StaffBiometricVerificationState.NoEnrollment(staffId)
-        }
+            ?: return@withContext StaffBiometricVerificationState.NoEnrollment(staffId)
 
         // 2. Validate Detection Landmarks
         val landmarks = detection.landmarks
-        if (landmarks == null) {
-            return@withContext StaffBiometricVerificationState.VerificationFailed(
+            ?: return@withContext StaffBiometricVerificationState.VerificationFailed(
                 similarity = 0f,
                 threshold = config.similarityThreshold,
                 reason = "Facial landmarks missing from detection result"
             )
-        }
 
         // 3. 5-Point Umeyama Canonical Alignment
         val alignmentResult = aligner.align(sourceBitmap, landmarks)
@@ -85,6 +86,37 @@ class FaceRecognitionEngine(
                 reason = "Biometric mismatch: similarity score ${"%.2f".format(similarity)} below threshold ${config.similarityThreshold}"
             )
         }
+    }
+
+    /**
+     * Synthesizes full biometric verification result combining identity match with liveness result.
+     */
+    fun evaluateBiometricAuthorization(
+        staffId: String,
+        identityState: StaffBiometricVerificationState,
+        livenessState: LivenessState
+    ): BiometricVerificationResult {
+        val (isIdentityValid, similarity) = when (identityState) {
+            is StaffBiometricVerificationState.Verified -> Pair(true, identityState.similarity)
+            is StaffBiometricVerificationState.VerificationFailed -> Pair(false, identityState.similarity)
+            else -> Pair(false, 0f)
+        }
+
+        val (isLivenessValid, livenessScore, risk) = when (livenessState) {
+            is LivenessState.Passed -> Triple(true, livenessState.livenessScore, livenessState.risk)
+            is LivenessState.SpoofSuspected -> Triple(false, 0f, PresentationAttackRisk.HIGH)
+            is LivenessState.TimedOut, is LivenessState.Failed -> Triple(false, 0f, PresentationAttackRisk.MEDIUM)
+            else -> Triple(false, 0f, PresentationAttackRisk.LOW)
+        }
+
+        return BiometricVerificationResult(
+            staffId = staffId,
+            identityVerified = isIdentityValid,
+            similarityScore = similarity,
+            livenessVerified = isLivenessValid,
+            livenessScore = livenessScore,
+            presentationAttackRisk = risk
+        )
     }
 
     /**

@@ -25,15 +25,30 @@ import com.governence.faflow.face.ModelInfo
 import com.governence.faflow.face.ModelTask
 import com.governence.faflow.face.ModelState
 import com.governence.faflow.face.alignment.FaceAlignmentConfig
+import com.governence.faflow.face.alignment.SimilarityTransform
 import com.governence.faflow.face.alignment.UmeyamaFaceAligner
 import com.governence.faflow.face.embedding.ArcFaceEmbedder
 import com.governence.faflow.face.embedding.FaceRecognitionConfig
 import com.governence.faflow.face.enrollment.StaffFaceEnrollment
+import com.governence.faflow.face.liveness.ActiveLivenessDetector
+import com.governence.faflow.face.liveness.BiometricVerificationResult
+import com.governence.faflow.face.liveness.ChallengeEvaluationResult
+import com.governence.faflow.face.liveness.ChallengeGenerator
+import com.governence.faflow.face.liveness.FaceObservation
+import com.governence.faflow.face.liveness.HeadPose
+import com.governence.faflow.face.liveness.HeadPoseAnalyzer
+import com.governence.faflow.face.liveness.LivenessChallenge
+import com.governence.faflow.face.liveness.LivenessConfig
+import com.governence.faflow.face.liveness.LivenessEngine
+import com.governence.faflow.face.liveness.LivenessState
+import com.governence.faflow.face.liveness.MotionAnalyzer
+import com.governence.faflow.face.liveness.PresentationAttackRisk
 import com.governence.faflow.face.matching.CosineFaceMatcher
 import com.governence.faflow.face.model.FaceBox
 import com.governence.faflow.face.model.FaceDetectionResult
 import com.governence.faflow.face.model.FaceLandmarks
 import com.governence.faflow.face.model.FacePoint
+import com.governence.faflow.face.model.SpoofType
 import com.governence.faflow.face.model.StaffBiometricVerificationState
 import com.governence.faflow.face.scrfd.LetterboxInfo
 import com.governence.faflow.face.scrfd.ScrfdCandidate
@@ -46,6 +61,7 @@ import com.governence.faflow.location.GeofenceType
 import com.governence.faflow.location.GeofenceValidator
 import com.governence.faflow.location.LocationVerificationResult
 import com.governence.faflow.location.StaffLiveLocation
+import com.governence.faflow.ui.viewmodels.AttendanceEligibilityState
 import com.governence.faflow.ui.viewmodels.FaceDetectionUiState
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
@@ -54,11 +70,174 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.util.Random
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.math.sqrt
 
 class FaflowIntegrationTest {
+
+    // ---------- Milestone 8: Face Liveness & Presentation Attack Detection Tests ----------
+
+    @Test
+    fun testHeadPoseEstimation() {
+        val frontalLandmarks = FaceLandmarks(
+            leftEye = FacePoint(180f, 150f),
+            rightEye = FacePoint(240f, 150f),
+            nose = FacePoint(210f, 180f),
+            leftMouth = FacePoint(190f, 210f),
+            rightMouth = FacePoint(230f, 210f)
+        )
+        val frontalPose = HeadPoseAnalyzer.estimateHeadPose(frontalLandmarks)
+        assertTrue("Frontal pose should be within ±15 degrees", frontalPose.isFrontal)
+        assertEquals(0.0f, frontalPose.yawDegrees, 2.0f)
+        assertEquals(0.0f, frontalPose.rollDegrees, 1.0f)
+
+        // Turn left: nose shifts closer to left eye
+        val leftTurnLandmarks = frontalLandmarks.copy(nose = FacePoint(195f, 180f))
+        val leftPose = HeadPoseAnalyzer.estimateHeadPose(leftTurnLandmarks)
+        assertTrue("Yaw should be negative for left turn", leftPose.yawDegrees < -15.0f)
+
+        // Turn right: nose shifts closer to right eye
+        val rightTurnLandmarks = frontalLandmarks.copy(nose = FacePoint(225f, 180f))
+        val rightPose = HeadPoseAnalyzer.estimateHeadPose(rightTurnLandmarks)
+        assertTrue("Yaw should be positive for right turn", rightPose.yawDegrees > 15.0f)
+    }
+
+    @Test
+    fun testChallengeGenerationAndRandomization() {
+        val generator = ChallengeGenerator(Random(12345))
+        val challenges = generator.generateChallenges(count = 3)
+
+        assertEquals(3, challenges.size)
+        // Verify no two consecutive identical challenges
+        for (i in 0 until challenges.size - 1) {
+            assertTrue(challenges[i] != challenges[i + 1])
+        }
+    }
+
+    @Test
+    fun testActiveChallengeStepAdvancement() {
+        val detector = ActiveLivenessDetector(LivenessConfig(challengeTimeoutMs = 5000L))
+        val challenges = listOf(LivenessChallenge.TURN_LEFT, LivenessChallenge.TURN_RIGHT)
+        detector.startNewSession(challenges, startTimeMs = 0L)
+
+        val landmarks = FaceLandmarks(
+            leftEye = FacePoint(180f, 150f), rightEye = FacePoint(240f, 150f),
+            nose = FacePoint(210f, 180f), leftMouth = FacePoint(190f, 210f), rightMouth = FacePoint(230f, 210f)
+        )
+
+        // Step 1: Still frontal -> InProgress
+        val inProg = detector.processFrame(landmarks, HeadPose(yawDegrees = 0f), currentTimeMs = 1000L)
+        assertTrue(inProg is ChallengeEvaluationResult.InProgress)
+
+        // Step 1 met: Yaw = -25 deg (Turn Left) -> Advanced to TURN_RIGHT
+        val advanced = detector.processFrame(landmarks, HeadPose(yawDegrees = -25f), currentTimeMs = 1500L)
+        assertTrue(advanced is ChallengeEvaluationResult.Advanced)
+        assertEquals(LivenessChallenge.TURN_RIGHT, (advanced as ChallengeEvaluationResult.Advanced).nextChallenge)
+
+        // Step 2 met: Yaw = +25 deg (Turn Right) -> SessionComplete
+        val complete = detector.processFrame(landmarks, HeadPose(yawDegrees = 25f), currentTimeMs = 2000L)
+        assertTrue(complete is ChallengeEvaluationResult.SessionComplete)
+        assertTrue(detector.isSessionComplete)
+    }
+
+    @Test
+    fun testChallengeTimeout() {
+        val detector = ActiveLivenessDetector(LivenessConfig(challengeTimeoutMs = 3000L))
+        detector.startNewSession(listOf(LivenessChallenge.TURN_LEFT), startTimeMs = 0L)
+
+        val landmarks = FaceLandmarks(
+            leftEye = FacePoint(180f, 150f), rightEye = FacePoint(240f, 150f),
+            nose = FacePoint(210f, 180f), leftMouth = FacePoint(190f, 210f), rightMouth = FacePoint(230f, 210f)
+        )
+
+        // 4000ms elapsed > 3000ms timeout
+        val timeout = detector.processFrame(landmarks, HeadPose(yawDegrees = 0f), currentTimeMs = 4000L)
+        assertTrue(timeout is ChallengeEvaluationResult.TimedOut)
+    }
+
+    @Test
+    fun testTemporalMotionAnalyzerStaticAttackDetection() {
+        val motion = MotionAnalyzer(LivenessConfig(temporalWindowSize = 10, minimumObservations = 5, staticPhotoVarianceThreshold = 0.40f))
+
+        val staticLandmarks = FaceLandmarks(
+            leftEye = FacePoint(180f, 150f), rightEye = FacePoint(240f, 150f),
+            nose = FacePoint(210f, 180f), leftMouth = FacePoint(190f, 210f), rightMouth = FacePoint(230f, 210f)
+        )
+        val box = FaceBox(150f, 100f, 270f, 240f)
+
+        // Feed 6 perfectly identical observations (zero variance)
+        for (i in 0 until 6) {
+            motion.addObservation(FaceObservation(timestamp = i * 100L, boundingBox = box, landmarks = staticLandmarks, headPose = HeadPose()))
+        }
+
+        val risk = motion.evaluateMotionRisk()
+        assertEquals(PresentationAttackRisk.HIGH, risk)
+    }
+
+    @Test
+    fun testTemporalMotionAnalyzerNaturalMotionLowRisk() {
+        val motion = MotionAnalyzer(LivenessConfig(temporalWindowSize = 10, minimumObservations = 5, staticPhotoVarianceThreshold = 0.40f))
+
+        val box = FaceBox(150f, 100f, 270f, 240f)
+        // Feed 6 natural jitter observations
+        for (i in 0 until 6) {
+            val naturalLandmarks = FaceLandmarks(
+                leftEye = FacePoint(180f + i * 0.8f, 150f + (i % 2) * 0.5f),
+                rightEye = FacePoint(240f + i * 0.8f, 150f + (i % 2) * 0.5f),
+                nose = FacePoint(210f + i * 1.2f, 180f + i * 0.4f),
+                leftMouth = FacePoint(190f + i * 0.8f, 210f),
+                rightMouth = FacePoint(230f + i * 0.8f, 210f)
+            )
+            motion.addObservation(FaceObservation(timestamp = i * 100L, boundingBox = box, landmarks = naturalLandmarks, headPose = HeadPose()))
+        }
+
+        val risk = motion.evaluateMotionRisk()
+        assertEquals(PresentationAttackRisk.LOW, risk)
+    }
+
+    @Test
+    fun testBiometricVerificationResultEligibility() {
+        val eligible = BiometricVerificationResult(
+            staffId = "42",
+            identityVerified = true,
+            similarityScore = 0.88f,
+            livenessVerified = true,
+            livenessScore = 0.95f,
+            presentationAttackRisk = PresentationAttackRisk.LOW
+        )
+        assertTrue(eligible.isAttendanceEligible)
+
+        val unverifiedIdentity = eligible.copy(identityVerified = false)
+        assertFalse(unverifiedIdentity.isAttendanceEligible)
+
+        val unverifiedLiveness = eligible.copy(livenessVerified = false)
+        assertFalse(unverifiedLiveness.isAttendanceEligible)
+
+        val highRisk = eligible.copy(presentationAttackRisk = PresentationAttackRisk.HIGH)
+        assertFalse(highRisk.isAttendanceEligible)
+    }
+
+    @Test
+    fun testAttendanceEligibilityStateMachine() {
+        val ready = AttendanceEligibilityState.VerifiedAndReady(staffId = "42", similarity = 0.88f, livenessScore = 0.95f)
+        assertTrue(ready is AttendanceEligibilityState.VerifiedAndReady)
+        assertEquals("42", ready.staffId)
+
+        val locReq = AttendanceEligibilityState.LocationRequired
+        assertTrue(locReq is AttendanceEligibilityState.LocationRequired)
+
+        val faceReq = AttendanceEligibilityState.FaceRequired
+        assertTrue(faceReq is AttendanceEligibilityState.FaceRequired)
+
+        val liveReq = AttendanceEligibilityState.LivenessRequired
+        assertTrue(liveReq is AttendanceEligibilityState.LivenessRequired)
+
+        val blocked = AttendanceEligibilityState.Blocked("Fake GPS")
+        assertTrue(blocked is AttendanceEligibilityState.Blocked)
+        assertEquals("Fake GPS", blocked.reason)
+    }
 
     // ---------- Milestone 7: Face Alignment & On-Device Recognition Tests ----------
 
@@ -71,12 +250,12 @@ class FaflowIntegrationTest {
         assertNotNull("Identity transform must not be null", transform)
         // Scale = 1.0, Rotation = 0.0, Translation = 0.0
         assertEquals(1.0f, transform!!.scale, 0.01f)
-        assertEquals(1.0f, transform.a, 0.01f) // scale * cos(0)
-        assertEquals(0.0f, transform.b, 0.01f) // -scale * sin(0)
-        assertEquals(0.0f, transform.tx, 0.01f) // tx
-        assertEquals(0.0f, transform.c, 0.01f) // scale * sin(0)
-        assertEquals(1.0f, transform.d, 0.01f) // scale * cos(0)
-        assertEquals(0.0f, transform.ty, 0.01f) // ty
+        assertEquals(1.0f, transform.a, 0.01f)
+        assertEquals(0.0f, transform.b, 0.01f)
+        assertEquals(0.0f, transform.tx, 0.01f)
+        assertEquals(0.0f, transform.c, 0.01f)
+        assertEquals(1.0f, transform.d, 0.01f)
+        assertEquals(0.0f, transform.ty, 0.01f)
     }
 
     @Test
@@ -85,7 +264,6 @@ class FaflowIntegrationTest {
         val canonical = FaceAlignmentConfig.REFERENCE_LANDMARKS
         val translated = canonical.map { FacePoint(it.x + 20f, it.y + 30f) }
 
-        // Mapping translated -> canonical should have tx = -20, ty = -30
         val transform = aligner.estimateSimilarityTransform(src = translated, dst = canonical)
         assertNotNull(transform)
 
@@ -102,7 +280,6 @@ class FaflowIntegrationTest {
         val canonical = FaceAlignmentConfig.REFERENCE_LANDMARKS
         val scaled = canonical.map { FacePoint(it.x * 2.0f, it.y * 2.0f) }
 
-        // Mapping scaled (2x) -> canonical (1x) should have scale factor = 0.5
         val transform = aligner.estimateSimilarityTransform(src = scaled, dst = canonical)
         assertNotNull(transform)
 
@@ -115,7 +292,6 @@ class FaflowIntegrationTest {
     fun testFivePointLandmarkOrderingValidation() {
         val aligner = UmeyamaFaceAligner()
 
-        // Valid landmarks
         val validLandmarks = FaceLandmarks(
             leftEye = FacePoint(180f, 150f),
             rightEye = FacePoint(240f, 150f),
@@ -125,18 +301,15 @@ class FaflowIntegrationTest {
         )
         assertNull("Valid landmarks should return null error", aligner.validateLandmarks(validLandmarks, 640, 480))
 
-        // Inverted eye order (left eye x > right eye x)
         val invertedEyes = validLandmarks.copy(
             leftEye = FacePoint(240f, 150f),
             rightEye = FacePoint(180f, 150f)
         )
         assertNotNull("Inverted eyes must fail validation", aligner.validateLandmarks(invertedEyes, 640, 480))
 
-        // Nose above eyes
         val invertedNose = validLandmarks.copy(nose = FacePoint(210f, 120f))
         assertNotNull("Nose above eyes must fail validation", aligner.validateLandmarks(invertedNose, 640, 480))
 
-        // Mouth above nose
         val invertedMouth = validLandmarks.copy(
             leftMouth = FacePoint(190f, 170f),
             rightMouth = FacePoint(230f, 170f)
@@ -280,13 +453,13 @@ class FaflowIntegrationTest {
     @Test
     fun testScrfdAnchorGenerationCounts() {
         val stride8Anchors = ScrfdDecoder.generateAnchorCenters(inputWidth = 640, inputHeight = 640, stride = 8, numAnchors = 2)
-        assertEquals(12800, stride8Anchors.size) // (640/8) * (640/8) * 2 = 80 * 80 * 2 = 12800
+        assertEquals(12800, stride8Anchors.size)
 
         val stride16Anchors = ScrfdDecoder.generateAnchorCenters(inputWidth = 640, inputHeight = 640, stride = 16, numAnchors = 2)
-        assertEquals(3200, stride16Anchors.size) // 40 * 40 * 2 = 3200
+        assertEquals(3200, stride16Anchors.size)
 
         val stride32Anchors = ScrfdDecoder.generateAnchorCenters(inputWidth = 640, inputHeight = 640, stride = 32, numAnchors = 2)
-        assertEquals(800, stride32Anchors.size) // 20 * 20 * 2 = 800
+        assertEquals(800, stride32Anchors.size)
 
         val totalAnchors = stride8Anchors.size + stride16Anchors.size + stride32Anchors.size
         assertEquals(16800, totalAnchors)
@@ -304,15 +477,15 @@ class FaflowIntegrationTest {
         )
 
         val scores = floatArrayOf(0.92f)
-        val bboxDeltas = floatArrayOf(2.0f, 2.0f, 2.0f, 2.0f) // l, t, r, b = 16px each at stride 8
+        val bboxDeltas = floatArrayOf(2.0f, 2.0f, 2.0f, 2.0f)
         val kpsDeltas = floatArrayOf(
-            -1.0f, -1.0f, // Left eye
-            1.0f, -1.0f,  // Right eye
-            0.0f, 0.0f,   // Nose
-            -0.8f, 1.0f,  // Left mouth
-            0.8f, 1.0f    // Right mouth
+            -1.0f, -1.0f,
+            1.0f, -1.0f,
+            0.0f, 0.0f,
+            -0.8f, 1.0f,
+            0.8f, 1.0f
         )
-        val anchorCenters = listOf(Pair(320f, 240f)) // Center anchor
+        val anchorCenters = listOf(Pair(320f, 240f))
 
         val candidates = ScrfdDecoder.decodeStride(
             scores = scores,
@@ -328,24 +501,22 @@ class FaflowIntegrationTest {
         val cand = candidates.first()
         assertEquals(0.92f, cand.score, 0.001f)
 
-        // Bounding box: cx - l*s = 320 - 16 = 304, cy - t*s = 240 - 16 = 224, etc.
         assertEquals(304f, cand.box.left, 0.1f)
         assertEquals(224f, cand.box.top, 0.1f)
         assertEquals(336f, cand.box.right, 0.1f)
         assertEquals(256f, cand.box.bottom, 0.1f)
 
-        // Landmarks
         assertNotNull(cand.landmarks)
-        assertEquals(312f, cand.landmarks!!.leftEye.x, 0.1f) // 320 + (-1 * 8) = 312
-        assertEquals(232f, cand.landmarks!!.leftEye.y, 0.1f) // 240 + (-1 * 8) = 232
-        assertEquals(328f, cand.landmarks!!.rightEye.x, 0.1f) // 320 + (1 * 8) = 328
+        assertEquals(312f, cand.landmarks!!.leftEye.x, 0.1f)
+        assertEquals(232f, cand.landmarks!!.leftEye.y, 0.1f)
+        assertEquals(328f, cand.landmarks!!.rightEye.x, 0.1f)
         assertEquals(320f, cand.landmarks!!.nose.x, 0.1f)
     }
 
     @Test
     fun testIoUCalculation() {
-        val boxA = FaceBox(left = 100f, top = 100f, right = 200f, bottom = 200f) // 100x100 = 10000
-        val boxB = FaceBox(left = 100f, top = 100f, right = 200f, bottom = 200f) // Identical
+        val boxA = FaceBox(left = 100f, top = 100f, right = 200f, bottom = 200f)
+        val boxB = FaceBox(left = 100f, top = 100f, right = 200f, bottom = 200f)
         val iouSame = ScrfdPostprocessor.calculateIoU(boxA, boxB)
         assertEquals(1.0f, iouSame, 0.001f)
 
@@ -353,7 +524,7 @@ class FaflowIntegrationTest {
         val iouDisjoint = ScrfdPostprocessor.calculateIoU(boxA, boxDisjoint)
         assertEquals(0.0f, iouDisjoint, 0.001f)
 
-        val boxPartial = FaceBox(left = 150f, top = 100f, right = 250f, bottom = 200f) // 50% overlap width
+        val boxPartial = FaceBox(left = 150f, top = 100f, right = 250f, bottom = 200f)
         val iouPartial = ScrfdPostprocessor.calculateIoU(boxA, boxPartial)
         assertTrue(iouPartial in 0.30f..0.36f)
     }
@@ -362,8 +533,8 @@ class FaflowIntegrationTest {
     fun testNonMaximumSuppressionSuppressesOverlaps() {
         val candidates = listOf(
             ScrfdCandidate(box = FaceBox(100f, 100f, 200f, 200f), score = 0.95f),
-            ScrfdCandidate(box = FaceBox(105f, 102f, 202f, 201f), score = 0.85f), // Heavy overlap with first
-            ScrfdCandidate(box = FaceBox(400f, 100f, 500f, 200f), score = 0.90f)  // Second distinct face
+            ScrfdCandidate(box = FaceBox(105f, 102f, 202f, 201f), score = 0.85f),
+            ScrfdCandidate(box = FaceBox(400f, 100f, 500f, 200f), score = 0.90f)
         )
 
         val filtered = ScrfdPostprocessor.applyNMS(candidates, iouThreshold = 0.40f)
@@ -390,7 +561,7 @@ class FaflowIntegrationTest {
         val quality = ScrfdPostprocessor.assessQuality(candidate, frameWidth = 640, frameHeight = 480)
         assertTrue("Frontal face should have isFrontal = true", quality.isFrontal)
         assertTrue("Face width 120px is adequately sized", quality.isAdequatelySized)
-        assertTrue("Quality is acceptable for attendance", quality.isAcceptableForEnrollment)
+        assertTrue("Quality is acceptable for enrollment", quality.isAcceptableForEnrollment)
     }
 
     @Test
@@ -426,7 +597,6 @@ class FaflowIntegrationTest {
         val frameWidth = 640f
         val faceBox = FaceBox(left = 100f, top = 50f, right = 300f, bottom = 350f)
 
-        // In mirrored selfie preview: left becomes (frameWidth - right)
         val mirroredLeft = frameWidth - faceBox.right
         val mirroredRight = frameWidth - faceBox.left
 
