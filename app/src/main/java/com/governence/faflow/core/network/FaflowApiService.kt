@@ -119,4 +119,24 @@ interface FaflowApiService {
 
     @PATCH("notifications/read-all")
     suspend fun markAllNotificationsRead(): Response<StatusOkDto>
+
+    // ---------- Attendance ----------
+    @POST("attendance/check-in")
+    suspend fun checkIn(
+        @Body request: AttendanceCheckInRequestDto
+    ): Response<AttendanceRecordOutDto>
+
+    @POST("attendance/check-out")
+    suspend fun checkOut(
+        @Body request: AttendanceCheckOutRequestDto
+    ): Response<AttendanceRecordOutDto>
+
+    @GET("attendance/today")
+    suspend fun getTodayAttendance(): Response<AttendanceTodaySummaryOutDto>
+
+    @GET("attendance/my")
+    suspend fun getMyAttendanceHistory(
+        @Query("limit") limit: Int = 30,
+        @Query("offset") offset: Int = 0
+    ): Response<List<AttendanceRecordOutDto>>
 }

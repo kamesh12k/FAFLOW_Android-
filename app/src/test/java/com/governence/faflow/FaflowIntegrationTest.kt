@@ -57,6 +57,13 @@ import com.governence.faflow.face.scrfd.ScrfdPostprocessor
 import com.governence.faflow.location.CampusGeofence
 import com.governence.faflow.location.GeoPoint
 import com.governence.faflow.location.GeofenceMathEngine
+import com.governence.faflow.attendance.data.AttendanceSubmissionResult
+import com.governence.faflow.attendance.data.PendingAttendanceEntity
+import com.governence.faflow.attendance.data.SyncStatus
+import com.governence.faflow.core.network.AttendanceCheckInRequestDto
+import com.governence.faflow.core.network.AttendanceCheckOutRequestDto
+import com.governence.faflow.core.network.AttendanceRecordOutDto
+import com.governence.faflow.core.network.AttendanceTodaySummaryOutDto
 import com.governence.faflow.location.GeofenceType
 import com.governence.faflow.location.GeofenceValidator
 import com.governence.faflow.location.LocationVerificationResult
@@ -73,9 +80,144 @@ import org.junit.Test
 import java.util.Random
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.UUID
 import kotlin.math.sqrt
 
 class FaflowIntegrationTest {
+
+    // ---------- Milestone 9: Backend Attendance Integration & Offline Sync Tests ----------
+
+    @Test
+    fun testAttendanceDtoModelCreation() {
+        val checkInDto = AttendanceCheckInRequestDto(
+            idempotencyKey = "test-uuid-1",
+            latitude = 11.016844,
+            longitude = 76.955833,
+            accuracyMeters = 5.0,
+            faceSimilarityScore = 0.88,
+            livenessVerified = true,
+            verificationMethod = "FACE_ON_DEVICE"
+        )
+        assertEquals("test-uuid-1", checkInDto.idempotencyKey)
+        assertEquals(11.016844, checkInDto.latitude, 0.00001)
+        assertTrue(checkInDto.livenessVerified)
+
+        val checkOutDto = AttendanceCheckOutRequestDto(
+            idempotencyKey = "test-uuid-2",
+            latitude = 11.016844,
+            longitude = 76.955833,
+            accuracyMeters = 4.5,
+            faceSimilarityScore = 0.90,
+            livenessVerified = true
+        )
+        assertEquals("test-uuid-2", checkOutDto.idempotencyKey)
+
+        val recordDto = AttendanceRecordOutDto(
+            id = 101,
+            userId = 42,
+            staffName = "Dr. Kamesh V",
+            attendanceDate = "2026-09-02",
+            checkInTime = "2026-09-02T08:30:00Z",
+            checkOutTime = "2026-09-02T16:30:00Z",
+            status = "PRESENT",
+            checkInGeofenceName = "Main Campus",
+            workingHours = "8h 0m",
+            isSynced = true
+        )
+        assertEquals(101, recordDto.id)
+        assertEquals("Dr. Kamesh V", recordDto.staffName)
+        assertEquals("8h 0m", recordDto.workingHours)
+        assertTrue(recordDto.isSynced)
+    }
+
+    @Test
+    fun testPendingAttendanceEntityAndSyncStatus() {
+        val entity = PendingAttendanceEntity(
+            id = 1L,
+            idempotencyKey = UUID.randomUUID().toString(),
+            userId = 42,
+            operationType = "CHECK_IN",
+            latitude = 11.016844,
+            longitude = 76.955833,
+            accuracyMeters = 6.0,
+            faceSimilarityScore = 0.89,
+            livenessVerified = true,
+            syncStatus = SyncStatus.PENDING
+        )
+        assertEquals(SyncStatus.PENDING, entity.syncStatus)
+        assertEquals("CHECK_IN", entity.operationType)
+        assertEquals(42, entity.userId)
+
+        val syncing = entity.copy(syncStatus = SyncStatus.SYNCING, attemptCount = 1)
+        assertEquals(SyncStatus.SYNCING, syncing.syncStatus)
+        assertEquals(1, syncing.attemptCount)
+
+        val synced = entity.copy(syncStatus = SyncStatus.SYNCED)
+        assertEquals(SyncStatus.SYNCED, synced.syncStatus)
+    }
+
+    @Test
+    fun testAttendanceSubmissionResultHierarchy() {
+        val recordDto = AttendanceRecordOutDto(
+            id = 101,
+            userId = 42,
+            attendanceDate = "2026-09-02",
+            status = "PRESENT",
+            livenessVerified = true
+        )
+
+        val successOnline: AttendanceSubmissionResult = AttendanceSubmissionResult.Success(record = recordDto, isOnline = true)
+        assertTrue(successOnline is AttendanceSubmissionResult.Success)
+        assertTrue((successOnline as AttendanceSubmissionResult.Success).isOnline)
+
+        val pending = PendingAttendanceEntity(
+            idempotencyKey = "offline-key",
+            userId = 42,
+            operationType = "CHECK_IN",
+            latitude = 11.0,
+            longitude = 76.0,
+            accuracyMeters = 5.0,
+            faceSimilarityScore = 0.88,
+            livenessVerified = true
+        )
+        val queuedOffline: AttendanceSubmissionResult = AttendanceSubmissionResult.QueuedOffline(
+            pendingEntity = pending,
+            message = "Queued locally"
+        )
+        assertTrue(queuedOffline is AttendanceSubmissionResult.QueuedOffline)
+        assertEquals("offline-key", (queuedOffline as AttendanceSubmissionResult.QueuedOffline).pendingEntity.idempotencyKey)
+
+        val failed: AttendanceSubmissionResult = AttendanceSubmissionResult.Failed(400, "Outside geofence")
+        assertTrue(failed is AttendanceSubmissionResult.Failed)
+        assertEquals(400, (failed as AttendanceSubmissionResult.Failed).errorCode)
+    }
+
+    @Test
+    fun testAttendanceEligibilityExtendedStates() {
+        val recordDto = AttendanceRecordOutDto(id = 1, userId = 42, attendanceDate = "2026-09-02", status = "PRESENT", livenessVerified = true)
+
+        val submitting: AttendanceEligibilityState = AttendanceEligibilityState.Submitting
+        assertTrue(submitting is AttendanceEligibilityState.Submitting)
+
+        val serverAccepted: AttendanceEligibilityState = AttendanceEligibilityState.ServerAccepted(recordDto)
+        assertTrue(serverAccepted is AttendanceEligibilityState.ServerAccepted)
+
+        val savedOffline: AttendanceEligibilityState = AttendanceEligibilityState.SavedOffline("Saved locally")
+        assertTrue(savedOffline is AttendanceEligibilityState.SavedOffline)
+
+        val syncPending: AttendanceEligibilityState = AttendanceEligibilityState.SyncPending(2)
+        assertTrue(syncPending is AttendanceEligibilityState.SyncPending)
+        assertEquals(2, (syncPending as AttendanceEligibilityState.SyncPending).pendingCount)
+
+        val syncing: AttendanceEligibilityState = AttendanceEligibilityState.Syncing
+        assertTrue(syncing is AttendanceEligibilityState.Syncing)
+
+        val alreadyIn: AttendanceEligibilityState = AttendanceEligibilityState.AlreadyCheckedIn("08:30 AM")
+        assertTrue(alreadyIn is AttendanceEligibilityState.AlreadyCheckedIn)
+
+        val alreadyOut: AttendanceEligibilityState = AttendanceEligibilityState.AlreadyCheckedOut("04:30 PM")
+        assertTrue(alreadyOut is AttendanceEligibilityState.AlreadyCheckedOut)
+    }
 
     // ---------- Milestone 8: Face Liveness & Presentation Attack Detection Tests ----------
 

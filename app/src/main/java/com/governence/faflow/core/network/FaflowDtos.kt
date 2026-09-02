@@ -188,3 +188,57 @@ data class UnreadCountDto(
 data class StatusOkDto(
     @Json(name = "ok") val ok: Boolean = true
 )
+
+// ---------- Attendance DTOs ----------
+
+@JsonClass(generateAdapter = true)
+data class AttendanceCheckInRequestDto(
+    @Json(name = "idempotency_key") val idempotencyKey: String,
+    @Json(name = "latitude") val latitude: Double,
+    @Json(name = "longitude") val longitude: Double,
+    @Json(name = "accuracy_meters") val accuracyMeters: Double,
+    @Json(name = "face_similarity_score") val faceSimilarityScore: Double,
+    @Json(name = "liveness_verified") val livenessVerified: Boolean,
+    @Json(name = "verification_method") val verificationMethod: String = "FACE_ON_DEVICE",
+    @Json(name = "device_reference") val deviceReference: String? = null
+)
+
+@JsonClass(generateAdapter = true)
+data class AttendanceCheckOutRequestDto(
+    @Json(name = "idempotency_key") val idempotencyKey: String,
+    @Json(name = "latitude") val latitude: Double,
+    @Json(name = "longitude") val longitude: Double,
+    @Json(name = "accuracy_meters") val accuracyMeters: Double,
+    @Json(name = "face_similarity_score") val faceSimilarityScore: Double,
+    @Json(name = "liveness_verified") val livenessVerified: Boolean,
+    @Json(name = "verification_method") val verificationMethod: String = "FACE_ON_DEVICE",
+    @Json(name = "device_reference") val deviceReference: String? = null
+)
+
+@JsonClass(generateAdapter = true)
+data class AttendanceRecordOutDto(
+    @Json(name = "id") val id: Int,
+    @Json(name = "user_id") val userId: Int,
+    @Json(name = "staff_name") val staffName: String? = null,
+    @Json(name = "attendance_date") val attendanceDate: String,
+    @Json(name = "check_in_time") val checkInTime: String? = null,
+    @Json(name = "check_out_time") val checkOutTime: String? = null,
+    @Json(name = "status") val status: String,
+    @Json(name = "check_in_geofence_name") val checkInGeofenceName: String? = null,
+    @Json(name = "check_out_geofence_name") val checkOutGeofenceName: String? = null,
+    @Json(name = "face_similarity_score") val faceSimilarityScore: Double? = null,
+    @Json(name = "liveness_verified") val livenessVerified: Boolean = false,
+    @Json(name = "verification_method") val verificationMethod: String = "FACE_ON_DEVICE",
+    @Json(name = "working_hours") val workingHours: String? = null,
+    @Json(name = "is_synced") val isSynced: Boolean = true
+)
+
+@JsonClass(generateAdapter = true)
+data class AttendanceTodaySummaryOutDto(
+    @Json(name = "is_checked_in") val isCheckedIn: Boolean = false,
+    @Json(name = "is_checked_out") val isCheckedOut: Boolean = false,
+    @Json(name = "check_in_time") val checkInTime: String? = null,
+    @Json(name = "check_out_time") val checkOutTime: String? = null,
+    @Json(name = "working_duration") val workingDuration: String? = null,
+    @Json(name = "record") val record: AttendanceRecordOutDto? = null
+)

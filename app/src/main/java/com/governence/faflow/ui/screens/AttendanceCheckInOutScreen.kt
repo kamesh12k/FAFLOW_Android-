@@ -15,23 +15,30 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AccessTime
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Fingerprint
+import androidx.compose.material.icons.filled.CloudDone
+import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.GpsFixed
 import androidx.compose.material.icons.filled.GpsNotFixed
 import androidx.compose.material.icons.filled.GpsOff
 import androidx.compose.material.icons.filled.LocationOn
-import androidx.compose.material.icons.filled.Shield
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -51,6 +58,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import com.governence.faflow.attendance.data.AttendanceLocalQueue
+import com.governence.faflow.attendance.data.AttendanceRepository
 import com.governence.faflow.camera.CameraController
 import com.governence.faflow.camera.CameraOverlay
 import com.governence.faflow.camera.CameraPreviewView
@@ -66,12 +75,12 @@ import com.governence.faflow.face.scrfd.ScrfdFaceDetector
 import com.governence.faflow.location.LocationVerificationResult
 import com.governence.faflow.ui.components.AppTopBar
 import com.governence.faflow.ui.theme.PrimaryBlue
+import com.governence.faflow.ui.theme.SecondaryTeal
 import com.governence.faflow.ui.theme.StatusError
 import com.governence.faflow.ui.theme.StatusSuccess
 import com.governence.faflow.ui.theme.StatusWarning
 import com.governence.faflow.ui.viewmodels.AttendanceEligibilityState
 import com.governence.faflow.ui.viewmodels.AttendanceViewModel
-import com.governence.faflow.ui.viewmodels.FaceDetectionUiState
 
 @Composable
 fun AttendanceCheckInOutScreen(
@@ -147,7 +156,7 @@ fun AttendanceCheckInOutScreen(
     Scaffold(
         topBar = {
             AppTopBar(
-                title = if (uiState.isCheckingIn) "Staff Check-In" else "Staff Check-Out",
+                title = if (uiState.isCheckingIn) "Staff Shift Check-In" else "Staff Shift Check-Out",
                 canNavigateBack = true,
                 onNavigateBack = onNavigateBack
             )
@@ -226,7 +235,7 @@ fun AttendanceCheckInOutScreen(
                         )
 
                         val subText = when (val res = verificationResult) {
-                            is LocationVerificationResult.InsideGeofence -> "Accuracy: ±${res.accuracyMeters.toInt()}m • Mock: None"
+                            is LocationVerificationResult.InsideGeofence -> "Accuracy: ±${res.accuracyMeters.toInt()}m • Server Geofence: Active"
                             is LocationVerificationResult.Boundary -> "Within tolerance margin (±${res.accuracyMeters.toInt()}m)"
                             is LocationVerificationResult.MockLocationDetected -> "Anti-spoofing engine rejected mock location"
                             else -> "Move inside institutional boundaries to activate camera"
@@ -297,9 +306,78 @@ fun AttendanceCheckInOutScreen(
 
             Spacer(modifier = Modifier.height(14.dp))
 
-            // Action Status Card (Milestone 8: VerifiedAndReady Gating State)
+            // Action Status Card & Check-In / Check-Out Trigger Button
             when (val elig = eligibilityState) {
                 is AttendanceEligibilityState.VerifiedAndReady -> {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(containerColor = StatusSuccess.copy(alpha = 0.15f))
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(imageVector = Icons.Default.CheckCircle, contentDescription = null, tint = StatusSuccess, modifier = Modifier.size(24.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "Verified: Identity (${(elig.similarity * 100).toInt()}%) • Liveness (${(elig.livenessScore * 100).toInt()}%)",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = StatusSuccess
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Button(
+                                onClick = {
+                                    val staffIdInt = staffId.toIntOrNull() ?: 42
+                                    if (uiState.isCheckingIn) {
+                                        viewModel.performCheckIn(staffUserId = staffIdInt, onSuccess = onAttendanceSuccess)
+                                    } else {
+                                        viewModel.performCheckOut(staffUserId = staffIdInt, onSuccess = onAttendanceSuccess)
+                                    }
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue),
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Text(
+                                    text = if (uiState.isCheckingIn) "CONFIRM CHECK-IN" else "CONFIRM CHECK-OUT",
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White
+                                )
+                            }
+                        }
+                    }
+                }
+
+                is AttendanceEligibilityState.Submitting -> {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            CircularProgressIndicator(modifier = Modifier.size(24.dp), color = PrimaryBlue, strokeWidth = 2.dp)
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Text(
+                                text = "Submitting authoritative attendance transaction...",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                    }
+                }
+
+                is AttendanceEligibilityState.ServerAccepted -> {
                     Card(
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(16.dp),
@@ -311,20 +389,33 @@ fun AttendanceCheckInOutScreen(
                                 .padding(16.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Icon(imageVector = Icons.Default.CheckCircle, contentDescription = null, tint = StatusSuccess, modifier = Modifier.size(28.dp))
+                            Icon(imageVector = Icons.Default.CloudDone, contentDescription = null, tint = StatusSuccess, modifier = Modifier.size(28.dp))
                             Spacer(modifier = Modifier.width(12.dp))
                             Column {
-                                Text(
-                                    text = "Verified & Ready for Attendance",
-                                    style = MaterialTheme.typography.titleSmall,
-                                    fontWeight = FontWeight.Bold,
-                                    color = StatusSuccess
-                                )
-                                Text(
-                                    text = "Identity Matched (${(elig.similarity * 100).toInt()}%) • Liveness Verified (Anti-Spoof Passed)",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
+                                Text("Attendance Confirmed", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = StatusSuccess)
+                                Text("Recorded by institutional FAFLOW backend (Status: ${elig.record.status})", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                    }
+                }
+
+                is AttendanceEligibilityState.SavedOffline -> {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(containerColor = StatusWarning.copy(alpha = 0.15f))
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(imageVector = Icons.Default.CloudUpload, contentDescription = null, tint = StatusWarning, modifier = Modifier.size(28.dp))
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column {
+                                Text("Check-In Saved Locally", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = StatusWarning)
+                                Text(elig.message, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
                     }
@@ -346,7 +437,7 @@ fun AttendanceCheckInOutScreen(
                             Spacer(modifier = Modifier.width(12.dp))
                             Column {
                                 Text(
-                                    text = "Biometric Verification Blocked",
+                                    text = "Attendance Blocked",
                                     style = MaterialTheme.typography.titleSmall,
                                     fontWeight = FontWeight.Bold,
                                     color = StatusError

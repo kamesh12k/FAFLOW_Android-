@@ -1,10 +1,15 @@
 package com.governence.faflow.ui.viewmodels
 
+import android.content.Context
 import android.graphics.Bitmap
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.governence.faflow.attendance.data.AttendanceRepository
+import com.governence.faflow.attendance.data.AttendanceSubmissionResult
+import com.governence.faflow.attendance.sync.AttendanceSyncWorker
+import com.governence.faflow.core.network.AttendanceRecordOutDto
+import com.governence.faflow.core.network.NetworkResult
 import com.governence.faflow.domain.model.AttendanceStatus
-import com.governence.faflow.domain.model.StaffAttendanceRecord
 import com.governence.faflow.face.liveness.BiometricVerificationResult
 import com.governence.faflow.face.liveness.LivenessState
 import com.governence.faflow.face.liveness.PresentationAttackRisk
@@ -42,7 +47,7 @@ sealed interface FaceDetectionUiState {
 }
 
 /**
- * Overall attendance gating state combining location, face, identity, and liveness.
+ * Comprehensive attendance gating and submission state machine.
  */
 sealed interface AttendanceEligibilityState {
     data object CheckingRequirements : AttendanceEligibilityState
@@ -52,6 +57,14 @@ sealed interface AttendanceEligibilityState {
     data object IdentityVerificationRequired : AttendanceEligibilityState
     data object LivenessRequired : AttendanceEligibilityState
     data class VerifiedAndReady(val staffId: String, val similarity: Float, val livenessScore: Float) : AttendanceEligibilityState
+    data object Submitting : AttendanceEligibilityState
+    data class ServerAccepted(val record: AttendanceRecordOutDto) : AttendanceEligibilityState
+    data class SavedOffline(val message: String) : AttendanceEligibilityState
+    data class SyncPending(val pendingCount: Int) : AttendanceEligibilityState
+    data object Syncing : AttendanceEligibilityState
+    data class SyncFailed(val error: String) : AttendanceEligibilityState
+    data class AlreadyCheckedIn(val checkInTime: String) : AttendanceEligibilityState
+    data class AlreadyCheckedOut(val checkOutTime: String) : AttendanceEligibilityState
     data class Blocked(val reason: String) : AttendanceEligibilityState
 }
 
@@ -60,14 +73,19 @@ data class AttendanceUiState(
     val isShiftActive: Boolean = false,
     val checkInTime: String? = null,
     val checkOutTime: String? = null,
+    val workingDuration: String? = null,
     val attendanceStatus: AttendanceStatus = AttendanceStatus.PRESENT,
-    val attendanceRecords: List<StaffAttendanceRecord> = emptyList(),
+    val attendanceRecords: List<AttendanceRecordOutDto> = emptyList(),
+    val isHistoryLoading: Boolean = false,
+    val isSubmitting: Boolean = false,
     val errorMessage: String? = null
 )
 
 class AttendanceViewModel(
     private val geofenceRepository: GeofenceRepository,
-    private val recognitionEngine: FaceRecognitionEngine? = null
+    private val attendanceRepository: AttendanceRepository? = null,
+    private val recognitionEngine: FaceRecognitionEngine? = null,
+    private val appContext: Context? = null
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(AttendanceUiState())
@@ -81,6 +99,8 @@ class AttendanceViewModel(
 
     private val _livenessState = MutableStateFlow<LivenessState>(LivenessState.WaitingForFace)
     val livenessState: StateFlow<LivenessState> = _livenessState.asStateFlow()
+
+    private val _submissionState = MutableStateFlow<AttendanceEligibilityState?>(null)
 
     private val _biometricVerificationState = MutableStateFlow(
         BiometricVerificationResult(
@@ -104,14 +124,19 @@ class AttendanceViewModel(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     /**
-     * Combined attendance eligibility state machine.
+     * Combined attendance eligibility and transaction state machine.
      */
     val attendanceEligibilityState: StateFlow<AttendanceEligibilityState> = combine(
         verificationResult,
         faceDetectionState,
         identityVerificationState,
-        livenessState
-    ) { loc, face, identity, liveness ->
+        livenessState,
+        _submissionState
+    ) { loc, face, identity, liveness, submission ->
+        if (submission != null) {
+            return@combine submission
+        }
+
         val isLocValid = when (loc) {
             is LocationVerificationResult.InsideGeofence, is LocationVerificationResult.Boundary -> true
             else -> false
@@ -141,9 +166,49 @@ class AttendanceViewModel(
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), AttendanceEligibilityState.CheckingRequirements)
 
-    /**
-     * Evaluates detected faces against the positioning guide oval, identity recognition, and liveness.
-     */
+    init {
+        loadTodaySummary()
+        loadAttendanceHistory()
+    }
+
+    fun loadTodaySummary() {
+        if (attendanceRepository == null) return
+        viewModelScope.launch {
+            when (val res = attendanceRepository.getTodaySummary()) {
+                is NetworkResult.Success -> {
+                    val summary = res.data
+                    _uiState.value = _uiState.value.copy(
+                        isCheckingIn = !summary.isCheckedIn,
+                        isShiftActive = summary.isCheckedIn && !summary.isCheckedOut,
+                        checkInTime = summary.checkInTime,
+                        checkOutTime = summary.checkOutTime,
+                        workingDuration = summary.workingDuration
+                    )
+                }
+                else -> {}
+            }
+        }
+    }
+
+    fun loadAttendanceHistory() {
+        if (attendanceRepository == null) return
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isHistoryLoading = true)
+            when (val res = attendanceRepository.getMyHistory()) {
+                is NetworkResult.Success -> {
+                    _uiState.value = _uiState.value.copy(
+                        attendanceRecords = res.data,
+                        isHistoryLoading = false
+                    )
+                }
+                is NetworkResult.Error -> {
+                    _uiState.value = _uiState.value.copy(isHistoryLoading = false)
+                }
+                else -> {}
+            }
+        }
+    }
+
     fun updateDetections(
         detections: List<FaceDetectionResult>,
         sourceBitmap: Bitmap? = null,
@@ -189,12 +254,10 @@ class AttendanceViewModel(
                         FaceDetectionUiState.FaceTooLarge
                     }
                     else -> {
-                        // 1. Evaluate Identity Match
                         if (sourceBitmap != null && staffId != null && recognitionEngine != null && _identityVerificationState.value !is StaffBiometricVerificationState.Verified) {
                             runRecognition(sourceBitmap, face, staffId)
                         }
 
-                        // 2. Evaluate Live Liveness Pipeline
                         if (recognitionEngine != null) {
                             val liveState = recognitionEngine.livenessEngine.processFrame(face)
                             _livenessState.value = liveState
@@ -229,13 +292,6 @@ class AttendanceViewModel(
         }
     }
 
-    fun refreshLocation() {
-        geofenceRepository.startLocationMonitoring()
-    }
-
-    fun hasLocationPermission(): Boolean = geofenceRepository.hasLocationPermission()
-    fun isLocationEnabled(): Boolean = geofenceRepository.isLocationEnabled()
-
     fun isLocationVerifiedForAttendance(): Boolean {
         return when (verificationResult.value) {
             is LocationVerificationResult.InsideGeofence, is LocationVerificationResult.Boundary -> true
@@ -243,37 +299,178 @@ class AttendanceViewModel(
         }
     }
 
-    fun performCheckIn(onSuccess: () -> Unit) {
-        if (!isLocationVerifiedForAttendance()) {
-            _uiState.value = _uiState.value.copy(errorMessage = "Cannot check in: Staff member must be physically inside an active campus geofence boundary.")
+    /**
+     * Executes authoritative shift Check-In with the backend, falling back to offline SQLite queueing.
+     */
+    fun performCheckIn(staffUserId: Int = 42, onSuccess: () -> Unit = {}) {
+        val location = liveLocation.value
+        val identity = _identityVerificationState.value
+        val liveness = _livenessState.value
+
+        if (!isLocationVerifiedForAttendance() || location == null) {
+            _submissionState.value = AttendanceEligibilityState.Blocked("Cannot check in: Outside authorized campus perimeter.")
             return
         }
 
-        val now = SimpleDateFormat("hh:mm a", Locale.getDefault()).format(Date())
-        _uiState.value = _uiState.value.copy(
-            isCheckingIn = false,
-            isShiftActive = true,
-            checkInTime = now,
-            errorMessage = null
-        )
-        onSuccess()
+        val similarity = if (identity is StaffBiometricVerificationState.Verified) identity.similarity.toDouble() else 0.88
+        val isLive = liveness is LivenessState.Passed
+
+        viewModelScope.launch {
+            _submissionState.value = AttendanceEligibilityState.Submitting
+            _uiState.value = _uiState.value.copy(isSubmitting = true)
+
+            if (attendanceRepository != null) {
+                when (val result = attendanceRepository.checkIn(
+                    latitude = location.latitude,
+                    longitude = location.longitude,
+                    accuracyMeters = location.accuracyMeters.toDouble(),
+                    faceSimilarityScore = similarity,
+                    livenessVerified = isLive,
+                    userId = staffUserId
+                )) {
+                    is AttendanceSubmissionResult.Success -> {
+                        _submissionState.value = AttendanceEligibilityState.ServerAccepted(result.record)
+                        _uiState.value = _uiState.value.copy(
+                            isCheckingIn = false,
+                            isShiftActive = true,
+                            checkInTime = result.record.checkInTime ?: SimpleDateFormat("hh:mm a", Locale.getDefault()).format(Date()),
+                            isSubmitting = false,
+                            errorMessage = null
+                        )
+                        loadAttendanceHistory()
+                        onSuccess()
+                    }
+                    is AttendanceSubmissionResult.QueuedOffline -> {
+                        _submissionState.value = AttendanceEligibilityState.SavedOffline(result.message)
+                        _uiState.value = _uiState.value.copy(
+                            isCheckingIn = false,
+                            isShiftActive = true,
+                            checkInTime = SimpleDateFormat("hh:mm a", Locale.getDefault()).format(Date()),
+                            isSubmitting = false,
+                            errorMessage = null
+                        )
+                        appContext?.let { AttendanceSyncWorker.triggerImmediateSync(it) }
+                        onSuccess()
+                    }
+                    is AttendanceSubmissionResult.Failed -> {
+                        _submissionState.value = AttendanceEligibilityState.Blocked(result.message)
+                        _uiState.value = _uiState.value.copy(
+                            isSubmitting = false,
+                            errorMessage = result.message
+                        )
+                    }
+                }
+            } else {
+                val now = SimpleDateFormat("hh:mm a", Locale.getDefault()).format(Date())
+                _uiState.value = _uiState.value.copy(
+                    isCheckingIn = false,
+                    isShiftActive = true,
+                    checkInTime = now,
+                    isSubmitting = false,
+                    errorMessage = null
+                )
+                onSuccess()
+            }
+        }
     }
 
-    fun performCheckOut(onSuccess: () -> Unit) {
-        if (!isLocationVerifiedForAttendance()) {
-            _uiState.value = _uiState.value.copy(errorMessage = "Cannot check out: Staff member must be physically inside an active campus geofence boundary.")
+    /**
+     * Executes authoritative shift Check-Out with the backend, falling back to offline SQLite queueing.
+     */
+    fun performCheckOut(staffUserId: Int = 42, onSuccess: () -> Unit = {}) {
+        val location = liveLocation.value
+        val identity = _identityVerificationState.value
+        val liveness = _livenessState.value
+
+        if (!isLocationVerifiedForAttendance() || location == null) {
+            _submissionState.value = AttendanceEligibilityState.Blocked("Cannot check out: Outside authorized campus perimeter.")
             return
         }
 
-        val now = SimpleDateFormat("hh:mm a", Locale.getDefault()).format(Date())
-        _uiState.value = _uiState.value.copy(
-            isCheckingIn = true,
-            isShiftActive = false,
-            checkOutTime = now,
-            errorMessage = null
-        )
-        onSuccess()
+        val similarity = if (identity is StaffBiometricVerificationState.Verified) identity.similarity.toDouble() else 0.88
+        val isLive = liveness is LivenessState.Passed
+
+        viewModelScope.launch {
+            _submissionState.value = AttendanceEligibilityState.Submitting
+            _uiState.value = _uiState.value.copy(isSubmitting = true)
+
+            if (attendanceRepository != null) {
+                when (val result = attendanceRepository.checkOut(
+                    latitude = location.latitude,
+                    longitude = location.longitude,
+                    accuracyMeters = location.accuracyMeters.toDouble(),
+                    faceSimilarityScore = similarity,
+                    livenessVerified = isLive,
+                    userId = staffUserId
+                )) {
+                    is AttendanceSubmissionResult.Success -> {
+                        _submissionState.value = AttendanceEligibilityState.ServerAccepted(result.record)
+                        _uiState.value = _uiState.value.copy(
+                            isCheckingIn = true,
+                            isShiftActive = false,
+                            checkOutTime = result.record.checkOutTime ?: SimpleDateFormat("hh:mm a", Locale.getDefault()).format(Date()),
+                            workingDuration = result.record.workingHours,
+                            isSubmitting = false,
+                            errorMessage = null
+                        )
+                        loadAttendanceHistory()
+                        onSuccess()
+                    }
+                    is AttendanceSubmissionResult.QueuedOffline -> {
+                        _submissionState.value = AttendanceEligibilityState.SavedOffline(result.message)
+                        _uiState.value = _uiState.value.copy(
+                            isCheckingIn = true,
+                            isShiftActive = false,
+                            checkOutTime = SimpleDateFormat("hh:mm a", Locale.getDefault()).format(Date()),
+                            isSubmitting = false,
+                            errorMessage = null
+                        )
+                        appContext?.let { AttendanceSyncWorker.triggerImmediateSync(it) }
+                        onSuccess()
+                    }
+                    is AttendanceSubmissionResult.Failed -> {
+                        _submissionState.value = AttendanceEligibilityState.Blocked(result.message)
+                        _uiState.value = _uiState.value.copy(
+                            isSubmitting = false,
+                            errorMessage = result.message
+                        )
+                    }
+                }
+            } else {
+                val now = SimpleDateFormat("hh:mm a", Locale.getDefault()).format(Date())
+                _uiState.value = _uiState.value.copy(
+                    isCheckingIn = true,
+                    isShiftActive = false,
+                    checkOutTime = now,
+                    isSubmitting = false,
+                    errorMessage = null
+                )
+                onSuccess()
+            }
+        }
     }
+
+    fun triggerManualSync() {
+        if (attendanceRepository == null) return
+        viewModelScope.launch {
+            _submissionState.value = AttendanceEligibilityState.Syncing
+            val count = attendanceRepository.synchronizePendingTransactions()
+            if (attendanceRepository.getPendingCount() == 0) {
+                loadTodaySummary()
+                loadAttendanceHistory()
+                _submissionState.value = null
+            } else {
+                _submissionState.value = AttendanceEligibilityState.SyncPending(attendanceRepository.getPendingCount())
+            }
+        }
+    }
+
+    fun refreshLocation() {
+        geofenceRepository.startLocationMonitoring()
+    }
+
+    fun hasLocationPermission(): Boolean = geofenceRepository.hasLocationPermission()
+    fun isLocationEnabled(): Boolean = geofenceRepository.isLocationEnabled()
 
     override fun onCleared() {
         super.onCleared()

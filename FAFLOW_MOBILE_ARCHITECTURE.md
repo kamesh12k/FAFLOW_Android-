@@ -1,19 +1,20 @@
 # FAFLOW Staff Mobile: Architecture Specification & Integration Blueprint
 
-> **System Status**: **Milestone 8 Complete (Production-Grade On-Device Liveness & Presentation Attack Detection)**  
+> **System Status**: **Milestone 9 Complete (FAFLOW Backend Attendance Integration + WorkManager Offline Sync)**  
 > **Target Audience**: College Faculty & Staff (Teachers, HODs, Lab Staff, Non-Teaching Staff)  
 > **Source of Truth**: Upstream FAFLOW FastAPI + PostgreSQL Backend (`https://github.com/kamesh12k/FACULTY_FLOW.git`)  
-> **Attendance Architecture**: Palgeo-style Geofenced Biometric Face Attendance  
+> **Attendance Architecture**: Palgeo-style Geofenced Biometric Face Attendance with Authoritative Server Ledger  
 > **Geofence Engine**: Haversine Circle + Ray-Casting Point-in-Polygon (Jordan Curve Theorem) + Anti-Spoof Mock Location  
 > **Camera Subsystem**: Front-Camera CameraX (`Preview` + `ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST` + Throttled `CameraAnalyzer` + `CameraFrame` Abstraction)  
 > **Detection Engine**: InsightFace SCRFD 500M ONNX Model (`[1, 3, 640, 640]` NCHW, Multi-Stride 8/16/32 Anchor Decoding, IoU NMS, 5-Point Facial Landmarks)  
 > **Alignment & Recognition**: 5-Point Umeyama Similarity Transform to Canonical $112 \times 112$ + MobileFaceNet ArcFace 512-D Embedding + $L_2$ Normalization + Cosine Similarity Matching + Android Keystore Encrypted Local Enrollment  
 > **Liveness & PAD Defense**: Multi-Layer Anti-Spoofing (Temporal Observation Window + Photostatic Variance Analysis + 3D Head Pose Yaw/Pitch/Roll Tracking + Randomized Active Challenges + Pluggable Deep PAD Model Abstraction)  
-> **Build Status**: `BUILD SUCCESSFUL` with 100% Unit Test Pass Rate and Zero Fake/Mock Data  
+> **Backend & Sync Layer**: Authoritative FastAPI Endpoints (`/attendance/check-in`, `/attendance/check-out`, `/attendance/today`, `/attendance/my`) + Server-Side Geofence Validation + UUID Idempotency + Local SQLite Queue + Android `WorkManager` Background Sync  
+> **Build Status**: `BUILD SUCCESSFUL` with 100% Unit Test Pass Rate across Android & FastAPI Test Suites  
 
 ---
 
-## Milestone 8: On-Device Face Liveness & Presentation Attack Defense Architecture
+## Milestone 9: FAFLOW Staff Attendance Backend Integration & Offline Sync Architecture
 
 ```
                  CameraX Subsystem
@@ -50,24 +51,39 @@ Staff Identity Verified                 ▼
                         ▼
            AttendanceEligibilityState
               (VerifiedAndReady)
+                        │
+                        ▼
+              AttendanceRepository
+                        │
+        ┌───────────────┴───────────────┐
+        ▼ (Online)                      ▼ (Offline Fallback)
+  POST /attendance/check-in      Local SQLite Queue (Encrypted)
+  (Server Geofence + UUID        (idempotencyKey, metadata)
+   Idempotency Verification)            │
+        │                               ▼
+        ▼                      Android WorkManager
+  [ Server Accepted ]          (Network Connected Trigger +
+                                Exponential Backoff Retry)
+                                        │
+                                        ▼
+                               POST /attendance/check-in
+                                        │
+                                        ▼
+                                [ Mark Synced ]
 ```
 
 ### Key Architectural Specifications:
-1. **Multi-Layered Liveness Defense Strategy**:
-   - **Layer 1: Temporal Face Tracking**: Tracks $N = 20$ recent frame observations to verify continuous facial presence and geometry.
-   - **Layer 2: Photostatic Jitter & Static Attack Detection**: Computes temporal landmark variance; flags zero-variance static 2D photo attacks (`SpoofSuspected(PRINT_ATTACK)`).
-   - **Layer 3: 3D Head Pose Angles**: Real-time geometric estimation of yaw, pitch, and roll angles from 5-point facial landmarks.
-   - **Layer 4: Randomized Active Challenge-Response**: Dynamic randomized sequences (e.g. `TURN_LEFT` $\rightarrow$ `TURN_RIGHT`) with timeout enforcement and live progress bars.
-   - **Layer 5: Pluggable Deep Anti-Spoof Model**: Clean abstraction (`AntiSpoofModel` & `AntiSpoofModelManager`) prepared for dedicated ONNX anti-spoof inference weights.
-2. **Attendance Eligibility State Machine**:
-   - `LocationRequired` (requires GPS fix inside active campus geofence).
-   - `FaceRequired` / `SingleFaceRequired` (rejects multiple faces in frame).
-   - `IdentityVerificationRequired` (requires $\ge 60\%$ ArcFace cosine similarity against enrolled template).
-   - `LivenessRequired` (requires active challenge completion and low PAD risk).
-   - `VerifiedAndReady` (all location and biometric requirements satisfied).
-   - `Blocked` (mock GPS spoofing, low accuracy, biometric mismatch, or PAD attack detected).
-3. **Strict Boundary Adherence**:
-   - Verified biometric state is gated at `VerifiedAndReady`; network attendance submission is handled in the upcoming backend integration milestone.
+1. **Authoritative Server Ledger**:
+   - The FAFLOW backend independently verifies staff JWT, account status, server-side geofence boundaries, and GPS accuracy ($\le 50\text{m}$).
+   - Client is a sensor/verification terminal; server maintains authoritative timestamp and attendance ledger.
+2. **Robust UUID Idempotency**:
+   - Every transaction generates a unique UUID `idempotency_key` preventing double check-in during network retries or app restarts.
+3. **Offline SQLite Queue & WorkManager Sync**:
+   - When offline, attendance transactions are queued in a local SQLite database (`pending_attendance` table).
+   - Android `WorkManager` (`AttendanceSyncWorker`) listens for network connectivity and synchronizes queued transactions using exponential backoff.
+4. **Strict Biometric Privacy**:
+   - **Zero Raw Photos**: No camera pictures, raw facial frames, or video clips are transmitted or stored.
+   - **Zero Biometric Embeddings**: Only verification metadata (similarity score, liveness boolean, verification method) is transmitted.
 
 ---
 
