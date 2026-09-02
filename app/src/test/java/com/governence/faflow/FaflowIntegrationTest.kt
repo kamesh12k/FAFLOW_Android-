@@ -276,6 +276,52 @@ class FaflowIntegrationTest {
         assertEquals(6, liveStatus.checkedOutCount)
     }
 
+    // ---------- Milestone 13: Production End-to-End Certification Tests ----------
+
+    @Test
+    fun testAttendancePipelineSecurityInvariants() {
+        // Assert that without high accuracy GPS, pipeline transitions to error
+        val poorGps = AttendancePipelineStatus.PoorGpsAccuracy(75)
+        assertTrue(poorGps.isError)
+        assertFalse(poorGps.isActionable)
+
+        // Assert that mock GPS transitions to blocked state
+        val mockGps = AttendancePipelineStatus.MockLocationBlocked
+        assertTrue(mockGps.isError)
+        assertFalse(mockGps.isActionable)
+
+        // Assert that multiple faces in frame blocks biometric gating
+        val multiFace = AttendancePipelineStatus.MultipleFaces(2)
+        assertTrue(multiFace.isError)
+        assertFalse(multiFace.isActionable)
+
+        // Assert that biometric mismatch blocks attendance confirmation
+        val mismatch = AttendancePipelineStatus.VerificationFailed("Biometric similarity score 0.42 below 0.60 threshold")
+        assertTrue(mismatch.isError)
+        assertFalse(mismatch.isActionable)
+
+        // Assert that valid biometric + active challenge produces actionable check-in
+        val validCheckIn = AttendancePipelineStatus.ReadyForCheckIn("42", 0.95f)
+        assertFalse(validCheckIn.isError)
+        assertTrue(validCheckIn.isActionable)
+    }
+
+    @Test
+    fun testGeofenceMathEnginePolygonAreaCalculation() {
+        val squareVertices = listOf(
+            GeoPoint(11.0160, 76.9550),
+            GeoPoint(11.0170, 76.9550),
+            GeoPoint(11.0170, 76.9560),
+            GeoPoint(11.0160, 76.9560)
+        )
+
+        val insidePoint = GeoPoint(11.0165, 76.9555)
+        val outsidePoint = GeoPoint(11.0200, 76.9600)
+
+        assertTrue(GeofenceMathEngine.isInsidePolygon(insidePoint, squareVertices))
+        assertFalse(GeofenceMathEngine.isInsidePolygon(outsidePoint, squareVertices))
+    }
+
     // ---------- Milestone 9: Backend Attendance Integration & Offline Sync Tests ----------
 
     @Test
