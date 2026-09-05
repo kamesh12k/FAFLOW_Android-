@@ -34,6 +34,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
     sourceSets {
         getByName("main") {
@@ -54,11 +55,28 @@ android {
     }
 }
 
+fun findPythonExecutable(): String {
+    val candidates = if (System.getProperty("os.name").lowercase().contains("windows")) {
+        listOf("py", "python", "python3")
+    } else {
+        listOf("python3", "python")
+    }
+    for (cmd in candidates) {
+        try {
+            val process = ProcessBuilder(cmd, "--version").start()
+            if (process.waitFor() == 0) {
+                return cmd
+            }
+        } catch (_: Exception) {}
+    }
+    return if (System.getProperty("os.name").lowercase().contains("windows")) "py" else "python3"
+}
+
 tasks.matching { it.name.startsWith("merge") && it.name.endsWith("NativeLibs") }.configureEach {
     doLast {
         val mergedDir = layout.buildDirectory.dir("intermediates/merged_native_libs").get().asFile
         if (mergedDir.exists()) {
-            ProcessBuilder("py", "${rootDir}/scripts/align_native_libs.py", mergedDir.absolutePath).inheritIO().start().waitFor()
+            ProcessBuilder(findPythonExecutable(), "${rootDir}/scripts/align_native_libs.py", mergedDir.absolutePath).inheritIO().start().waitFor()
         }
     }
 }
@@ -67,7 +85,7 @@ tasks.matching { it.name.startsWith("strip") && it.name.endsWith("DebugSymbols")
     doLast {
         val strippedDir = layout.buildDirectory.dir("intermediates/stripped_native_libs").get().asFile
         if (strippedDir.exists()) {
-            ProcessBuilder("py", "${rootDir}/scripts/align_native_libs.py", strippedDir.absolutePath).inheritIO().start().waitFor()
+            ProcessBuilder(findPythonExecutable(), "${rootDir}/scripts/align_native_libs.py", strippedDir.absolutePath).inheritIO().start().waitFor()
         }
     }
 }
@@ -77,7 +95,7 @@ tasks.matching { it.name.startsWith("package") && (it.name.endsWith("Debug") || 
         val apkDir = layout.buildDirectory.dir("outputs/apk").get().asFile
         if (apkDir.exists()) {
             apkDir.walkTopDown().filter { it.extension == "apk" }.forEach { apkFile ->
-                ProcessBuilder("py", "${rootDir}/scripts/align_apk.py", apkFile.absolutePath).inheritIO().start().waitFor()
+                ProcessBuilder(findPythonExecutable(), "${rootDir}/scripts/align_apk.py", apkFile.absolutePath).inheritIO().start().waitFor()
             }
         }
     }
@@ -127,6 +145,9 @@ dependencies {
 
     // WorkManager (Background Attendance Synchronization)
     implementation(libs.androidx.work.runtime.ktx)
+
+    // Lottie Animation
+    implementation(libs.lottie.compose)
 
     testImplementation(libs.junit)
     androidTestImplementation(platform(libs.androidx.compose.bom))

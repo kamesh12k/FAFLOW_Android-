@@ -64,12 +64,12 @@ class ScrfdModelManager(
 
             _state.value = ModelState.Ready(listOf(info))
             Result.success(Unit)
-        } catch (e: Exception) {
+        } catch (t: Throwable) {
             _state.value = ModelState.Error(
-                message = "Failed to load SCRFD model: ${e.localizedMessage ?: "Unknown error"}",
-                throwable = e
+                message = "Failed to load SCRFD model: ${t.localizedMessage ?: "Unknown error"}",
+                throwable = t
             )
-            Result.failure(e)
+            Result.failure(t)
         }
     }
 

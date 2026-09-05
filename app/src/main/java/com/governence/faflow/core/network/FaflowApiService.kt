@@ -228,4 +228,8 @@ interface FaflowApiService {
     suspend fun deleteGeofence(
         @Path("geofence_id") geofenceId: Int
     ): Response<StatusOkDto>
+
+    // ---------- Biometrics ----------
+    @POST("teachers/me/biometrics/enroll")
+    suspend fun enrollBiometrics(): Response<UserOutDto>
 }

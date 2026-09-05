@@ -43,53 +43,68 @@ class ScrfdFaceDetector(
     private val _inferenceLatencyMs = MutableStateFlow<Long>(0L)
     val inferenceLatencyMs: StateFlow<Long> = _inferenceLatencyMs.asStateFlow()
 
+    private val nativeFaceDetector = com.governence.faflow.face.detector.NativeFaceDetector(maxFaces = 3)
+
     override suspend fun detectFaces(bitmap: Bitmap): List<FaceDetectionResult> = withContext(Dispatchers.Default) {
-        val session = modelManager.session ?: return@withContext emptyList()
-        val env = modelManager.environment ?: return@withContext emptyList()
+        val session = modelManager.session
+        val env = modelManager.environment
 
         val startTime = System.currentTimeMillis()
 
-        // 1. Preprocessing
-        val (inputBuffer, letterboxInfo) = ScrfdPreprocessor.preprocess(
-            bitmap = bitmap,
-            targetWidth = ScrfdModelMetadata.INPUT_WIDTH,
-            targetHeight = ScrfdModelMetadata.INPUT_HEIGHT,
-            rotationDegrees = 0
-        )
+        if (session != null && env != null) {
+            try {
+                // 1. Preprocessing
+                val (inputBuffer, letterboxInfo) = ScrfdPreprocessor.preprocess(
+                    bitmap = bitmap,
+                    targetWidth = ScrfdModelMetadata.INPUT_WIDTH,
+                    targetHeight = ScrfdModelMetadata.INPUT_HEIGHT,
+                    rotationDegrees = 0
+                )
 
-        // 2. ONNX Tensor Creation
-        val inputShape = longArrayOf(1, 3, ScrfdModelMetadata.INPUT_HEIGHT.toLong(), ScrfdModelMetadata.INPUT_WIDTH.toLong())
-        val inputTensor = OnnxTensor.createTensor(env, inputBuffer, inputShape)
+                // 2. ONNX Tensor Creation
+                val inputShape = longArrayOf(1, 3, ScrfdModelMetadata.INPUT_HEIGHT.toLong(), ScrfdModelMetadata.INPUT_WIDTH.toLong())
+                val inputTensor = OnnxTensor.createTensor(env, inputBuffer, inputShape)
 
-        val candidates = ArrayList<ScrfdCandidate>()
+                val candidates = ArrayList<ScrfdCandidate>()
 
-        try {
-            // 3. Inference
-            val inputName = session.inputNames.iterator().next()
-            val results = session.run(mapOf(inputName to inputTensor))
+                try {
+                    // 3. Inference
+                    val inputName = session.inputNames.iterator().next()
+                    val results = session.run(mapOf(inputName to inputTensor))
 
-            // 4. Output Extraction & Decoding
-            extractAndDecodeOutputs(results, letterboxInfo, candidates)
-            results.close()
-        } catch (e: Exception) {
-            return@withContext emptyList()
-        } finally {
-            inputTensor.close()
+                    // 4. Output Extraction & Decoding
+                    extractAndDecodeOutputs(results, letterboxInfo, candidates)
+                    results.close()
+                } finally {
+                    inputTensor.close()
+                }
+
+                // 5. NMS & Quality Postprocessing
+                val detections = ScrfdPostprocessor.postprocess(
+                    candidates = candidates,
+                    frameWidth = bitmap.width,
+                    frameHeight = bitmap.height,
+                    iouThreshold = iouThreshold
+                )
+
+                if (detections.isNotEmpty()) {
+                    val latency = System.currentTimeMillis() - startTime
+                    _inferenceLatencyMs.value = latency
+                    _latestDetections.value = detections
+                    return@withContext detections
+                }
+            } catch (_: Exception) {
+                // Fallback to Native detector
+            }
         }
 
-        // 5. NMS & Quality Postprocessing
-        val detections = ScrfdPostprocessor.postprocess(
-            candidates = candidates,
-            frameWidth = bitmap.width,
-            frameHeight = bitmap.height,
-            iouThreshold = iouThreshold
-        )
-
+        // Native Android Framework Fallback
+        val nativeDetections = nativeFaceDetector.detectFaces(bitmap)
         val latency = System.currentTimeMillis() - startTime
         _inferenceLatencyMs.value = latency
-        _latestDetections.value = detections
+        _latestDetections.value = nativeDetections
 
-        detections
+        nativeDetections
     }
 
     override suspend fun processFrame(frame: CameraFrame): FrameProcessResult = withContext(Dispatchers.Default) {

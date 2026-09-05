@@ -88,10 +88,9 @@ fun MoreScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Spacer(modifier = Modifier.height(FaflowSpacing.xs))
-                Card(
+                com.governence.faflow.ui.components.FaflowSurface(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = FaflowShapes.card,
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                    contentPadding = PaddingValues(0.dp)
                 ) {
                     Column {
                         MoreMenuItem(
@@ -121,10 +120,9 @@ fun MoreScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Spacer(modifier = Modifier.height(FaflowSpacing.xs))
-                Card(
+                com.governence.faflow.ui.components.FaflowSurface(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = FaflowShapes.card,
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                    contentPadding = PaddingValues(0.dp)
                 ) {
                     Column {
                         MoreMenuItem(
@@ -162,10 +160,9 @@ fun MoreScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Spacer(modifier = Modifier.height(FaflowSpacing.xs))
-                Card(
+                com.governence.faflow.ui.components.FaflowSurface(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = FaflowShapes.card,
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                    contentPadding = PaddingValues(0.dp)
                 ) {
                     Column {
                         MoreMenuItem(
@@ -195,10 +192,9 @@ fun MoreScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Spacer(modifier = Modifier.height(FaflowSpacing.xs))
-                Card(
+                com.governence.faflow.ui.components.FaflowSurface(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = FaflowShapes.card,
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                    contentPadding = PaddingValues(0.dp)
                 ) {
                     Column {
                         MoreMenuItem(
@@ -218,10 +214,10 @@ fun MoreScreen(
                         )
                         MoreMenuDivider()
                         MoreMenuItem(
-                            title = "App Settings",
-                            subtitle = "Server endpoint, cache, and sync diagnostics",
+                            title = "Settings",
+                            subtitle = "App configurations, network, and preferences",
                             icon = Icons.Default.Settings,
-                            iconTint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            iconTint = MaterialTheme.colorScheme.onSurface,
                             onClick = onNavigateToSettings
                         )
                     }

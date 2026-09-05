@@ -20,7 +20,7 @@ import kotlinx.coroutines.launch
  * Repository managing active campus geofences with memory caching and battery-efficient location monitoring.
  */
 class GeofenceRepository(
-    private val locationProvider: StaffLocationProvider,
+    private val locationProvider: com.governence.faflow.location.LocationProvider,
     private val geofenceValidator: GeofenceValidator = GeofenceValidator(),
     private val externalScope: CoroutineScope = CoroutineScope(Dispatchers.Default)
 ) {

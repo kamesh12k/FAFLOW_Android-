@@ -56,7 +56,7 @@ class CameraAnalyzer(
             CameraFrame.fromImageProxy(
                 imageProxy = imageProxy,
                 lensFacing = lensFacing,
-                extractBitmap = false
+                extractBitmap = true
             )
         } catch (e: Exception) {
             isProcessing.set(false)

@@ -50,19 +50,19 @@ class FaceRecognitionEngine(
                 reason = "Facial landmarks missing from detection result"
             )
 
-        // 3. 5-Point Umeyama Canonical Alignment
+        // 3. 5-Point Canonical Face Alignment
         val alignmentResult = aligner.align(sourceBitmap, landmarks)
-        if (!alignmentResult.isValidGeometry || alignmentResult.alignedBitmap == null) {
-            return@withContext StaffBiometricVerificationState.VerificationFailed(
-                similarity = 0f,
-                threshold = config.similarityThreshold,
-                reason = alignmentResult.errorMessage ?: "Failed to align face landmarks"
-            )
+        val alignedFace = if (alignmentResult.isValidGeometry && alignmentResult.alignedBitmap != null) {
+            alignmentResult.alignedBitmap
+        } else if (sourceBitmap.width == 112 && sourceBitmap.height == 112) {
+            sourceBitmap
+        } else {
+            android.graphics.Bitmap.createScaledBitmap(sourceBitmap, 112, 112, true)
         }
 
         // 4. ArcFace Feature Embedding Extraction
         val liveEmbedding = try {
-            embedder.extractEmbedding(alignmentResult.alignedBitmap)
+            embedder.extractEmbedding(alignedFace)
         } catch (e: Exception) {
             return@withContext StaffBiometricVerificationState.Unavailable(
                 reason = "Feature extractor error: ${e.localizedMessage}"

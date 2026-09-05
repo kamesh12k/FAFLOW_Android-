@@ -34,10 +34,13 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.governence.faflow.domain.model.CreditTransaction
 import com.governence.faflow.ui.components.AppTopBar
 import com.governence.faflow.ui.components.EmptyStateView
 import com.governence.faflow.ui.components.ErrorRetryView
+import com.governence.faflow.ui.components.FaflowSurface
+import com.governence.faflow.ui.theme.FaflowSpacing
 import com.governence.faflow.ui.theme.StatusError
 import com.governence.faflow.ui.theme.StatusSuccess
 import com.governence.faflow.ui.viewmodels.CreditsViewModel
@@ -61,7 +64,10 @@ fun CreditsScreen(
     ) { innerPadding ->
         if (state.isLoading && state.transactions.isEmpty()) {
             Box(modifier = Modifier.fillMaxSize().padding(innerPadding), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+                CircularProgressIndicator(
+                    color = MaterialTheme.colorScheme.primary,
+                    strokeWidth = 2.dp
+                )
             }
         } else if (state.errorMessage != null && state.transactions.isEmpty()) {
             ErrorRetryView(
@@ -73,32 +79,31 @@ fun CreditsScreen(
             LazyColumn(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(innerPadding),
-                contentPadding = PaddingValues(16.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+                    .padding(innerPadding)
+                    .padding(horizontal = FaflowSpacing.lg),
+                contentPadding = PaddingValues(top = FaflowSpacing.md, bottom = FaflowSpacing.xxxl),
+                verticalArrangement = Arrangement.spacedBy(FaflowSpacing.md)
             ) {
-                // Balance Summary Card
+                // Balance Summary Surface
                 item {
-                    Card(
+                    FaflowSurface(
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(20.dp),
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.primaryContainer
-                        )
+                        backgroundColor = MaterialTheme.colorScheme.surface,
+                        borderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.35f),
+                        contentPadding = PaddingValues(FaflowSpacing.xl)
                     ) {
                         Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(24.dp),
+                            modifier = Modifier.fillMaxWidth(),
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
                             Text(
                                 text = "CURRENT CREDIT BALANCE",
-                                style = MaterialTheme.typography.labelMedium,
+                                style = MaterialTheme.typography.labelSmall,
                                 fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.primary
+                                color = MaterialTheme.colorScheme.primary,
+                                letterSpacing = 1.sp
                             )
-                            Spacer(modifier = Modifier.height(4.dp))
+                            Spacer(modifier = Modifier.height(FaflowSpacing.xs))
                             val balanceText = if (state.balance >= 0) "+${state.balance}" else "${state.balance}"
                             Text(
                                 text = balanceText,
@@ -106,9 +111,9 @@ fun CreditsScreen(
                                 fontWeight = FontWeight.ExtraBold,
                                 color = MaterialTheme.colorScheme.onSurface
                             )
-                            Spacer(modifier = Modifier.height(4.dp))
+                            Spacer(modifier = Modifier.height(FaflowSpacing.xs))
                             Text(
-                                text = "Institutional workload balance: +1 per substitute duty / -1 per covered leave",
+                                text = "Workload balance: +1 per substitute duty / -1 per covered leave",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -117,6 +122,7 @@ fun CreditsScreen(
                 }
 
                 item {
+                    Spacer(modifier = Modifier.height(FaflowSpacing.xs))
                     Text(
                         text = "Transaction History",
                         style = MaterialTheme.typography.titleMedium,
@@ -135,24 +141,21 @@ fun CreditsScreen(
                     }
                 } else {
                     items(state.transactions) { tx ->
-                        Card(
+                        FaflowSurface(
                             modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(14.dp),
-                            colors = CardDefaults.cardColors(
-                                containerColor = MaterialTheme.colorScheme.surface
-                            )
+                            backgroundColor = MaterialTheme.colorScheme.surface,
+                            borderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.35f),
+                            contentPadding = PaddingValues(FaflowSpacing.md)
                         ) {
                             Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(16.dp),
+                                modifier = Modifier.fillMaxWidth(),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Box(
                                     modifier = Modifier
                                         .size(40.dp)
                                         .clip(CircleShape)
-                                        .background(if (tx.change > 0) Color(0x1A10B981) else Color(0x1AEF4444)),
+                                        .background(if (tx.change > 0) StatusSuccess.copy(alpha = 0.12f) else StatusError.copy(alpha = 0.12f)),
                                     contentAlignment = Alignment.Center
                                 ) {
                                     Text(
@@ -163,7 +166,7 @@ fun CreditsScreen(
                                     )
                                 }
 
-                                Spacer(modifier = Modifier.width(16.dp))
+                                Spacer(modifier = Modifier.width(FaflowSpacing.md))
 
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(

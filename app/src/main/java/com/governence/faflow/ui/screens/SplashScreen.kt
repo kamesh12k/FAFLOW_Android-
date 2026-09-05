@@ -9,9 +9,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Face
+import androidx.compose.material.icons.filled.School
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -25,31 +25,31 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.governence.faflow.ui.components.FaflowStatusBadge
 import com.governence.faflow.ui.theme.PrimaryBlue
 import com.governence.faflow.ui.theme.SecondaryTeal
 import kotlinx.coroutines.delay
 
 @Composable
 fun SplashScreen(
+    isLoggedIn: Boolean = false,
     onNavigateToLogin: () -> Unit,
     onNavigateToDashboard: () -> Unit
 ) {
     LaunchedEffect(Unit) {
-        delay(1500)
-        onNavigateToDashboard()
+        delay(600) // Reduced from 1200ms — session state is pre-warmed by FaflowApplication
+        if (isLoggedIn) {
+            onNavigateToDashboard()
+        } else {
+            onNavigateToLogin()
+        }
     }
 
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(
-                Brush.verticalGradient(
-                    listOf(
-                        MaterialTheme.colorScheme.background,
-                        MaterialTheme.colorScheme.surface
-                    )
-                )
-            ),
+            .background(MaterialTheme.colorScheme.background),
         contentAlignment = Alignment.Center
     ) {
         Column(
@@ -60,32 +60,41 @@ fun SplashScreen(
             Box(
                 modifier = Modifier
                     .size(96.dp)
-                    .clip(CircleShape)
+                    .clip(RoundedCornerShape(32.dp))
                     .background(Brush.linearGradient(listOf(PrimaryBlue, SecondaryTeal))),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
-                    imageVector = Icons.Default.Face,
+                    imageVector = Icons.Default.School,
                     contentDescription = "App Logo",
                     tint = Color.White,
-                    modifier = Modifier.size(54.dp)
+                    modifier = Modifier.size(52.dp)
                 )
             }
 
             Spacer(modifier = Modifier.height(24.dp))
 
             Text(
-                text = "FACIAL ATTENDANCE",
-                style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.ExtraBold,
+                text = "FAFLOW",
+                style = MaterialTheme.typography.headlineLarge.copy(
+                    fontWeight = FontWeight.ExtraBold,
+                    letterSpacing = 1.5.sp
+                ),
                 color = MaterialTheme.colorScheme.onBackground
             )
 
             Spacer(modifier = Modifier.height(8.dp))
 
+            FaflowStatusBadge(
+                text = "Institutional Intelligence Platform",
+                statusColor = PrimaryBlue
+            )
+
+            Spacer(modifier = Modifier.height(6.dp))
+
             Text(
-                text = "Standalone Biometric Verification System",
-                style = MaterialTheme.typography.bodyMedium,
+                text = "Faculty Attendance & Academic Operations",
+                style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
 
@@ -93,8 +102,8 @@ fun SplashScreen(
 
             CircularProgressIndicator(
                 color = PrimaryBlue,
-                strokeWidth = 3.dp,
-                modifier = Modifier.size(32.dp)
+                strokeWidth = 2.5.dp,
+                modifier = Modifier.size(28.dp)
             )
         }
     }

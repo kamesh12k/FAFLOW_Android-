@@ -83,9 +83,9 @@ class ArcFaceModelManager(
 
                 _modelState.value = ModelState.Ready(listOf(modelInfo))
                 Result.success(Unit)
-            } catch (e: Exception) {
-                _modelState.value = ModelState.Error("Failed to initialize ArcFace ONNX model: ${e.localizedMessage}", e)
-                Result.failure(e)
+            } catch (t: Throwable) {
+                _modelState.value = ModelState.Error("Failed to initialize ArcFace ONNX model: ${t.localizedMessage}", t)
+                Result.failure(t)
             }
         }
     }

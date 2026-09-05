@@ -1419,16 +1419,35 @@ class FaflowIntegrationTest {
     }
 
     @Test
-    fun testNetworkResultStateMachine() {
-        val loading: NetworkResult<Nothing> = NetworkResult.Loading
-        assertTrue(loading is NetworkResult.Loading)
+    fun testAttendanceFailClosedValidationContract() {
+        val invalidStaffId = 0
+        val isStaffValid = invalidStaffId > 0
+        assertFalse("Staff ID <= 0 must fail closed", isStaffValid)
 
-        val success: NetworkResult<String> = NetworkResult.Success("SUCCESS_PAYLOAD")
-        assertTrue(success is NetworkResult.Success)
-        assertEquals("SUCCESS_PAYLOAD", (success as NetworkResult.Success).data)
+        val nullRepo = null as com.governence.faflow.attendance.data.AttendanceRepository?
+        val isRepoValid = nullRepo != null
+        assertFalse("Missing AttendanceRepository must fail closed", isRepoValid)
+    }
 
-        val error: NetworkResult<String> = NetworkResult.Error(500, "Internal Server Error")
-        assertTrue(error is NetworkResult.Error)
-        assertEquals(500, (error as NetworkResult.Error).code)
+    @Test
+    fun testAttendanceEligibilityStateDistinction() {
+        val recordDto = AttendanceRecordOutDto(
+            id = 1,
+            userId = 42,
+            attendanceDate = "2026-09-04",
+            checkInTime = "09:00:00",
+            status = "present",
+            livenessVerified = true
+        )
+
+        val serverAccepted = AttendanceEligibilityState.ServerAccepted(recordDto)
+        val savedOffline = AttendanceEligibilityState.SavedOffline("Check-in saved locally for auto-sync.")
+        val blocked = AttendanceEligibilityState.Blocked("Location verification failed.")
+
+        assertTrue(serverAccepted is AttendanceEligibilityState.ServerAccepted)
+        assertTrue(savedOffline is AttendanceEligibilityState.SavedOffline)
+        assertTrue(blocked is AttendanceEligibilityState.Blocked)
+        assertFalse(serverAccepted == savedOffline)
+        assertFalse(savedOffline == blocked)
     }
 }

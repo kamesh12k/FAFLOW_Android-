@@ -46,6 +46,9 @@ import com.governence.faflow.domain.model.LeaveStatus
 import com.governence.faflow.ui.components.AppTopBar
 import com.governence.faflow.ui.components.EmptyStateView
 import com.governence.faflow.ui.components.ErrorRetryView
+import com.governence.faflow.ui.components.FaflowStatusBadge
+import com.governence.faflow.ui.components.FaflowSurface
+import com.governence.faflow.ui.theme.FaflowSpacing
 import com.governence.faflow.ui.theme.StatusError
 import com.governence.faflow.ui.theme.StatusSuccess
 import com.governence.faflow.ui.theme.StatusWarning
@@ -100,7 +103,10 @@ fun LeaveHistoryScreen(
                     .padding(innerPadding),
                 contentAlignment = Alignment.Center
             ) {
-                CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+                CircularProgressIndicator(
+                    color = MaterialTheme.colorScheme.primary,
+                    strokeWidth = 2.dp
+                )
             }
         } else if (state.errorMessage != null && state.myLeaves.isEmpty()) {
             ErrorRetryView(
@@ -119,23 +125,20 @@ fun LeaveHistoryScreen(
             LazyColumn(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(innerPadding),
-                contentPadding = PaddingValues(16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                    .padding(innerPadding)
+                    .padding(horizontal = FaflowSpacing.lg),
+                contentPadding = PaddingValues(top = FaflowSpacing.md, bottom = FaflowSpacing.xxxl),
+                verticalArrangement = Arrangement.spacedBy(FaflowSpacing.md)
             ) {
                 items(state.myLeaves) { leave ->
-                    Card(
+                    FaflowSurface(
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(16.dp),
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.surface
-                        ),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+                        backgroundColor = MaterialTheme.colorScheme.surface,
+                        borderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.35f),
+                        contentPadding = PaddingValues(FaflowSpacing.md)
                     ) {
                         Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(16.dp)
+                            modifier = Modifier.fillMaxWidth()
                         ) {
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
@@ -162,7 +165,7 @@ fun LeaveHistoryScreen(
                                 }
                             }
 
-                            Spacer(modifier = Modifier.height(6.dp))
+                            Spacer(modifier = Modifier.height(FaflowSpacing.xs))
 
                             Text(
                                 text = "Reason: ${leave.reason}",
@@ -171,7 +174,7 @@ fun LeaveHistoryScreen(
                             )
 
                             if (leave.substituteTeacherName != null) {
-                                Spacer(modifier = Modifier.height(6.dp))
+                                Spacer(modifier = Modifier.height(FaflowSpacing.xs))
                                 Text(
                                     text = "Covered By: ${leave.substituteTeacherName}",
                                     style = MaterialTheme.typography.labelSmall,
@@ -189,24 +192,12 @@ fun LeaveHistoryScreen(
 
 @Composable
 fun LeaveStatusBadge(status: LeaveStatus) {
-    val (bgColor, textColor, label) = when (status) {
-        LeaveStatus.APPROVED -> Triple(Color(0x1A10B981), StatusSuccess, "APPROVED")
-        LeaveStatus.PENDING -> Triple(Color(0x1AF59E0B), StatusWarning, "PENDING")
-        LeaveStatus.REJECTED -> Triple(Color(0x1AEF4444), StatusError, "REJECTED")
-        LeaveStatus.CANCELLED -> Triple(Color.Gray.copy(alpha = 0.15f), Color.Gray, "CANCELLED")
+    val (text, color) = when (status) {
+        LeaveStatus.APPROVED -> Pair("APPROVED", StatusSuccess)
+        LeaveStatus.PENDING -> Pair("PENDING", StatusWarning)
+        LeaveStatus.REJECTED -> Pair("REJECTED", StatusError)
+        LeaveStatus.CANCELLED -> Pair("CANCELLED", Color.Gray)
     }
 
-    Box(
-        modifier = Modifier
-            .clip(RoundedCornerShape(8.dp))
-            .background(bgColor)
-            .padding(horizontal = 8.dp, vertical = 4.dp)
-    ) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelSmall,
-            fontWeight = FontWeight.Bold,
-            color = textColor
-        )
-    }
+    FaflowStatusBadge(text = text, statusColor = color)
 }
