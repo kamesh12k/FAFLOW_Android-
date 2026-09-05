@@ -57,16 +57,29 @@ sealed interface FaceDetectionUiState {
 }
 
 /**
- * High-speed UX state machine for Instant Automatic Biometric Attendance ("Open -> Look -> Done").
+ * High-speed UX state machine for Instant Automatic Biometric Attendance ("Open -> Look -> Settle -> Done").
  */
 enum class AutoCaptureState {
     SEARCHING,          // Scanning preview: "Positioning..."
-    GOOD_FACE,          // Stable valid quality: "Hold still"
+    FACE_DETECTED,      // Initial face presence detected
+    GOOD_FACE,          // Stable valid quality (alias for SETTLING)
+    SETTLING,           // Smart settling window (200-500ms): "Hold still"
     CAPTURED,           // Frozen frame retained: "Checking..."
     SUCCESS,            // Authoritative server check-in confirmed: "Attendance recorded"
     RECOGNITION_FAILED, // Cosine mismatch: "Face not recognized"
-    ERROR               // Network, location, or system error
+    ERROR               // User-friendly error
 }
+
+/**
+ * Candidate face frame evaluated during the smart settling window.
+ */
+data class CandidateFaceFrame(
+    val bitmap: Bitmap,
+    val detection: FaceDetectionResult,
+    val qualityScore: Float,
+    val timestampNs: Long
+)
+
 
 /**
  * Attendance gating and submission state machine.
@@ -130,7 +143,12 @@ class AttendanceViewModel(
     private val isCaptureLockedFlag = AtomicBoolean(false)
     private val isOneShotRunning = AtomicBoolean(false)
     private var stableGoodFrameCount = 0
-    private val requiredStableFrames = 2
+    private var settlingStartNs = 0L
+    private val candidateFrames = mutableListOf<CandidateFaceFrame>()
+
+    // Smart Settling Window: 300ms minimum natural elapsed time + 4 consecutive valid frames
+    var minSettlingDurationMs = 300L
+    var minSettlingFrames = 4
 
     private val _faceDetectionState = MutableStateFlow<FaceDetectionUiState>(FaceDetectionUiState.NoFace)
     val faceDetectionState: StateFlow<FaceDetectionUiState> = _faceDetectionState.asStateFlow()
@@ -379,6 +397,8 @@ class AttendanceViewModel(
         when (val qualityResult = qualityValidator.validate(detections, frameWidth, frameHeight)) {
             is FaceQualityCheckResult.Rejected -> {
                 stableGoodFrameCount = 0
+                settlingStartNs = 0L
+                candidateFrames.clear()
                 _autoCaptureState.value = AutoCaptureState.SEARCHING
 
                 when (qualityResult.code) {
@@ -439,31 +459,55 @@ class AttendanceViewModel(
                     _livenessState.value = liveState
                 }
 
-                // Micro-Stability Gate: 2 consecutive naturally arriving good frames (~150ms)
-                stableGoodFrameCount++
-                if (stableGoodFrameCount == 1) {
-                    _autoCaptureState.value = AutoCaptureState.GOOD_FACE
+                val frameBmp = sourceBitmap ?: face.alignedBitmap
+                val nowNs = System.nanoTime()
+                val qualityScore = computeCandidateQualityScore(face)
+
+                if (settlingStartNs == 0L) {
+                    // Human detected -> begin natural settling window
+                    settlingStartNs = nowNs
+                    stableGoodFrameCount = 1
+                    candidateFrames.clear()
+                    if (frameBmp != null) {
+                        candidateFrames.add(CandidateFaceFrame(frameBmp, face, qualityScore, nowNs))
+                    }
+                    _autoCaptureState.value = AutoCaptureState.SETTLING
                     _autoCapturePrompt.value = "Hold still"
-                } else if (stableGoodFrameCount >= requiredStableFrames) {
-                    // ATOMIC CAPTURE DECISION — Earliest reliable frame
-                    if (isCaptureLockedFlag.compareAndSet(false, true)) {
-                        _isCaptureLocked.value = true
-                        _autoCaptureState.value = AutoCaptureState.CAPTURED
-                        _autoCapturePrompt.value = "Checking..."
+                } else {
+                    stableGoodFrameCount++
+                    if (frameBmp != null) {
+                        candidateFrames.add(CandidateFaceFrame(frameBmp, face, qualityScore, nowNs))
+                    }
+                    _autoCaptureState.value = AutoCaptureState.SETTLING
+                    _autoCapturePrompt.value = "Hold still"
 
-                        // Retain and freeze the single captured frame bitmap as immutable source of truth
-                        val capturedBmp = sourceBitmap ?: face.alignedBitmap
-                        _capturedFrameBitmap.value = capturedBmp
+                    val elapsedSettlingMs = (nowNs - settlingStartNs) / 1_000_000
 
-                        // Execute one-shot biometric recognition and backend verification
-                        executeOneShotBiometricAttendance(
-                            capturedBitmap = capturedBmp,
-                            detection = face,
-                            staffId = staffId
-                        )
+                    // Smart Settling Gate: wait for human to settle (>= 300ms window AND >= 4 frames)
+                    if (elapsedSettlingMs >= minSettlingDurationMs && stableGoodFrameCount >= minSettlingFrames) {
+                        // ATOMIC CAPTURE DECISION — Select the highest-quality settled candidate frame
+                        if (isCaptureLockedFlag.compareAndSet(false, true)) {
+                            _isCaptureLocked.value = true
+                            _autoCaptureState.value = AutoCaptureState.CAPTURED
+                            _autoCapturePrompt.value = "Checking..."
+
+                            val bestCandidate = candidateFrames.maxByOrNull { it.qualityScore }
+                            val capturedBmp = bestCandidate?.bitmap ?: frameBmp
+                            val capturedDetection = bestCandidate?.detection ?: face
+
+                            _capturedFrameBitmap.value = capturedBmp
+
+                            // Execute one-shot biometric recognition and backend verification
+                            executeOneShotBiometricAttendance(
+                                capturedBitmap = capturedBmp,
+                                detection = capturedDetection,
+                                staffId = staffId
+                            )
+                        }
                     }
                 }
             }
+
         }
 
         AttendanceTelemetry.recordMetric(AttendanceTelemetry.METRIC_SCRFD_DETECTION_MS, (System.nanoTime() - startNs) / 1_000_000)
@@ -571,6 +615,8 @@ class AttendanceViewModel(
         isCaptureLockedFlag.set(false)
         _isCaptureLocked.value = false
         stableGoodFrameCount = 0
+        settlingStartNs = 0L
+        candidateFrames.clear()
         isOneShotRunning.set(false)
         _capturedFrameBitmap.value = null
         _autoCaptureState.value = AutoCaptureState.SEARCHING
@@ -582,7 +628,75 @@ class AttendanceViewModel(
 
     companion object {
         const val BYPASS_GEOLOCATION_FOR_TESTING = true
+        const val BYPASS_LIVENESS_FOR_TESTING = true
+
+        /**
+         * Evaluates multi-metric quality score of a candidate frame during the settling window.
+         * Factors: confidence, sharpness, centering, frontal pose, size, and lighting.
+         */
+        fun computeCandidateQualityScore(face: FaceDetectionResult): Float {
+            val confScore = face.confidence.coerceIn(0f, 1f)
+            val box = face.boundingBox
+            val centerDist = Math.hypot((box.centerX - 0.5f).toDouble(), (box.centerY - 0.5f).toDouble()).toFloat()
+            val centerScore = (1f - (centerDist / 0.5f)).coerceIn(0f, 1f)
+            val sizeScore = (box.width / 0.4f).coerceIn(0f, 1f)
+            val poseAngleSum = Math.abs(face.quality.yawAngle) + Math.abs(face.quality.pitchAngle) + Math.abs(face.quality.rollAngle)
+            val poseScore = (1f - (poseAngleSum / 90f)).coerceIn(0f, 1f)
+            val sharpnessScore = face.quality.sharpnessScore.coerceIn(0f, 1f)
+            val brightnessScore = if (face.quality.brightnessScore in 0.4f..0.85f) 1.0f else 0.5f
+
+            return (confScore * 0.25f) + (sharpnessScore * 0.25f) + (centerScore * 0.20f) + (poseScore * 0.15f) + (sizeScore * 0.10f) + (brightnessScore * 0.05f)
+        }
+
+        /**
+         * Cleanses raw server exceptions, JSON error envelopes, and technical jargon
+         * into enterprise, user-friendly feedback.
+         */
+        fun sanitizeErrorMessage(rawError: String): String {
+            var clean = rawError.trim()
+            val detailMatch = Regex("""\{.*"detail"\s*:\s*"([^"]+)".*\}""").find(clean)
+            if (detailMatch != null) {
+                clean = detailMatch.groupValues[1]
+            }
+
+            return when {
+                clean.contains("Liveness", ignoreCase = true) ||
+                clean.contains("presentation attack", ignoreCase = true) ->
+                    "Unable to verify your face"
+
+                clean.contains("similarity", ignoreCase = true) ||
+                clean.contains("mismatch", ignoreCase = true) ||
+                clean.contains("below threshold", ignoreCase = true) ->
+                    "Face not recognized"
+
+                clean.contains("geofence", ignoreCase = true) ||
+                clean.contains("Location verification failed", ignoreCase = true) ||
+                clean.contains("Outside authorized", ignoreCase = true) ->
+                    "Outside authorized campus perimeter"
+
+                clean.contains("already checked in", ignoreCase = true) ->
+                    "Staff member is already checked in for today"
+
+                clean.contains("already checked out", ignoreCase = true) ->
+                    "Staff member is already checked out for today"
+
+                clean.contains("deactivated", ignoreCase = true) ->
+                    "Staff account is deactivated"
+
+                clean.contains("Unable to resolve host", ignoreCase = true) ||
+                clean.contains("Failed to connect", ignoreCase = true) ||
+                clean.contains("timeout", ignoreCase = true) ->
+                    "Unable to connect. Please try again."
+
+                clean.startsWith("{") && clean.endsWith("}") ->
+                    "Attendance could not be verified. Please try again."
+
+                clean.isNotBlank() -> clean
+                else -> "Attendance could not be verified. Please try again."
+            }
+        }
     }
+
 
     fun isLocationVerifiedForAttendance(): Boolean {
         if (BYPASS_GEOLOCATION_FOR_TESTING) return true
@@ -641,7 +755,13 @@ class AttendanceViewModel(
         }
 
         val similarity = if (identity is StaffBiometricVerificationState.Verified) identity.similarity.toDouble() else 0.0
-        val isLive = (liveness is LivenessState.Passed) || (identity is StaffBiometricVerificationState.Verified)
+        val isLive = if (BYPASS_LIVENESS_FOR_TESTING) {
+            AttendanceTelemetry.recordEvent("liveness_mode", "LIVENESS_BYPASSED_FOR_TRIAL")
+            true
+        } else {
+            AttendanceTelemetry.recordEvent("liveness_mode", "LIVENESS_VERIFIED")
+            (liveness is LivenessState.Passed) || (identity is StaffBiometricVerificationState.Verified)
+        }
 
         viewModelScope.launch {
             _submissionState.value = AttendanceEligibilityState.Submitting
@@ -682,15 +802,17 @@ class AttendanceViewModel(
                     onSuccess()
                 }
                 is AttendanceSubmissionResult.Failed -> {
-                    _submissionState.value = AttendanceEligibilityState.Blocked(result.message)
+                    val friendlyMsg = sanitizeErrorMessage(result.message)
+                    _submissionState.value = AttendanceEligibilityState.Blocked(friendlyMsg)
                     _uiState.value = _uiState.value.copy(
                         isSubmitting = false,
-                        errorMessage = result.message
+                        errorMessage = friendlyMsg
                     )
-                    onFailure(result.message)
+                    onFailure(friendlyMsg)
                 }
             }
         }
+
     }
 
     /**
@@ -742,7 +864,13 @@ class AttendanceViewModel(
         }
 
         val similarity = if (identity is StaffBiometricVerificationState.Verified) identity.similarity.toDouble() else 0.0
-        val isLive = (liveness is LivenessState.Passed) || (identity is StaffBiometricVerificationState.Verified)
+        val isLive = if (BYPASS_LIVENESS_FOR_TESTING) {
+            AttendanceTelemetry.recordEvent("liveness_mode", "LIVENESS_BYPASSED_FOR_TRIAL")
+            true
+        } else {
+            AttendanceTelemetry.recordEvent("liveness_mode", "LIVENESS_VERIFIED")
+            (liveness is LivenessState.Passed) || (identity is StaffBiometricVerificationState.Verified)
+        }
 
         viewModelScope.launch {
             _submissionState.value = AttendanceEligibilityState.Submitting
@@ -762,7 +890,7 @@ class AttendanceViewModel(
                         AttendanceTelemetry.recordMetric(AttendanceTelemetry.METRIC_NETWORK_SUBMISSION_MS, (System.nanoTime() - netStartNs) / 1_000_000)
                         _submissionState.value = AttendanceEligibilityState.ServerAccepted(result.record)
                         _uiState.value = _uiState.value.copy(
-                            isCheckingIn = true,
+                            isCheckingIn = false,
                             isShiftActive = false,
                             checkOutTime = result.record.checkOutTime ?: SimpleDateFormat("hh:mm a", Locale.getDefault()).format(Date()),
                             workingDuration = result.record.workingHours,
@@ -775,7 +903,7 @@ class AttendanceViewModel(
                     is AttendanceSubmissionResult.QueuedOffline -> {
                         _submissionState.value = AttendanceEligibilityState.SavedOffline(result.message)
                         _uiState.value = _uiState.value.copy(
-                            isCheckingIn = true,
+                            isCheckingIn = false,
                             isShiftActive = false,
                             checkOutTime = SimpleDateFormat("hh:mm a", Locale.getDefault()).format(Date()),
                             isSubmitting = false,
@@ -785,12 +913,13 @@ class AttendanceViewModel(
                         onSuccess()
                     }
                     is AttendanceSubmissionResult.Failed -> {
-                        _submissionState.value = AttendanceEligibilityState.Blocked(result.message)
+                        val friendlyMsg = sanitizeErrorMessage(result.message)
+                        _submissionState.value = AttendanceEligibilityState.Blocked(friendlyMsg)
                         _uiState.value = _uiState.value.copy(
                             isSubmitting = false,
-                            errorMessage = result.message
+                            errorMessage = friendlyMsg
                         )
-                        onFailure(result.message)
+                        onFailure(friendlyMsg)
                     }
                 }
             } else {

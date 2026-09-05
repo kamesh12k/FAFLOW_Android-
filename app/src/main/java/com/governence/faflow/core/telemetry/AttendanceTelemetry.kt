@@ -10,6 +10,7 @@ import java.util.concurrent.atomic.AtomicLong
 object AttendanceTelemetry {
 
     private val metricsMap = ConcurrentHashMap<String, AtomicLong>()
+    private val eventsMap = ConcurrentHashMap<String, String>()
     private var isTelemetryEnabled = true
 
     fun setEnabled(enabled: Boolean) {
@@ -21,12 +22,22 @@ object AttendanceTelemetry {
         metricsMap.computeIfAbsent(metricName) { AtomicLong(0) }.set(durationMs)
     }
 
+    fun recordEvent(eventName: String, eventValue: String) {
+        if (!isTelemetryEnabled) return
+        eventsMap[eventName] = eventValue
+    }
+
     fun getMetric(metricName: String): Long {
         return metricsMap[metricName]?.get() ?: 0L
     }
 
+    fun getEvent(eventName: String): String? {
+        return eventsMap[eventName]
+    }
+
     fun clear() {
         metricsMap.clear()
+        eventsMap.clear()
     }
 
     // Telemetry metric keys

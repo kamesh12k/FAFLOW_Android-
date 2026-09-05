@@ -383,27 +383,94 @@ class FaceRecognitionProductionTest {
         assertEquals("Positioning...", viewModel.autoCapturePrompt.value)
         assertFalse(viewModel.isCaptureLocked.value)
 
-        // Frame 1: Valid quality -> Micro-stability count = 1 -> "Hold still"
+        // Smart Settling: minSettlingDurationMs = 300ms, minSettlingFrames = 4
+        // Frame 1: Detected -> Settling starts -> State = SETTLING, prompt = "Hold still"
         viewModel.updateDetections(listOf(centeredFace), frameWidth = 640, frameHeight = 480)
-        assertEquals(AutoCaptureState.GOOD_FACE, viewModel.autoCaptureState.value)
+        assertEquals(AutoCaptureState.SETTLING, viewModel.autoCaptureState.value)
         assertEquals("Hold still", viewModel.autoCapturePrompt.value)
         assertFalse(viewModel.isCaptureLocked.value)
 
-        // Frame 2: Consecutive valid quality -> Micro-stability count = 2 -> CAPTURED & LOCKED
+        // Frames 2 & 3 arriving too quickly (< 300ms elapsed) -> must NOT trigger capture prematurely
         viewModel.updateDetections(listOf(centeredFace), frameWidth = 640, frameHeight = 480)
+        viewModel.updateDetections(listOf(centeredFace), frameWidth = 640, frameHeight = 480)
+        assertEquals(AutoCaptureState.SETTLING, viewModel.autoCaptureState.value)
+        assertFalse(viewModel.isCaptureLocked.value)
+
+        // When settling duration requirement is met (e.g. minSettlingDurationMs = 0 in unit test)
+        viewModel.minSettlingDurationMs = 0L
+        viewModel.updateDetections(listOf(centeredFace), frameWidth = 640, frameHeight = 480)
+        // Now stableGoodFrameCount >= 4 and duration met -> CAPTURED & LOCKED
         assertEquals(AutoCaptureState.CAPTURED, viewModel.autoCaptureState.value)
         assertEquals("Checking...", viewModel.autoCapturePrompt.value)
         assertTrue(viewModel.isCaptureLocked.value)
 
-        // Frame 3: Locked -> subsequent frames bypassed
+        // Subsequent frame when locked is bypassed
         val badFace = FaceDetectionResult(
             boundingBox = FaceBox(50f, 50f, 100f, 100f),
             confidence = 0.2f
         )
         viewModel.updateDetections(listOf(badFace), frameWidth = 640, frameHeight = 480)
-        // Remains locked in checking/captured state
         assertTrue(viewModel.isCaptureLocked.value)
         assertEquals(AutoCaptureState.CAPTURED, viewModel.autoCaptureState.value)
+    }
+
+    @Test
+    fun testBestCandidateFrameScoringSelection() {
+        val sharpCenteredFace = FaceDetectionResult(
+            boundingBox = FaceBox(220f, 140f, 420f, 340f),
+            confidence = 0.98f,
+            quality = FaceQuality(
+                brightnessScore = 0.75f,
+                sharpnessScore = 0.90f,
+                yawAngle = 2f,
+                pitchAngle = -1f,
+                rollAngle = 0f,
+                isFrontal = true
+            )
+        )
+
+        val blurryOffCenterFace = FaceDetectionResult(
+            boundingBox = FaceBox(10f, 10f, 100f, 100f),
+            confidence = 0.65f,
+            quality = FaceQuality(
+                brightnessScore = 0.25f,
+                sharpnessScore = 0.30f,
+                yawAngle = 25f,
+                pitchAngle = 15f,
+                rollAngle = 10f,
+                isFrontal = false
+            )
+        )
+
+        val sharpScore = AttendanceViewModel.computeCandidateQualityScore(sharpCenteredFace)
+        val blurryScore = AttendanceViewModel.computeCandidateQualityScore(blurryOffCenterFace)
+
+        assertTrue("Sharp centered face must score higher than blurry off-center face", sharpScore > blurryScore)
+        assertTrue("Sharp score should be > 0.65", sharpScore > 0.65f)
+        assertTrue("Blurry score should be < 0.50", blurryScore < 0.50f)
+    }
+
+    @Test
+    fun testErrorMessageSanitization() {
+        // 1. Raw backend JSON with liveness error
+        val rawLiveness = """{"detail":"Liveness / presentation attack verification failed"}"""
+        assertEquals("Unable to verify your face", AttendanceViewModel.sanitizeErrorMessage(rawLiveness))
+
+        // 2. Similarity error
+        val rawSim = """{"detail":"Biometric face similarity score (0.52) below threshold 0.60"}"""
+        assertEquals("Face not recognized", AttendanceViewModel.sanitizeErrorMessage(rawSim))
+
+        // 3. Geofence error
+        val rawGeofence = """{"detail":"Location verification failed: Staff member is outside institutional campus geofence perimeters"}"""
+        assertEquals("Outside authorized campus perimeter", AttendanceViewModel.sanitizeErrorMessage(rawGeofence))
+
+        // 4. Duplicate attendance error
+        val rawDup = """{"detail":"Staff member is already checked in for today (2026-09-05)"}"""
+        assertEquals("Staff member is already checked in for today", AttendanceViewModel.sanitizeErrorMessage(rawDup))
+
+        // 5. Network connectivity error
+        val rawNet = "java.net.UnknownHostException: Unable to resolve host 'example.com': No address associated with hostname"
+        assertEquals("Unable to connect. Please try again.", AttendanceViewModel.sanitizeErrorMessage(rawNet))
     }
 
     @Test
@@ -425,10 +492,10 @@ class FaceRecognitionProductionTest {
 
         // Frame 1: Valid -> "Hold still"
         viewModel.updateDetections(listOf(centeredFace), frameWidth = 640, frameHeight = 480)
-        assertEquals(AutoCaptureState.GOOD_FACE, viewModel.autoCaptureState.value)
+        assertEquals(AutoCaptureState.SETTLING, viewModel.autoCaptureState.value)
         assertEquals("Hold still", viewModel.autoCapturePrompt.value)
 
-        // Frame 2: Rejected (multiple faces) -> stability reset to 0
+        // Frame 2: Rejected (multiple faces) -> settling reset to 0
         val faceA = FaceDetectionResult(boundingBox = FaceBox(100f, 100f, 200f, 200f), confidence = 0.9f)
         val faceB = FaceDetectionResult(boundingBox = FaceBox(300f, 100f, 400f, 200f), confidence = 0.9f)
         viewModel.updateDetections(listOf(faceA, faceB), frameWidth = 640, frameHeight = 480)
@@ -441,6 +508,8 @@ class FaceRecognitionProductionTest {
     fun testRetryCaptureResetsLockedState() {
         val geofenceRepo = GeofenceRepository(locationProvider = FakeTestLocationProvider())
         val viewModel = AttendanceViewModel(geofenceRepository = geofenceRepo)
+        viewModel.minSettlingDurationMs = 0L
+        viewModel.minSettlingFrames = 2
 
         val centeredFace = FaceDetectionResult(
             boundingBox = FaceBox(220f, 140f, 420f, 340f),
@@ -467,3 +536,4 @@ class FaceRecognitionProductionTest {
         assertEquals("Positioning...", viewModel.autoCapturePrompt.value)
     }
 }
+

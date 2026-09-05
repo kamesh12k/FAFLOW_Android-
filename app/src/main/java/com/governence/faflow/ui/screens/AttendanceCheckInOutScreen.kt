@@ -601,7 +601,7 @@ fun AttendanceCheckInOutScreen(
                                 Spacer(modifier = Modifier.width(FaflowSpacing.md))
                                 Column {
                                     Text(
-                                        text = "Unable to record attendance",
+                                        text = if (errorReason.contains("face", ignoreCase = true) || errorReason.contains("biometric", ignoreCase = true)) "Face verification failed" else "Unable to record attendance",
                                         style = MaterialTheme.typography.titleSmall,
                                         fontWeight = FontWeight.Bold,
                                         color = StatusError
