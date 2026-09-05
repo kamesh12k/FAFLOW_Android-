@@ -128,16 +128,16 @@ class AppContainer(private val context: Context) {
         com.governence.faflow.face.scrfd.ScrfdFaceDetector(scrfdModelManager)
     }
 
-    val arcFaceModelManager: com.governence.faflow.face.model.ArcFaceModelManager by lazy {
-        com.governence.faflow.face.model.ArcFaceModelManager(context.applicationContext)
+    val mobileFaceNetModelManager: com.governence.faflow.face.model.MobileFaceNetModelManager by lazy {
+        com.governence.faflow.face.model.MobileFaceNetModelManager(context.applicationContext)
     }
 
-    val faceEmbedder: com.governence.faflow.face.embedding.ArcFaceEmbedder by lazy {
-        com.governence.faflow.face.embedding.ArcFaceEmbedder(arcFaceModelManager)
+    val faceEmbedder: com.governence.faflow.face.FaceEmbedder by lazy {
+        com.governence.faflow.face.embedding.MobileFaceNetEmbedder(mobileFaceNetModelManager)
     }
 
-    val faceAligner: com.governence.faflow.face.alignment.UmeyamaFaceAligner by lazy {
-        com.governence.faflow.face.alignment.UmeyamaFaceAligner()
+    val faceAligner: com.governence.faflow.face.alignment.SimilarityFaceAligner by lazy {
+        com.governence.faflow.face.alignment.SimilarityFaceAligner()
     }
 
     val faceEnrollmentRepository: com.governence.faflow.face.enrollment.LocalFaceEnrollmentRepository by lazy {

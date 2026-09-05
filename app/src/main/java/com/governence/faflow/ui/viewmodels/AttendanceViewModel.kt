@@ -20,11 +20,15 @@ import com.governence.faflow.face.liveness.LivenessState
 import com.governence.faflow.face.liveness.PresentationAttackRisk
 import com.governence.faflow.face.model.FaceDetectionResult
 import com.governence.faflow.face.model.StaffBiometricVerificationState
+import com.governence.faflow.face.quality.FaceQualityCheckResult
+import com.governence.faflow.face.quality.FaceQualityValidator
+import com.governence.faflow.face.quality.QualityErrorCode
 import com.governence.faflow.face.recognition.FaceRecognitionEngine
 import com.governence.faflow.faflow.data.GeofenceRepository
 import com.governence.faflow.location.CampusGeofence
 import com.governence.faflow.location.LocationVerificationResult
 import com.governence.faflow.location.StaffLiveLocation
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -317,6 +321,11 @@ class AttendanceViewModel(
         }
     }
 
+    private val qualityValidator = FaceQualityValidator()
+    private val isInferring = AtomicBoolean(false)
+    private var lastInferenceTimestampMs = 0L
+    private val inferenceThrottleIntervalMs = 250L
+
     fun updateDetections(
         detections: List<FaceDetectionResult>,
         sourceBitmap: Bitmap? = null,
@@ -325,82 +334,90 @@ class AttendanceViewModel(
         frameHeight: Int = 480
     ) {
         val startNs = System.nanoTime()
-        val newState = when {
-            detections.isEmpty() -> {
-                _identityVerificationState.value = StaffBiometricVerificationState.NoFace
-                _livenessState.value = LivenessState.WaitingForFace
-                recognitionEngine?.livenessEngine?.reset()
-                FaceDetectionUiState.NoFace
-            }
-            detections.size > 1 -> {
-                _identityVerificationState.value = StaffBiometricVerificationState.MultipleFaces(detections.size)
-                _livenessState.value = LivenessState.FaceNotSuitable("Multiple faces visible")
-                recognitionEngine?.livenessEngine?.reset()
-                FaceDetectionUiState.MultipleFaces(detections.size)
-            }
-            else -> {
-                val face = detections.first()
-                val box = face.boundingBox
 
-                val isOutOfBounds = box.left < 10f || box.top < 10f || box.right > (frameWidth - 10f) || box.bottom > (frameHeight - 10f)
-                val faceWidthRatio = box.width / frameWidth.toFloat()
-
-                when {
-                    face.confidence < 0.50f -> {
+        // 1. Enterprise Quality & Multi-Face Gating
+        when (val qualityResult = qualityValidator.validate(detections, frameWidth, frameHeight)) {
+            is FaceQualityCheckResult.Rejected -> {
+                when (qualityResult.code) {
+                    QualityErrorCode.NO_FACE -> {
                         _identityVerificationState.value = StaffBiometricVerificationState.NoFace
-                        FaceDetectionUiState.NoFace
+                        _livenessState.value = LivenessState.WaitingForFace
+                        recognitionEngine?.livenessEngine?.reset()
+                        _faceDetectionState.value = FaceDetectionUiState.NoFace
                     }
-                    isOutOfBounds -> {
-                        _identityVerificationState.value = StaffBiometricVerificationState.FaceOutOfFrame
-                        FaceDetectionUiState.FacePartiallyOutOfFrame
+                    QualityErrorCode.MULTIPLE_FACES -> {
+                        _identityVerificationState.value = StaffBiometricVerificationState.MultipleFaces(detections.size)
+                        _livenessState.value = LivenessState.FaceNotSuitable("Only one person should be visible")
+                        recognitionEngine?.livenessEngine?.reset()
+                        _faceDetectionState.value = FaceDetectionUiState.MultipleFaces(detections.size)
                     }
-                    faceWidthRatio < 0.20f -> {
+                    QualityErrorCode.TOO_FAR -> {
                         _identityVerificationState.value = StaffBiometricVerificationState.FaceTooSmall
-                        FaceDetectionUiState.FaceTooSmall
+                        _faceDetectionState.value = FaceDetectionUiState.FaceTooSmall
                     }
-                    faceWidthRatio > 0.85f -> {
+                    QualityErrorCode.TOO_CLOSE -> {
                         _identityVerificationState.value = StaffBiometricVerificationState.FaceTooLarge
-                        FaceDetectionUiState.FaceTooLarge
+                        _faceDetectionState.value = FaceDetectionUiState.FaceTooLarge
                     }
-                    else -> {
-                        if (sourceBitmap != null && staffId != null && recognitionEngine != null && _identityVerificationState.value !is StaffBiometricVerificationState.Verified) {
-                            runRecognition(sourceBitmap, face, staffId)
-                        }
+                    QualityErrorCode.OFF_CENTER -> {
+                        _identityVerificationState.value = StaffBiometricVerificationState.FaceOutOfFrame
+                        _faceDetectionState.value = FaceDetectionUiState.FacePartiallyOutOfFrame
+                    }
+                    QualityErrorCode.TILTED_POSE,
+                    QualityErrorCode.POOR_LIGHTING,
+                    QualityErrorCode.EXCESSIVE_GLARE,
+                    QualityErrorCode.LOW_CONFIDENCE -> {
+                        _faceDetectionState.value = FaceDetectionUiState.DetectionError(qualityResult.reason)
+                    }
+                }
+            }
+            is FaceQualityCheckResult.Valid -> {
+                val face = qualityResult.primaryFace
+                _faceDetectionState.value = FaceDetectionUiState.FacePositionValid(primaryFace = face)
 
-                        if (recognitionEngine != null) {
-                            val liveState = recognitionEngine.livenessEngine.processFrame(face)
-                            _livenessState.value = liveState
+                val currentTime = System.currentTimeMillis()
+                val canRunInference = (currentTime - lastInferenceTimestampMs) >= inferenceThrottleIntervalMs
 
-                            if (staffId != null) {
-                                _biometricVerificationState.value = recognitionEngine.evaluateBiometricAuthorization(
-                                    staffId = staffId,
-                                    identityState = _identityVerificationState.value,
-                                    livenessState = liveState
-                                )
-                            }
-                        }
+                // 2. Throttled Single-Flight ML Verification
+                if (sourceBitmap != null && staffId != null && recognitionEngine != null &&
+                    _identityVerificationState.value !is StaffBiometricVerificationState.Verified &&
+                    canRunInference && isInferring.compareAndSet(false, true)
+                ) {
+                    lastInferenceTimestampMs = currentTime
+                    runRecognition(sourceBitmap, face, staffId)
+                }
 
-                        if (!face.quality.isFrontal) {
-                            FaceDetectionUiState.FaceDetected(count = 1, primaryFace = face)
-                        } else {
-                            FaceDetectionUiState.FacePositionValid(primaryFace = face)
-                        }
+                // 3. Temporal Anti-Spoofing & Liveness Pipeline
+                if (recognitionEngine != null) {
+                    val liveState = recognitionEngine.livenessEngine.processFrame(face)
+                    _livenessState.value = liveState
+
+                    if (staffId != null) {
+                        _biometricVerificationState.value = recognitionEngine.evaluateBiometricAuthorization(
+                            staffId = staffId,
+                            identityState = _identityVerificationState.value,
+                            livenessState = liveState
+                        )
                     }
                 }
             }
         }
-        _faceDetectionState.value = newState
+
         AttendanceTelemetry.recordMetric(AttendanceTelemetry.METRIC_SCRFD_DETECTION_MS, (System.nanoTime() - startNs) / 1_000_000)
     }
 
     private fun runRecognition(sourceBitmap: Bitmap, face: FaceDetectionResult, staffId: String) {
         viewModelScope.launch {
-            _identityVerificationState.value = StaffBiometricVerificationState.Aligning
-            val startAlignNs = System.nanoTime()
-            val result = recognitionEngine?.verifyStaffIdentity(sourceBitmap, face, staffId)
-                ?: StaffBiometricVerificationState.Unavailable("Recognition engine not configured")
-            AttendanceTelemetry.recordMetric(AttendanceTelemetry.METRIC_UMEYAMA_ALIGNMENT_MS, (System.nanoTime() - startAlignNs) / 1_000_000)
-            _identityVerificationState.value = result
+            try {
+                _identityVerificationState.value = StaffBiometricVerificationState.Aligning
+                val startAlignNs = System.nanoTime()
+                val result = recognitionEngine?.verifyStaffIdentity(sourceBitmap, face, staffId)
+                    ?: StaffBiometricVerificationState.Unavailable("Recognition engine not configured")
+                AttendanceTelemetry.recordMetric(AttendanceTelemetry.METRIC_UMEYAMA_ALIGNMENT_MS, (System.nanoTime() - startAlignNs) / 1_000_000)
+                _identityVerificationState.value = result
+            } finally {
+                isInferring.set(false)
+            }
         }
     }
 

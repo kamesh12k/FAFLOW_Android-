@@ -1,0 +1,323 @@
+package com.governence.faflow.face
+
+import com.governence.faflow.face.alignment.SimilarityFaceAligner
+import com.governence.faflow.face.embedding.FaceRecognitionConfig
+import com.governence.faflow.face.embedding.MobileFaceNetEmbedder
+import com.governence.faflow.face.matching.CosineFaceMatcher
+import com.governence.faflow.face.model.FaceBox
+import com.governence.faflow.face.model.FaceDetectionResult
+import com.governence.faflow.face.model.FaceLandmarks
+import com.governence.faflow.face.model.FacePoint
+import com.governence.faflow.face.model.FaceQuality
+import com.governence.faflow.face.model.MobileFaceNetModelMetadata
+import com.governence.faflow.face.quality.FaceQualityCheckResult
+import com.governence.faflow.face.quality.FaceQualityValidator
+import com.governence.faflow.face.quality.QualityErrorCode
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Test
+import kotlin.math.sqrt
+
+/**
+ * Production-grade verification test suite for the FAFLOW Face Recognition Subsystem:
+ * - CosineFaceMatcher
+ * - SimilarityFaceAligner
+ * - MobileFaceNetEmbedder
+ * - MobileFaceNetModelMetadata
+ * - FaceQualityValidator
+ */
+class FaceRecognitionProductionTest {
+
+    // ==========================================
+    // 1. Face Matcher Tests
+    // ==========================================
+
+    @Test
+    fun testCosineSimilarityIdenticalVectors() {
+        val matcher = CosineFaceMatcher()
+        val vectorA = floatArrayOf(0.6f, 0.8f, 0.0f)
+        val vectorB = floatArrayOf(0.6f, 0.8f, 0.0f)
+
+        val similarity = matcher.computeCosineSimilarity(vectorA, vectorB)
+        assertEquals(1.0f, similarity, 0.0001f)
+    }
+
+    @Test
+    fun testCosineSimilarityOppositeVectors() {
+        val matcher = CosineFaceMatcher()
+        val vectorA = floatArrayOf(1.0f, 0.0f, 0.0f)
+        val vectorB = floatArrayOf(-1.0f, 0.0f, 0.0f)
+
+        val similarity = matcher.computeCosineSimilarity(vectorA, vectorB)
+        assertEquals(-1.0f, similarity, 0.0001f)
+    }
+
+    @Test
+    fun testCosineSimilarityOrthogonalVectors() {
+        val matcher = CosineFaceMatcher()
+        val vectorA = floatArrayOf(1.0f, 0.0f, 0.0f)
+        val vectorB = floatArrayOf(0.0f, 1.0f, 0.0f)
+
+        val similarity = matcher.computeCosineSimilarity(vectorA, vectorB)
+        assertEquals(0.0f, similarity, 0.0001f)
+    }
+
+    @Test
+    fun testCosineSimilarityZeroVectorHandledSafely() {
+        val matcher = CosineFaceMatcher()
+        val zeroVector = FloatArray(512) { 0.0f }
+        val validVector = FloatArray(512) { 0.1f }
+
+        val similarity = matcher.computeCosineSimilarity(zeroVector, validVector)
+        assertEquals(0.0f, similarity, 0.0f)
+        assertFalse(similarity.isNaN())
+    }
+
+    @Test
+    fun testCosineSimilarityNaNAndInfSanitization() {
+        val matcher = CosineFaceMatcher()
+        val nanVector = floatArrayOf(1.0f, Float.NaN, 0.5f)
+        val infVector = floatArrayOf(1.0f, Float.POSITIVE_INFINITY, 0.5f)
+        val validVector = floatArrayOf(1.0f, 0.0f, 0.5f)
+
+        assertEquals(0.0f, matcher.computeCosineSimilarity(nanVector, validVector), 0.0f)
+        assertEquals(0.0f, matcher.computeCosineSimilarity(infVector, validVector), 0.0f)
+    }
+
+    @Test
+    fun testCosineSimilarityClampedRange() {
+        val matcher = CosineFaceMatcher()
+        // Numerically imperfect values that might otherwise compute to 1.0000002
+        val a = FloatArray(512) { 1.0f / sqrt(512.0).toFloat() }
+        val similarity = matcher.computeCosineSimilarity(a, a)
+        assertTrue(similarity in -1.0f..1.0f)
+    }
+
+    @Test
+    fun testCosineMatcherThresholdBoundary() {
+        val config = FaceRecognitionConfig(similarityThreshold = 0.60f)
+        val matcher = CosineFaceMatcher(config)
+
+        val base = floatArrayOf(1.0f, 0.0f, 0.0f)
+        val closeCandidate = floatArrayOf(0.8f, 0.6f, 0.0f) // Cosine similarity = 0.80 >= 0.60
+        val farCandidate = floatArrayOf(0.4f, 0.9165f, 0.0f) // Cosine similarity = 0.40 < 0.60
+
+        val matchClose = matcher.verifyOneToOne(base, closeCandidate, threshold = 0.60f)
+        assertTrue(matchClose.isMatched)
+        assertEquals(0.80f, matchClose.similarityScore, 0.01f)
+
+        val matchFar = matcher.verifyOneToOne(base, farCandidate, threshold = 0.60f)
+        assertFalse(matchFar.isMatched)
+        assertEquals(0.40f, matchFar.similarityScore, 0.01f)
+    }
+
+    @Test
+    fun testFindBestMatchMultipleCandidates() {
+        val matcher = CosineFaceMatcher()
+        val target = floatArrayOf(1.0f, 0.0f, 0.0f)
+
+        val candidates = listOf(
+            "staff_101" to floatArrayOf(0.2f, 0.979f, 0.0f), // similarity = 0.20
+            "staff_102" to floatArrayOf(0.92f, 0.39f, 0.0f), // similarity = 0.92
+            "staff_103" to floatArrayOf(0.75f, 0.66f, 0.0f)  // similarity = 0.75
+        )
+
+        val best = matcher.findBestMatch(target, candidates, threshold = 0.60f)
+        assertNotNull(best)
+        assertEquals("staff_102", best!!.first)
+        assertEquals(0.92f, best.second, 0.01f)
+    }
+
+    // ==========================================
+    // 2. Similarity Alignment Tests
+    // ==========================================
+
+    @Test
+    fun testSimilarityReferenceLandmarks() {
+        val ref112 = SimilarityFaceAligner.referencePoints(112)
+        assertEquals(5, ref112.size)
+
+        // Left eye, right eye, nose, left mouth, right mouth
+        assertEquals(38.2946f, ref112[0].first, 0.001f)
+        assertEquals(73.5318f, ref112[1].first, 0.001f)
+        assertEquals(56.0252f, ref112[2].first, 0.001f)
+        assertEquals(41.5493f, ref112[3].first, 0.001f)
+        assertEquals(70.7299f, ref112[4].first, 0.001f)
+    }
+
+    @Test
+    fun testLandmarkBiologicalValidation() {
+        val aligner = SimilarityFaceAligner()
+
+        val valid = FaceLandmarks(
+            leftEye = FacePoint(180f, 150f),
+            rightEye = FacePoint(240f, 150f),
+            nose = FacePoint(210f, 180f),
+            leftMouth = FacePoint(190f, 210f),
+            rightMouth = FacePoint(230f, 210f)
+        )
+        assertNull(aligner.validateLandmarks(valid, 640, 480))
+
+        // Inverted eyes: left eye x >= right eye x
+        val invertedEyes = valid.copy(leftEye = FacePoint(250f, 150f))
+        assertNotNull(aligner.validateLandmarks(invertedEyes, 640, 480))
+
+        // Inverted nose: nose tip above eye midpoint
+        val invertedNose = valid.copy(nose = FacePoint(210f, 140f))
+        assertNotNull(aligner.validateLandmarks(invertedNose, 640, 480))
+
+        // Inverted mouth: mouth corners above nose tip
+        val invertedMouth = valid.copy(leftMouth = FacePoint(190f, 170f), rightMouth = FacePoint(230f, 170f))
+        assertNotNull(aligner.validateLandmarks(invertedMouth, 640, 480))
+
+        // Small inter-pupillary distance (< 20px)
+        val tinyEyes = valid.copy(rightEye = FacePoint(190f, 150f))
+        assertNotNull(aligner.validateLandmarks(tinyEyes, 640, 480))
+    }
+
+    // ==========================================
+    // 3. Model & Feature Embedder Tests
+    // ==========================================
+
+    @Test
+    fun testMobileFaceNetMetadataConstants() {
+        assertEquals("models/w600k_mbf.onnx", MobileFaceNetModelMetadata.MODEL_FILE_NAME)
+        assertEquals(112, MobileFaceNetModelMetadata.INPUT_SIZE)
+        assertEquals(512, MobileFaceNetModelMetadata.EMBEDDING_DIM)
+        assertEquals("w600k_mbf_v1", MobileFaceNetModelMetadata.MODEL_VERSION)
+    }
+
+    @Test
+    fun testL2NormalizeVector() {
+        val raw = floatArrayOf(3.0f, 4.0f, 0.0f) // Magnitude = 5.0
+        val normalized = MobileFaceNetEmbedder.l2Normalize(raw)
+
+        assertEquals(0.6f, normalized[0], 0.001f)
+        assertEquals(0.8f, normalized[1], 0.001f)
+        assertEquals(0.0f, normalized[2], 0.001f)
+
+        var magSq = 0.0
+        for (v in normalized) magSq += (v * v).toDouble()
+        assertEquals(1.0, sqrt(magSq), 0.0001)
+    }
+
+    @Test
+    fun testL2NormalizeZeroAndNan() {
+        val zero = FloatArray(512) { 0.0f }
+        val normZero = MobileFaceNetEmbedder.l2Normalize(zero)
+        assertEquals(512, normZero.size)
+        for (v in normZero) assertEquals(0.0f, v, 0.0f)
+
+        val nan = floatArrayOf(1.0f, Float.NaN, 2.0f)
+        val normNan = MobileFaceNetEmbedder.l2Normalize(nan)
+        for (v in normNan) assertEquals(0.0f, v, 0.0f)
+    }
+
+    // ==========================================
+    // 4. Face Quality & Multi-Face Gating Tests
+    // ==========================================
+
+    @Test
+    fun testQualityZeroFacesRejected() {
+        val validator = FaceQualityValidator()
+        val result = validator.validate(emptyList())
+
+        assertTrue(result is FaceQualityCheckResult.Rejected)
+        val rejected = result as FaceQualityCheckResult.Rejected
+        assertEquals(QualityErrorCode.NO_FACE, rejected.code)
+        assertEquals("Face not detected", rejected.reason)
+    }
+
+    @Test
+    fun testQualityMultipleFacesRejected() {
+        val validator = FaceQualityValidator()
+        val face1 = FaceDetectionResult(
+            boundingBox = FaceBox(200f, 150f, 350f, 300f),
+            confidence = 0.90f
+        )
+        val face2 = FaceDetectionResult(
+            boundingBox = FaceBox(400f, 150f, 550f, 300f),
+            confidence = 0.85f
+        )
+
+        val result = validator.validate(listOf(face1, face2))
+        assertTrue(result is FaceQualityCheckResult.Rejected)
+        val rejected = result as FaceQualityCheckResult.Rejected
+        assertEquals(QualityErrorCode.MULTIPLE_FACES, rejected.code)
+        assertEquals("Only one person should be visible", rejected.reason)
+    }
+
+    @Test
+    fun testQualityFaceTooFar() {
+        val validator = FaceQualityValidator()
+        // Frame width 640, face box width 80 (ratio 80/640 = 0.125 < 0.22)
+        val tinyFace = FaceDetectionResult(
+            boundingBox = FaceBox(280f, 200f, 360f, 280f),
+            confidence = 0.88f
+        )
+
+        val result = validator.validate(listOf(tinyFace), frameWidth = 640, frameHeight = 480)
+        assertTrue(result is FaceQualityCheckResult.Rejected)
+        val rejected = result as FaceQualityCheckResult.Rejected
+        assertEquals(QualityErrorCode.TOO_FAR, rejected.code)
+        assertEquals("Move closer", rejected.reason)
+    }
+
+    @Test
+    fun testQualityFaceTooClose() {
+        val validator = FaceQualityValidator()
+        // Frame width 640, face box width 550 (ratio 550/640 = 0.86 > 0.80)
+        val hugeFace = FaceDetectionResult(
+            boundingBox = FaceBox(45f, 20f, 595f, 460f),
+            confidence = 0.92f
+        )
+
+        val result = validator.validate(listOf(hugeFace), frameWidth = 640, frameHeight = 480)
+        assertTrue(result is FaceQualityCheckResult.Rejected)
+        val rejected = result as FaceQualityCheckResult.Rejected
+        assertEquals(QualityErrorCode.TOO_CLOSE, rejected.code)
+        assertEquals("Move farther away", rejected.reason)
+    }
+
+    @Test
+    fun testQualityFaceTiltedPose() {
+        val validator = FaceQualityValidator()
+        // Good size, but head turned 30 degrees yaw
+        val turnedFace = FaceDetectionResult(
+            boundingBox = FaceBox(220f, 140f, 420f, 340f),
+            confidence = 0.91f,
+            quality = FaceQuality(yawAngle = 30f)
+        )
+
+        val result = validator.validate(listOf(turnedFace), frameWidth = 640, frameHeight = 480)
+        assertTrue(result is FaceQualityCheckResult.Rejected)
+        val rejected = result as FaceQualityCheckResult.Rejected
+        assertEquals(QualityErrorCode.TILTED_POSE, rejected.code)
+        assertEquals("Look directly at the camera", rejected.reason)
+    }
+
+    @Test
+    fun testQualityValidFaceAccepted() {
+        val validator = FaceQualityValidator()
+        val centeredFace = FaceDetectionResult(
+            boundingBox = FaceBox(220f, 140f, 420f, 340f), // Width = 200/640 = 0.3125, Centered
+            confidence = 0.94f,
+            quality = FaceQuality(
+                brightnessScore = 0.65f,
+                sharpnessScore = 0.85f,
+                yawAngle = 2f,
+                pitchAngle = -1f,
+                rollAngle = 0f,
+                isFrontal = true
+            )
+        )
+
+        val result = validator.validate(listOf(centeredFace), frameWidth = 640, frameHeight = 480)
+        assertTrue(result is FaceQualityCheckResult.Valid)
+        val valid = result as FaceQualityCheckResult.Valid
+        assertEquals(0.94f, valid.primaryFace.confidence, 0.001f)
+    }
+}

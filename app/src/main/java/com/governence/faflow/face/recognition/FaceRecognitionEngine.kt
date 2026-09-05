@@ -4,7 +4,7 @@ import android.graphics.Bitmap
 import com.governence.faflow.face.FaceEmbedder
 import com.governence.faflow.face.FaceMatcher
 import com.governence.faflow.face.alignment.FaceAligner
-import com.governence.faflow.face.alignment.UmeyamaFaceAligner
+import com.governence.faflow.face.alignment.SimilarityFaceAligner
 import com.governence.faflow.face.embedding.FaceRecognitionConfig
 import com.governence.faflow.face.enrollment.FaceEnrollmentRepository
 import com.governence.faflow.face.liveness.BiometricVerificationResult
@@ -19,10 +19,10 @@ import kotlinx.coroutines.withContext
 
 /**
  * End-to-end on-device biometric verification engine.
- * Orchestrates: Detection Validation -> 5-Point Umeyama Alignment -> ArcFace Embedding -> Cosine Verification -> Presentation Attack Defense.
+ * Orchestrates: Quality Check -> 5-Point Similarity Alignment -> MobileFaceNet Embedding -> Cosine Verification -> Presentation Attack Defense.
  */
 class FaceRecognitionEngine(
-    private val aligner: FaceAligner = UmeyamaFaceAligner(),
+    private val aligner: FaceAligner = SimilarityFaceAligner(),
     private val embedder: FaceEmbedder,
     private val matcher: FaceMatcher = CosineFaceMatcher(),
     private val enrollmentRepository: FaceEnrollmentRepository,
