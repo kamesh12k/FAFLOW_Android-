@@ -109,6 +109,10 @@ class CameraController(
         } catch (_: Exception) {}
     }
 
+    fun setCaptureLocked(locked: Boolean) {
+        analyzer?.isCaptureLocked?.set(locked)
+    }
+
     fun release() {
         stopCamera()
         analysisExecutor.shutdown()

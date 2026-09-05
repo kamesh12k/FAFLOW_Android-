@@ -42,6 +42,7 @@ androidx-camera-view = { group = "androidx.camera", name = "camera-view", versio
 
 # Coroutines
 kotlinx-coroutines-android = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-android", version.ref = "coroutines" }
+kotlinx-coroutines-test = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-test", version.ref = "coroutines" }
 
 # Networking (Retrofit, OkHttp, Moshi)
 retrofit = { group = "com.squareup.retrofit2", name = "retrofit", version = "2.11.0" }

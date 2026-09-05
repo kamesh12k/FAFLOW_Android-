@@ -40,6 +40,9 @@ class ScrfdFaceDetector(
     private val _latestDetections = MutableStateFlow<List<FaceDetectionResult>>(emptyList())
     val latestDetections: StateFlow<List<FaceDetectionResult>> = _latestDetections.asStateFlow()
 
+    private val _latestFrameBitmap = MutableStateFlow<Bitmap?>(null)
+    val latestFrameBitmap: StateFlow<Bitmap?> = _latestFrameBitmap.asStateFlow()
+
     private val _inferenceLatencyMs = MutableStateFlow<Long>(0L)
     val inferenceLatencyMs: StateFlow<Long> = _inferenceLatencyMs.asStateFlow()
 
@@ -50,6 +53,7 @@ class ScrfdFaceDetector(
         val env = modelManager.environment
 
         val startTime = System.currentTimeMillis()
+        _latestFrameBitmap.value = bitmap
 
         if (session != null && env != null) {
             try {
@@ -90,8 +94,9 @@ class ScrfdFaceDetector(
                 if (detections.isNotEmpty()) {
                     val latency = System.currentTimeMillis() - startTime
                     _inferenceLatencyMs.value = latency
-                    _latestDetections.value = detections
-                    return@withContext detections
+                    val detectionsWithBitmap = detections.map { it.copy(alignedBitmap = bitmap) }
+                    _latestDetections.value = detectionsWithBitmap
+                    return@withContext detectionsWithBitmap
                 }
             } catch (_: Exception) {
                 // Fallback to Native detector
@@ -102,9 +107,10 @@ class ScrfdFaceDetector(
         val nativeDetections = nativeFaceDetector.detectFaces(bitmap)
         val latency = System.currentTimeMillis() - startTime
         _inferenceLatencyMs.value = latency
-        _latestDetections.value = nativeDetections
+        val nativeWithBitmap = nativeDetections.map { it.copy(alignedBitmap = bitmap) }
+        _latestDetections.value = nativeWithBitmap
 
-        nativeDetections
+        nativeWithBitmap
     }
 
     override suspend fun processFrame(frame: CameraFrame): FrameProcessResult = withContext(Dispatchers.Default) {

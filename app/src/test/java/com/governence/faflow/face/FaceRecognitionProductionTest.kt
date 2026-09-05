@@ -13,6 +13,19 @@ import com.governence.faflow.face.model.MobileFaceNetModelMetadata
 import com.governence.faflow.face.quality.FaceQualityCheckResult
 import com.governence.faflow.face.quality.FaceQualityValidator
 import com.governence.faflow.face.quality.QualityErrorCode
+import com.governence.faflow.faflow.data.GeofenceRepository
+import com.governence.faflow.location.LocationProvider
+import com.governence.faflow.location.StaffLiveLocation
+import com.governence.faflow.ui.viewmodels.AttendanceViewModel
+import com.governence.faflow.ui.viewmodels.AutoCaptureState
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.setMain
+import org.junit.After
+import org.junit.Before
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -20,6 +33,17 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import kotlin.math.sqrt
+
+class FakeTestLocationProvider : LocationProvider {
+    override val isLocationPermissionGranted: Boolean = true
+    override val isLocationServiceEnabled: Boolean = true
+    override fun getLocationUpdates(intervalMs: Long): Flow<StaffLiveLocation> = flowOf(
+        StaffLiveLocation(11.016844, 76.955833, 5f, 0.0, 0f, false, System.currentTimeMillis())
+    )
+    override suspend fun getLastKnownLocation(): StaffLiveLocation = StaffLiveLocation(
+        11.016844, 76.955833, 5f, 0.0, 0f, false, System.currentTimeMillis()
+    )
+}
 
 /**
  * Production-grade verification test suite for the FAFLOW Face Recognition Subsystem:
@@ -30,6 +54,18 @@ import kotlin.math.sqrt
  * - FaceQualityValidator
  */
 class FaceRecognitionProductionTest {
+
+    private val testDispatcher = StandardTestDispatcher()
+
+    @Before
+    fun setUp() {
+        Dispatchers.setMain(testDispatcher)
+    }
+
+    @After
+    fun tearDown() {
+        Dispatchers.resetMain()
+    }
 
     // ==========================================
     // 1. Face Matcher Tests
@@ -319,5 +355,115 @@ class FaceRecognitionProductionTest {
         assertTrue(result is FaceQualityCheckResult.Valid)
         val valid = result as FaceQualityCheckResult.Valid
         assertEquals(0.94f, valid.primaryFace.confidence, 0.001f)
+    }
+
+    // ==========================================
+    // 6. Auto-Capture & Micro-Stability Tests
+    // ==========================================
+
+    @Test
+    fun testAutoCaptureMicroStabilityGate() {
+        val geofenceRepo = GeofenceRepository(locationProvider = FakeTestLocationProvider())
+        val viewModel = AttendanceViewModel(geofenceRepository = geofenceRepo)
+
+        val centeredFace = FaceDetectionResult(
+            boundingBox = FaceBox(220f, 140f, 420f, 340f),
+            confidence = 0.95f,
+            quality = FaceQuality(
+                brightnessScore = 0.70f,
+                sharpnessScore = 0.85f,
+                yawAngle = 0f,
+                pitchAngle = 0f,
+                isFrontal = true
+            )
+        )
+
+        // Initial State
+        assertEquals(AutoCaptureState.SEARCHING, viewModel.autoCaptureState.value)
+        assertEquals("Positioning...", viewModel.autoCapturePrompt.value)
+        assertFalse(viewModel.isCaptureLocked.value)
+
+        // Frame 1: Valid quality -> Micro-stability count = 1 -> "Hold still"
+        viewModel.updateDetections(listOf(centeredFace), frameWidth = 640, frameHeight = 480)
+        assertEquals(AutoCaptureState.GOOD_FACE, viewModel.autoCaptureState.value)
+        assertEquals("Hold still", viewModel.autoCapturePrompt.value)
+        assertFalse(viewModel.isCaptureLocked.value)
+
+        // Frame 2: Consecutive valid quality -> Micro-stability count = 2 -> CAPTURED & LOCKED
+        viewModel.updateDetections(listOf(centeredFace), frameWidth = 640, frameHeight = 480)
+        assertEquals(AutoCaptureState.CAPTURED, viewModel.autoCaptureState.value)
+        assertEquals("Checking...", viewModel.autoCapturePrompt.value)
+        assertTrue(viewModel.isCaptureLocked.value)
+
+        // Frame 3: Locked -> subsequent frames bypassed
+        val badFace = FaceDetectionResult(
+            boundingBox = FaceBox(50f, 50f, 100f, 100f),
+            confidence = 0.2f
+        )
+        viewModel.updateDetections(listOf(badFace), frameWidth = 640, frameHeight = 480)
+        // Remains locked in checking/captured state
+        assertTrue(viewModel.isCaptureLocked.value)
+        assertEquals(AutoCaptureState.CAPTURED, viewModel.autoCaptureState.value)
+    }
+
+    @Test
+    fun testQualityRejectionResetsStability() {
+        val geofenceRepo = GeofenceRepository(locationProvider = FakeTestLocationProvider())
+        val viewModel = AttendanceViewModel(geofenceRepository = geofenceRepo)
+
+        val centeredFace = FaceDetectionResult(
+            boundingBox = FaceBox(220f, 140f, 420f, 340f),
+            confidence = 0.95f,
+            quality = FaceQuality(
+                brightnessScore = 0.70f,
+                sharpnessScore = 0.85f,
+                yawAngle = 0f,
+                pitchAngle = 0f,
+                isFrontal = true
+            )
+        )
+
+        // Frame 1: Valid -> "Hold still"
+        viewModel.updateDetections(listOf(centeredFace), frameWidth = 640, frameHeight = 480)
+        assertEquals(AutoCaptureState.GOOD_FACE, viewModel.autoCaptureState.value)
+        assertEquals("Hold still", viewModel.autoCapturePrompt.value)
+
+        // Frame 2: Rejected (multiple faces) -> stability reset to 0
+        val faceA = FaceDetectionResult(boundingBox = FaceBox(100f, 100f, 200f, 200f), confidence = 0.9f)
+        val faceB = FaceDetectionResult(boundingBox = FaceBox(300f, 100f, 400f, 200f), confidence = 0.9f)
+        viewModel.updateDetections(listOf(faceA, faceB), frameWidth = 640, frameHeight = 480)
+        assertEquals(AutoCaptureState.SEARCHING, viewModel.autoCaptureState.value)
+        assertEquals("Only one person should be visible", viewModel.autoCapturePrompt.value)
+        assertFalse(viewModel.isCaptureLocked.value)
+    }
+
+    @Test
+    fun testRetryCaptureResetsLockedState() {
+        val geofenceRepo = GeofenceRepository(locationProvider = FakeTestLocationProvider())
+        val viewModel = AttendanceViewModel(geofenceRepository = geofenceRepo)
+
+        val centeredFace = FaceDetectionResult(
+            boundingBox = FaceBox(220f, 140f, 420f, 340f),
+            confidence = 0.95f,
+            quality = FaceQuality(
+                brightnessScore = 0.70f,
+                sharpnessScore = 0.85f,
+                yawAngle = 0f,
+                pitchAngle = 0f,
+                isFrontal = true
+            )
+        )
+
+        // Trigger capture
+        viewModel.updateDetections(listOf(centeredFace), frameWidth = 640, frameHeight = 480)
+        viewModel.updateDetections(listOf(centeredFace), frameWidth = 640, frameHeight = 480)
+        assertTrue(viewModel.isCaptureLocked.value)
+
+        // Retry
+        viewModel.retryCapture()
+        assertFalse(viewModel.isCaptureLocked.value)
+        assertNull(viewModel.capturedFrameBitmap.value)
+        assertEquals(AutoCaptureState.SEARCHING, viewModel.autoCaptureState.value)
+        assertEquals("Positioning...", viewModel.autoCapturePrompt.value)
     }
 }

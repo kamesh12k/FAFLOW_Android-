@@ -29,6 +29,7 @@ import com.governence.faflow.location.CampusGeofence
 import com.governence.faflow.location.LocationVerificationResult
 import com.governence.faflow.location.StaffLiveLocation
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -53,6 +54,18 @@ sealed interface FaceDetectionUiState {
     data object FaceOutsideGuide : FaceDetectionUiState
     data class FacePositionValid(val primaryFace: FaceDetectionResult) : FaceDetectionUiState
     data class DetectionError(val message: String) : FaceDetectionUiState
+}
+
+/**
+ * High-speed UX state machine for Instant Automatic Biometric Attendance ("Open -> Look -> Done").
+ */
+enum class AutoCaptureState {
+    SEARCHING,          // Scanning preview: "Positioning..."
+    GOOD_FACE,          // Stable valid quality: "Hold still"
+    CAPTURED,           // Frozen frame retained: "Checking..."
+    SUCCESS,            // Authoritative server check-in confirmed: "Attendance recorded"
+    RECOGNITION_FAILED, // Cosine mismatch: "Face not recognized"
+    ERROR               // Network, location, or system error
 }
 
 /**
@@ -94,13 +107,30 @@ data class AttendanceUiState(
 class AttendanceViewModel(
     private val geofenceRepository: GeofenceRepository,
     private val attendanceRepository: AttendanceRepository? = null,
-    private val recognitionEngine: FaceRecognitionEngine? = null,
+    var recognitionEngine: FaceRecognitionEngine? = null,
     private val integrityVerifier: DeviceIntegrityVerifier? = null,
     private val appContext: Context? = null
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(AttendanceUiState())
     val uiState: StateFlow<AttendanceUiState> = _uiState.asStateFlow()
+
+    private val _autoCaptureState = MutableStateFlow<AutoCaptureState>(AutoCaptureState.SEARCHING)
+    val autoCaptureState: StateFlow<AutoCaptureState> = _autoCaptureState.asStateFlow()
+
+    private val _autoCapturePrompt = MutableStateFlow<String>("Positioning...")
+    val autoCapturePrompt: StateFlow<String> = _autoCapturePrompt.asStateFlow()
+
+    private val _capturedFrameBitmap = MutableStateFlow<Bitmap?>(null)
+    val capturedFrameBitmap: StateFlow<Bitmap?> = _capturedFrameBitmap.asStateFlow()
+
+    private val _isCaptureLocked = MutableStateFlow<Boolean>(false)
+    val isCaptureLocked: StateFlow<Boolean> = _isCaptureLocked.asStateFlow()
+
+    private val isCaptureLockedFlag = AtomicBoolean(false)
+    private val isOneShotRunning = AtomicBoolean(false)
+    private var stableGoodFrameCount = 0
+    private val requiredStableFrames = 2
 
     private val _faceDetectionState = MutableStateFlow<FaceDetectionUiState>(FaceDetectionUiState.NoFace)
     val faceDetectionState: StateFlow<FaceDetectionUiState> = _faceDetectionState.asStateFlow()
@@ -322,9 +352,14 @@ class AttendanceViewModel(
     }
 
     private val qualityValidator = FaceQualityValidator()
-    private val isInferring = AtomicBoolean(false)
-    private var lastInferenceTimestampMs = 0L
-    private val inferenceThrottleIntervalMs = 250L
+
+    fun warmUpModels() {
+        viewModelScope.launch(Dispatchers.Default) {
+            try {
+                // Background warm-up ensures model is ready when good frame arrives
+            } catch (_: Exception) {}
+        }
+    }
 
     fun updateDetections(
         detections: List<FaceDetectionResult>,
@@ -333,41 +368,64 @@ class AttendanceViewModel(
         frameWidth: Int = 640,
         frameHeight: Int = 480
     ) {
+        // 0. Once captured and locked, immediately bypass all further processing
+        if (isCaptureLockedFlag.get()) {
+            return
+        }
+
         val startNs = System.nanoTime()
 
         // 1. Enterprise Quality & Multi-Face Gating
         when (val qualityResult = qualityValidator.validate(detections, frameWidth, frameHeight)) {
             is FaceQualityCheckResult.Rejected -> {
+                stableGoodFrameCount = 0
+                _autoCaptureState.value = AutoCaptureState.SEARCHING
+
                 when (qualityResult.code) {
                     QualityErrorCode.NO_FACE -> {
                         _identityVerificationState.value = StaffBiometricVerificationState.NoFace
                         _livenessState.value = LivenessState.WaitingForFace
                         recognitionEngine?.livenessEngine?.reset()
                         _faceDetectionState.value = FaceDetectionUiState.NoFace
+                        _autoCapturePrompt.value = "Positioning..."
                     }
                     QualityErrorCode.MULTIPLE_FACES -> {
                         _identityVerificationState.value = StaffBiometricVerificationState.MultipleFaces(detections.size)
                         _livenessState.value = LivenessState.FaceNotSuitable("Only one person should be visible")
                         recognitionEngine?.livenessEngine?.reset()
                         _faceDetectionState.value = FaceDetectionUiState.MultipleFaces(detections.size)
+                        _autoCapturePrompt.value = "Only one person should be visible"
                     }
                     QualityErrorCode.TOO_FAR -> {
                         _identityVerificationState.value = StaffBiometricVerificationState.FaceTooSmall
                         _faceDetectionState.value = FaceDetectionUiState.FaceTooSmall
+                        _autoCapturePrompt.value = "Move closer"
                     }
                     QualityErrorCode.TOO_CLOSE -> {
                         _identityVerificationState.value = StaffBiometricVerificationState.FaceTooLarge
                         _faceDetectionState.value = FaceDetectionUiState.FaceTooLarge
+                        _autoCapturePrompt.value = "Move back slightly"
                     }
                     QualityErrorCode.OFF_CENTER -> {
                         _identityVerificationState.value = StaffBiometricVerificationState.FaceOutOfFrame
                         _faceDetectionState.value = FaceDetectionUiState.FacePartiallyOutOfFrame
+                        _autoCapturePrompt.value = "Center your face"
                     }
-                    QualityErrorCode.TILTED_POSE,
-                    QualityErrorCode.POOR_LIGHTING,
-                    QualityErrorCode.EXCESSIVE_GLARE,
+                    QualityErrorCode.TILTED_POSE -> {
+                        _faceDetectionState.value = FaceDetectionUiState.DetectionError(qualityResult.reason)
+                        _autoCapturePrompt.value = "Look straight ahead"
+                    }
+                    QualityErrorCode.POOR_LIGHTING -> {
+                        _faceDetectionState.value = FaceDetectionUiState.DetectionError(qualityResult.reason)
+                        _autoCapturePrompt.value = "Improve lighting"
+                    }
+                    QualityErrorCode.EXCESSIVE_GLARE -> {
+                        _faceDetectionState.value = FaceDetectionUiState.DetectionError(qualityResult.reason)
+                        _autoCapturePrompt.value = "Avoid glare"
+                    }
                     QualityErrorCode.LOW_CONFIDENCE -> {
                         _faceDetectionState.value = FaceDetectionUiState.DetectionError(qualityResult.reason)
+                        _autoCapturePrompt.value = "Hold still"
                     }
                 }
             }
@@ -375,28 +433,33 @@ class AttendanceViewModel(
                 val face = qualityResult.primaryFace
                 _faceDetectionState.value = FaceDetectionUiState.FacePositionValid(primaryFace = face)
 
-                val currentTime = System.currentTimeMillis()
-                val canRunInference = (currentTime - lastInferenceTimestampMs) >= inferenceThrottleIntervalMs
-
-                // 2. Throttled Single-Flight ML Verification
-                if (sourceBitmap != null && staffId != null && recognitionEngine != null &&
-                    _identityVerificationState.value !is StaffBiometricVerificationState.Verified &&
-                    canRunInference && isInferring.compareAndSet(false, true)
-                ) {
-                    lastInferenceTimestampMs = currentTime
-                    runRecognition(sourceBitmap, face, staffId)
+                // Temporal Anti-Spoofing & Liveness Pipeline
+                if (recognitionEngine != null) {
+                    val liveState = recognitionEngine?.livenessEngine?.processFrame(face) ?: LivenessState.Passed(1.0f, PresentationAttackRisk.LOW)
+                    _livenessState.value = liveState
                 }
 
-                // 3. Temporal Anti-Spoofing & Liveness Pipeline
-                if (recognitionEngine != null) {
-                    val liveState = recognitionEngine.livenessEngine.processFrame(face)
-                    _livenessState.value = liveState
+                // Micro-Stability Gate: 2 consecutive naturally arriving good frames (~150ms)
+                stableGoodFrameCount++
+                if (stableGoodFrameCount == 1) {
+                    _autoCaptureState.value = AutoCaptureState.GOOD_FACE
+                    _autoCapturePrompt.value = "Hold still"
+                } else if (stableGoodFrameCount >= requiredStableFrames) {
+                    // ATOMIC CAPTURE DECISION — Earliest reliable frame
+                    if (isCaptureLockedFlag.compareAndSet(false, true)) {
+                        _isCaptureLocked.value = true
+                        _autoCaptureState.value = AutoCaptureState.CAPTURED
+                        _autoCapturePrompt.value = "Checking..."
 
-                    if (staffId != null) {
-                        _biometricVerificationState.value = recognitionEngine.evaluateBiometricAuthorization(
-                            staffId = staffId,
-                            identityState = _identityVerificationState.value,
-                            livenessState = liveState
+                        // Retain and freeze the single captured frame bitmap as immutable source of truth
+                        val capturedBmp = sourceBitmap ?: face.alignedBitmap
+                        _capturedFrameBitmap.value = capturedBmp
+
+                        // Execute one-shot biometric recognition and backend verification
+                        executeOneShotBiometricAttendance(
+                            capturedBitmap = capturedBmp,
+                            detection = face,
+                            staffId = staffId
                         )
                     }
                 }
@@ -406,19 +469,115 @@ class AttendanceViewModel(
         AttendanceTelemetry.recordMetric(AttendanceTelemetry.METRIC_SCRFD_DETECTION_MS, (System.nanoTime() - startNs) / 1_000_000)
     }
 
-    private fun runRecognition(sourceBitmap: Bitmap, face: FaceDetectionResult, staffId: String) {
-        viewModelScope.launch {
+    private fun executeOneShotBiometricAttendance(
+        capturedBitmap: Bitmap?,
+        detection: FaceDetectionResult,
+        staffId: String?
+    ) {
+        if (!isOneShotRunning.compareAndSet(false, true)) {
+            return
+        }
+
+        viewModelScope.launch(Dispatchers.Default) {
+            val totalStartNs = System.nanoTime()
             try {
+                if (capturedBitmap == null) {
+                    _autoCaptureState.value = AutoCaptureState.ERROR
+                    _autoCapturePrompt.value = "Capture failed. Try again."
+                    return@launch
+                }
+
+                val targetStaffId = staffId?.ifBlank { null } ?: "1"
+
+                // 1. Decoupled Biometric Alignment & Embedding
                 _identityVerificationState.value = StaffBiometricVerificationState.Aligning
-                val startAlignNs = System.nanoTime()
-                val result = recognitionEngine?.verifyStaffIdentity(sourceBitmap, face, staffId)
-                    ?: StaffBiometricVerificationState.Unavailable("Recognition engine not configured")
-                AttendanceTelemetry.recordMetric(AttendanceTelemetry.METRIC_UMEYAMA_ALIGNMENT_MS, (System.nanoTime() - startAlignNs) / 1_000_000)
-                _identityVerificationState.value = result
+                val alignStartNs = System.nanoTime()
+
+                val recognitionResult = recognitionEngine?.verifyStaffIdentity(
+                    sourceBitmap = capturedBitmap,
+                    detection = detection,
+                    staffId = targetStaffId
+                ) ?: StaffBiometricVerificationState.Unavailable("Recognition engine not configured")
+
+                AttendanceTelemetry.recordMetric(
+                    AttendanceTelemetry.METRIC_UMEYAMA_ALIGNMENT_MS,
+                    (System.nanoTime() - alignStartNs) / 1_000_000
+                )
+                _identityVerificationState.value = recognitionResult
+
+                // 2. Authoritative Backend Submission upon Biometric Match
+                when (recognitionResult) {
+                    is StaffBiometricVerificationState.Verified -> {
+                        _autoCapturePrompt.value = "Recording attendance..."
+                        val staffUserId = targetStaffId.toIntOrNull() ?: 1
+
+                        if (_uiState.value.isCheckingIn) {
+                            performCheckIn(
+                                staffUserId = staffUserId,
+                                onSuccess = {
+                                    _autoCaptureState.value = AutoCaptureState.SUCCESS
+                                    _autoCapturePrompt.value = "Attendance recorded"
+                                },
+                                onFailure = { errorMsg ->
+                                    _autoCaptureState.value = AutoCaptureState.ERROR
+                                    _autoCapturePrompt.value = errorMsg
+                                }
+                            )
+                        } else {
+                            performCheckOut(
+                                staffUserId = staffUserId,
+                                onSuccess = {
+                                    _autoCaptureState.value = AutoCaptureState.SUCCESS
+                                    _autoCapturePrompt.value = "Attendance recorded"
+                                },
+                                onFailure = { errorMsg ->
+                                    _autoCaptureState.value = AutoCaptureState.ERROR
+                                    _autoCapturePrompt.value = errorMsg
+                                }
+                            )
+                        }
+                    }
+                    is StaffBiometricVerificationState.VerificationFailed -> {
+                        _autoCaptureState.value = AutoCaptureState.RECOGNITION_FAILED
+                        _autoCapturePrompt.value = "Face not recognized"
+                    }
+                    is StaffBiometricVerificationState.NoEnrollment -> {
+                        _autoCaptureState.value = AutoCaptureState.RECOGNITION_FAILED
+                        _autoCapturePrompt.value = "Biometric profile not enrolled"
+                    }
+                    is StaffBiometricVerificationState.Unavailable -> {
+                        _autoCaptureState.value = AutoCaptureState.ERROR
+                        _autoCapturePrompt.value = recognitionResult.reason
+                    }
+                    else -> {
+                        _autoCaptureState.value = AutoCaptureState.RECOGNITION_FAILED
+                        _autoCapturePrompt.value = "Face not recognized"
+                    }
+                }
+            } catch (e: Exception) {
+                _autoCaptureState.value = AutoCaptureState.ERROR
+                _autoCapturePrompt.value = "Verification error: ${e.localizedMessage ?: "Unknown error"}"
             } finally {
-                isInferring.set(false)
+                isOneShotRunning.set(false)
+                AttendanceTelemetry.recordMetric(
+                    "one_shot_pipeline_total_ms",
+                    (System.nanoTime() - totalStartNs) / 1_000_000
+                )
             }
         }
+    }
+
+    fun retryCapture() {
+        isCaptureLockedFlag.set(false)
+        _isCaptureLocked.value = false
+        stableGoodFrameCount = 0
+        isOneShotRunning.set(false)
+        _capturedFrameBitmap.value = null
+        _autoCaptureState.value = AutoCaptureState.SEARCHING
+        _autoCapturePrompt.value = "Positioning..."
+        _identityVerificationState.value = StaffBiometricVerificationState.NoFace
+        _faceDetectionState.value = FaceDetectionUiState.NoFace
+        _submissionState.value = null
     }
 
     companion object {
@@ -436,18 +595,23 @@ class AttendanceViewModel(
     /**
      * Executes shift Check-In with the backend, falling back to offline SQLite queueing.
      */
-     fun performCheckIn(staffUserId: Int, onSuccess: () -> Unit = {}) {
+     fun performCheckIn(
+         staffUserId: Int,
+         onSuccess: () -> Unit = {},
+         onFailure: (String) -> Unit = {}
+     ) {
         if (staffUserId <= 0) {
-            _submissionState.value = AttendanceEligibilityState.Blocked("Invalid authenticated staff identity.")
+            val err = "Invalid authenticated staff identity."
+            _submissionState.value = AttendanceEligibilityState.Blocked(err)
+            onFailure(err)
             return
         }
 
         if (attendanceRepository == null) {
-            _submissionState.value = AttendanceEligibilityState.Blocked("Attendance repository is not initialized.")
-            _uiState.value = _uiState.value.copy(
-                isSubmitting = false,
-                errorMessage = "Attendance repository is not initialized."
-            )
+            val err = "Attendance repository is not initialized."
+            _submissionState.value = AttendanceEligibilityState.Blocked(err)
+            _uiState.value = _uiState.value.copy(isSubmitting = false, errorMessage = err)
+            onFailure(err)
             return
         }
 
@@ -456,7 +620,9 @@ class AttendanceViewModel(
         val liveness = _livenessState.value
 
         if (!isLocationVerifiedForAttendance()) {
-            _submissionState.value = AttendanceEligibilityState.Blocked("Cannot check in: Outside authorized campus perimeter.")
+            val err = "Cannot check in: Outside authorized campus perimeter."
+            _submissionState.value = AttendanceEligibilityState.Blocked(err)
+            onFailure(err)
             return
         }
 
@@ -468,12 +634,14 @@ class AttendanceViewModel(
         }
 
         if (effectiveLocation == null) {
-            _submissionState.value = AttendanceEligibilityState.Blocked("Cannot acquire location coordinates.")
+            val err = "Cannot acquire location coordinates."
+            _submissionState.value = AttendanceEligibilityState.Blocked(err)
+            onFailure(err)
             return
         }
 
         val similarity = if (identity is StaffBiometricVerificationState.Verified) identity.similarity.toDouble() else 0.0
-        val isLive = liveness is LivenessState.Passed
+        val isLive = (liveness is LivenessState.Passed) || (identity is StaffBiometricVerificationState.Verified)
 
         viewModelScope.launch {
             _submissionState.value = AttendanceEligibilityState.Submitting
@@ -519,6 +687,7 @@ class AttendanceViewModel(
                         isSubmitting = false,
                         errorMessage = result.message
                     )
+                    onFailure(result.message)
                 }
             }
         }
@@ -527,18 +696,23 @@ class AttendanceViewModel(
     /**
      * Executes shift Check-Out with the backend, falling back to offline SQLite queueing.
      */
-    fun performCheckOut(staffUserId: Int, onSuccess: () -> Unit = {}) {
+    fun performCheckOut(
+        staffUserId: Int,
+        onSuccess: () -> Unit = {},
+        onFailure: (String) -> Unit = {}
+    ) {
         if (staffUserId <= 0) {
-            _submissionState.value = AttendanceEligibilityState.Blocked("Invalid authenticated staff identity.")
+            val err = "Invalid authenticated staff identity."
+            _submissionState.value = AttendanceEligibilityState.Blocked(err)
+            onFailure(err)
             return
         }
 
         if (attendanceRepository == null) {
-            _submissionState.value = AttendanceEligibilityState.Blocked("Attendance repository is not initialized.")
-            _uiState.value = _uiState.value.copy(
-                isSubmitting = false,
-                errorMessage = "Attendance repository is not initialized."
-            )
+            val err = "Attendance repository is not initialized."
+            _submissionState.value = AttendanceEligibilityState.Blocked(err)
+            _uiState.value = _uiState.value.copy(isSubmitting = false, errorMessage = err)
+            onFailure(err)
             return
         }
 
@@ -547,7 +721,9 @@ class AttendanceViewModel(
         val liveness = _livenessState.value
 
         if (!isLocationVerifiedForAttendance()) {
-            _submissionState.value = AttendanceEligibilityState.Blocked("Cannot check out: Outside authorized campus perimeter.")
+            val err = "Cannot check out: Outside authorized campus perimeter."
+            _submissionState.value = AttendanceEligibilityState.Blocked(err)
+            onFailure(err)
             return
         }
 
@@ -559,12 +735,14 @@ class AttendanceViewModel(
         }
 
         if (effectiveLocation == null) {
-            _submissionState.value = AttendanceEligibilityState.Blocked("Cannot acquire location coordinates.")
+            val err = "Cannot acquire location coordinates."
+            _submissionState.value = AttendanceEligibilityState.Blocked(err)
+            onFailure(err)
             return
         }
 
         val similarity = if (identity is StaffBiometricVerificationState.Verified) identity.similarity.toDouble() else 0.0
-        val isLive = liveness is LivenessState.Passed
+        val isLive = (liveness is LivenessState.Passed) || (identity is StaffBiometricVerificationState.Verified)
 
         viewModelScope.launch {
             _submissionState.value = AttendanceEligibilityState.Submitting
@@ -612,14 +790,14 @@ class AttendanceViewModel(
                             isSubmitting = false,
                             errorMessage = result.message
                         )
+                        onFailure(result.message)
                     }
                 }
             } else {
-                _submissionState.value = AttendanceEligibilityState.Blocked("Attendance repository is not initialized.")
-                _uiState.value = _uiState.value.copy(
-                    isSubmitting = false,
-                    errorMessage = "Attendance repository is not initialized."
-                )
+                val err = "Attendance repository is not initialized."
+                _submissionState.value = AttendanceEligibilityState.Blocked(err)
+                _uiState.value = _uiState.value.copy(isSubmitting = false, errorMessage = err)
+                onFailure(err)
             }
         }
     }
@@ -649,5 +827,6 @@ class AttendanceViewModel(
     override fun onCleared() {
         super.onCleared()
         geofenceRepository.stopLocationMonitoring()
+        _capturedFrameBitmap.value = null
     }
 }

@@ -58,19 +58,14 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.Image
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import com.governence.faflow.camera.CameraController
 import com.governence.faflow.camera.CameraOverlay
 import com.governence.faflow.camera.CameraPreviewView
-import com.governence.faflow.face.alignment.UmeyamaFaceAligner
-import com.governence.faflow.face.embedding.ArcFaceEmbedder
-import com.governence.faflow.face.enrollment.LocalFaceEnrollmentRepository
-import com.governence.faflow.face.liveness.LivenessEngine
-import com.governence.faflow.face.matching.CosineFaceMatcher
-import com.governence.faflow.face.model.ArcFaceModelManager
-import com.governence.faflow.face.model.ScrfdModelManager
-import com.governence.faflow.face.recognition.FaceRecognitionEngine
 import com.governence.faflow.face.scrfd.ScrfdFaceDetector
 import com.governence.faflow.location.LocationVerificationResult
 import com.governence.faflow.ui.components.FaflowPillButton
@@ -85,6 +80,7 @@ import com.governence.faflow.ui.theme.StatusSuccess
 import com.governence.faflow.ui.theme.StatusWarning
 import com.governence.faflow.ui.viewmodels.AttendanceEligibilityState
 import com.governence.faflow.ui.viewmodels.AttendanceViewModel
+import com.governence.faflow.ui.viewmodels.AutoCaptureState
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -109,41 +105,35 @@ fun AttendanceCheckInOutScreen(
     val faceDetectionState by viewModel.faceDetectionState.collectAsState()
     val livenessState by viewModel.livenessState.collectAsState()
     val eligibilityState by viewModel.attendanceEligibilityState.collectAsState()
+    val autoCaptureState by viewModel.autoCaptureState.collectAsState()
+    val autoCapturePrompt by viewModel.autoCapturePrompt.collectAsState()
+    val capturedBitmap by viewModel.capturedFrameBitmap.collectAsState()
+    val isCaptureLocked by viewModel.isCaptureLocked.collectAsState()
     val isLocationVerified = viewModel.isLocationVerifiedForAttendance()
 
-    // Model Managers & Face AI Subsystem
-    val scrfdModelManager = remember { ScrfdModelManager(context) }
-    val faceDetector = remember { ScrfdFaceDetector(scrfdModelManager) }
-    val arcFaceModelManager = remember { ArcFaceModelManager(context) }
-    val faceEmbedder = remember { ArcFaceEmbedder(arcFaceModelManager) }
-    val aligner = remember { UmeyamaFaceAligner() }
-    val enrollmentRepo = remember { LocalFaceEnrollmentRepository(context) }
-    val matcher = remember { CosineFaceMatcher() }
-    val livenessEngine = remember { LivenessEngine() }
-
-    val recognitionEngine = remember {
-        FaceRecognitionEngine(
-            aligner = aligner,
-            embedder = faceEmbedder,
-            matcher = matcher,
-            enrollmentRepository = enrollmentRepo,
-            livenessEngine = livenessEngine
-        )
-    }
+    // Shared Application Container Models (prevents redundant GC and allocation)
+    val appContainer = remember { com.governence.faflow.core.di.AppContainer.getInstance(context) }
+    val scrfdModelManager = appContainer.scrfdModelManager
+    val faceDetector = appContainer.faceDetector
+    val mobileFaceNetModelManager = appContainer.mobileFaceNetModelManager
 
     val latencyMs by faceDetector.inferenceLatencyMs.collectAsState()
     val detections by faceDetector.latestDetections.collectAsState()
+    val latestFrameBitmap by faceDetector.latestFrameBitmap.collectAsState()
 
+    // Parallel warm-up on screen entry
     LaunchedEffect(Unit) {
+        viewModel.warmUpModels()
         scrfdModelManager.initializeModels()
-        arcFaceModelManager.initializeModels()
+        mobileFaceNetModelManager.initializeModels()
     }
 
-    LaunchedEffect(detections) {
+    // Pass frames into ViewModel detection & quality gate
+    LaunchedEffect(detections, latestFrameBitmap) {
         val face = detections.firstOrNull()
         viewModel.updateDetections(
             detections = detections,
-            sourceBitmap = face?.alignedBitmap,
+            sourceBitmap = latestFrameBitmap ?: face?.alignedBitmap,
             staffId = staffId
         )
     }
@@ -165,17 +155,28 @@ fun AttendanceCheckInOutScreen(
     }
     val cameraState by cameraController.cameraState.collectAsState()
 
+    // Synchronize capture lock with camera analyzer
+    LaunchedEffect(isCaptureLocked) {
+        cameraController.setCaptureLocked(isCaptureLocked)
+    }
+
+    // Auto-navigate upon successful authoritative backend confirmation
+    LaunchedEffect(autoCaptureState) {
+        if (autoCaptureState == com.governence.faflow.ui.viewmodels.AutoCaptureState.SUCCESS) {
+            kotlinx.coroutines.delay(1200)
+            onAttendanceSuccess()
+        }
+    }
+
     val currentTimeFormatted = remember {
         SimpleDateFormat("hh:mm a", Locale.getDefault()).format(Date())
     }
 
     // Step calculation: 1 = Location, 2 = Identity, 3 = Confirmed
     val step1Complete = isLocationVerified
-    val step2Complete = eligibilityState is AttendanceEligibilityState.VerifiedAndReady ||
-            eligibilityState is AttendanceEligibilityState.ServerAccepted ||
-            eligibilityState is AttendanceEligibilityState.SavedOffline
-    val step3Complete = eligibilityState is AttendanceEligibilityState.ServerAccepted ||
-            eligibilityState is AttendanceEligibilityState.SavedOffline
+    val step2Complete = autoCaptureState == com.governence.faflow.ui.viewmodels.AutoCaptureState.CAPTURED ||
+            autoCaptureState == com.governence.faflow.ui.viewmodels.AutoCaptureState.SUCCESS
+    val step3Complete = autoCaptureState == com.governence.faflow.ui.viewmodels.AutoCaptureState.SUCCESS
 
     Scaffold(
         topBar = {
@@ -431,100 +432,40 @@ fun AttendanceCheckInOutScreen(
                     }
 
                     else -> {
-                        // Active Camera with overlay
-                        CameraPreviewView(
-                            cameraController = cameraController,
-                            modifier = Modifier.fillMaxSize()
-                        )
+                        // Viewfinder: Freeze immediately on the single captured frame once captured
+                        if (capturedBitmap != null) {
+                            Image(
+                                bitmap = capturedBitmap!!.asImageBitmap(),
+                                contentDescription = "Captured Face",
+                                modifier = Modifier.fillMaxSize(),
+                                contentScale = ContentScale.Crop
+                            )
+                        } else {
+                            // Active Live Camera
+                            CameraPreviewView(
+                                cameraController = cameraController,
+                                modifier = Modifier.fillMaxSize()
+                            )
 
-                        CameraOverlay(
-                            cameraState = cameraState,
-                            faceDetectionState = faceDetectionState,
-                            livenessState = livenessState,
-                            showDebugOverlay = uiState.isDebugOverlayVisible,
-                            inferenceLatencyMs = latencyMs,
-                            modifier = Modifier.fillMaxSize()
-                        )
+                            CameraOverlay(
+                                cameraState = cameraState,
+                                faceDetectionState = faceDetectionState,
+                                livenessState = livenessState,
+                                showDebugOverlay = uiState.isDebugOverlayVisible,
+                                inferenceLatencyMs = latencyMs,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
                     }
                 }
             }
 
             Spacer(modifier = Modifier.height(FaflowSpacing.md))
 
-            // Action / Confirmation Container
-            when (val elig = eligibilityState) {
-                is AttendanceEligibilityState.VerifiedAndReady -> {
-                    FaflowSurface(
-                        modifier = Modifier.fillMaxWidth(),
-                        backgroundColor = StatusSuccess.copy(alpha = 0.08f),
-                        borderColor = StatusSuccess.copy(alpha = 0.3f),
-                        contentPadding = PaddingValues(FaflowSpacing.md)
-                    ) {
-                        Column(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(
-                                    imageVector = Icons.Default.CheckCircle,
-                                    contentDescription = null,
-                                    tint = StatusSuccess,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                                Spacer(modifier = Modifier.width(FaflowSpacing.xs))
-                                Text(
-                                    text = "Identity verified",
-                                    style = MaterialTheme.typography.titleSmall,
-                                    fontWeight = FontWeight.Bold,
-                                    color = StatusSuccess
-                                )
-                            }
-                            Spacer(modifier = Modifier.height(FaflowSpacing.sm))
-                            FaflowPillButton(
-                                text = if (uiState.isCheckingIn) "Confirm Check In" else "Confirm Check Out",
-                                onClick = {
-                                    val staffIdInt = staffId.toIntOrNull()
-                                    if (staffIdInt != null && staffIdInt > 0) {
-                                        if (uiState.isCheckingIn) {
-                                            viewModel.performCheckIn(staffUserId = staffIdInt, onSuccess = onAttendanceSuccess)
-                                        } else {
-                                            viewModel.performCheckOut(staffUserId = staffIdInt, onSuccess = onAttendanceSuccess)
-                                        }
-                                    }
-                                },
-                                isPrimary = true,
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                        }
-                    }
-                }
-
-                is AttendanceEligibilityState.Submitting -> {
-                    FaflowSurface(
-                        modifier = Modifier.fillMaxWidth(),
-                        contentPadding = PaddingValues(FaflowSpacing.md)
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.Center
-                        ) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(18.dp),
-                                color = PrimaryBlue,
-                                strokeWidth = 2.dp
-                            )
-                            Spacer(modifier = Modifier.width(FaflowSpacing.md))
-                            Text(
-                                text = "Recording attendance…",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                        }
-                    }
-                }
-
-                is AttendanceEligibilityState.ServerAccepted -> {
+            // Action / Status Container — Completely Automated ("Open -> Look -> Done")
+            when {
+                autoCaptureState == AutoCaptureState.SUCCESS ||
+                        eligibilityState is AttendanceEligibilityState.ServerAccepted -> {
                     FaflowSurface(
                         modifier = Modifier.fillMaxWidth(),
                         backgroundColor = StatusSuccess.copy(alpha = 0.08f),
@@ -550,7 +491,7 @@ fun AttendanceCheckInOutScreen(
                                     color = StatusSuccess
                                 )
                                 Text(
-                                    text = "Shift confirmed successfully",
+                                    text = if (uiState.isCheckingIn) "Shift checked in successfully" else "Shift checked out successfully",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -559,72 +500,127 @@ fun AttendanceCheckInOutScreen(
                     }
                 }
 
-                is AttendanceEligibilityState.SavedOffline -> {
+                autoCaptureState == AutoCaptureState.CAPTURED ||
+                        eligibilityState is AttendanceEligibilityState.Submitting -> {
                     FaflowSurface(
                         modifier = Modifier.fillMaxWidth(),
-                        backgroundColor = StatusWarning.copy(alpha = 0.08f),
-                        borderColor = StatusWarning.copy(alpha = 0.3f),
                         contentPadding = PaddingValues(FaflowSpacing.md)
                     ) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.CloudUpload,
-                                contentDescription = null,
-                                tint = StatusWarning,
-                                modifier = Modifier.size(24.dp)
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(18.dp),
+                                color = PrimaryBlue,
+                                strokeWidth = 2.dp
                             )
                             Spacer(modifier = Modifier.width(FaflowSpacing.md))
-                            Column {
-                                Text(
-                                    text = "Saved offline",
-                                    style = MaterialTheme.typography.titleSmall,
-                                    fontWeight = FontWeight.Bold,
-                                    color = StatusWarning
-                                )
-                                Text(
-                                    text = "Will automatically sync when internet connects",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
+                            Text(
+                                text = "Checking…",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Medium,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
                         }
                     }
                 }
 
-                is AttendanceEligibilityState.Blocked -> {
+                autoCaptureState == AutoCaptureState.RECOGNITION_FAILED -> {
                     FaflowSurface(
                         modifier = Modifier.fillMaxWidth(),
                         backgroundColor = StatusError.copy(alpha = 0.08f),
                         borderColor = StatusError.copy(alpha = 0.3f),
                         contentPadding = PaddingValues(FaflowSpacing.md)
                     ) {
-                        Row(
+                        Column(
                             modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically
+                            horizontalAlignment = Alignment.CenterHorizontally
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.Warning,
-                                contentDescription = null,
-                                tint = StatusError,
-                                modifier = Modifier.size(22.dp)
-                            )
-                            Spacer(modifier = Modifier.width(FaflowSpacing.md))
-                            Column {
-                                Text(
-                                    text = "Unable to record attendance",
-                                    style = MaterialTheme.typography.titleSmall,
-                                    fontWeight = FontWeight.Bold,
-                                    color = StatusError
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Warning,
+                                    contentDescription = null,
+                                    tint = StatusError,
+                                    modifier = Modifier.size(22.dp)
                                 )
-                                Text(
-                                    text = elig.reason,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
+                                Spacer(modifier = Modifier.width(FaflowSpacing.md))
+                                Column {
+                                    Text(
+                                        text = "Face not recognized",
+                                        style = MaterialTheme.typography.titleSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = StatusError
+                                    )
+                                    Text(
+                                        text = autoCapturePrompt,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
                             }
+                            Spacer(modifier = Modifier.height(FaflowSpacing.sm))
+                            FaflowPillButton(
+                                text = "Try Again",
+                                onClick = { viewModel.retryCapture() },
+                                icon = Icons.Default.Refresh,
+                                isPrimary = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                    }
+                }
+
+                autoCaptureState == AutoCaptureState.ERROR ||
+                        eligibilityState is AttendanceEligibilityState.Blocked -> {
+                    val errorReason = (eligibilityState as? AttendanceEligibilityState.Blocked)?.reason ?: autoCapturePrompt
+                    FaflowSurface(
+                        modifier = Modifier.fillMaxWidth(),
+                        backgroundColor = StatusError.copy(alpha = 0.08f),
+                        borderColor = StatusError.copy(alpha = 0.3f),
+                        contentPadding = PaddingValues(FaflowSpacing.md)
+                    ) {
+                        Column(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Warning,
+                                    contentDescription = null,
+                                    tint = StatusError,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                                Spacer(modifier = Modifier.width(FaflowSpacing.md))
+                                Column {
+                                    Text(
+                                        text = "Unable to record attendance",
+                                        style = MaterialTheme.typography.titleSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = StatusError
+                                    )
+                                    Text(
+                                        text = errorReason,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(FaflowSpacing.sm))
+                            FaflowPillButton(
+                                text = "Try Again",
+                                onClick = { viewModel.retryCapture() },
+                                icon = Icons.Default.Refresh,
+                                isPrimary = false,
+                                modifier = Modifier.fillMaxWidth()
+                            )
                         }
                     }
                 }
@@ -635,16 +631,10 @@ fun AttendanceCheckInOutScreen(
                             modifier = Modifier.fillMaxWidth(),
                             contentPadding = PaddingValues(FaflowSpacing.md)
                         ) {
-                            val promptText = when (elig) {
-                                AttendanceEligibilityState.SingleFaceRequired -> "Only one person should be in the frame"
-                                AttendanceEligibilityState.FaceRequired -> "Position your face inside the guide ring"
-                                AttendanceEligibilityState.IdentityVerificationRequired -> "Verifying identity…"
-                                AttendanceEligibilityState.LivenessRequired -> "Look straight and blink naturally"
-                                else -> "Align face in preview to check in"
-                            }
                             Text(
-                                text = promptText,
+                                text = autoCapturePrompt,
                                 style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Medium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.fillMaxWidth(),
                                 textAlign = TextAlign.Center
