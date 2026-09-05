@@ -65,167 +65,141 @@ fun MoreScreen(
 ) {
     Scaffold(
         topBar = {
-            PremiumTopBar(
-                title = "Faculty Hub",
-                subtitle = "Services, preferences & management",
-                onNavigateBack = null
-            )
-        }
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(com.governence.faflow.ui.theme.FaflowBg)
+                    .padding(horizontal = 18.dp, vertical = 12.dp)
+            ) {
+                Text(
+                    text = "Faculty hub",
+                    fontSize = 19.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = (-0.01).sp,
+                    color = com.governence.faflow.ui.theme.FaflowText1
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = "Services, preferences & management",
+                    fontSize = 12.sp,
+                    color = com.governence.faflow.ui.theme.FaflowText3
+                )
+            }
+        },
+        containerColor = com.governence.faflow.ui.theme.FaflowBg
     ) { innerPadding ->
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
-                .background(MaterialTheme.colorScheme.background),
-            contentPadding = PaddingValues(FaflowSpacing.lg),
-            verticalArrangement = Arrangement.spacedBy(FaflowSpacing.lg)
+                .background(com.governence.faflow.ui.theme.FaflowBg)
+                .padding(horizontal = 18.dp),
+            contentPadding = PaddingValues(top = 0.dp, bottom = 28.dp),
+            verticalArrangement = Arrangement.spacedBy(0.dp)
         ) {
-            item {
-                Text(
-                    text = "ACADEMIC & SCHEDULE",
-                    style = MaterialTheme.typography.labelSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(modifier = Modifier.height(FaflowSpacing.xs))
-                com.governence.faflow.ui.components.FaflowSurface(
-                    modifier = Modifier.fillMaxWidth(),
-                    contentPadding = PaddingValues(0.dp)
-                ) {
-                    Column {
-                        MoreMenuItem(
-                            title = "Class Timetable",
-                            subtitle = "View schedules by class, section, and day order",
-                            icon = Icons.Default.CalendarMonth,
-                            iconTint = MaterialTheme.colorScheme.primary,
-                            onClick = onNavigateToClassTimetable
-                        )
-                        MoreMenuDivider()
-                        MoreMenuItem(
-                            title = "Today's Slot Coverage",
-                            subtitle = "Substitution and coverage schedule",
-                            icon = Icons.Default.SwapHoriz,
-                            iconTint = FaflowStatusColors.Pending,
-                            onClick = onNavigateToTodayCoverage
-                        )
-                    }
-                }
-            }
-
+            // Group 1: LEAVES & CREDITS
             item {
                 Text(
                     text = "LEAVES & CREDITS",
-                    style = MaterialTheme.typography.labelSmall,
+                    fontSize = 10.5.sp,
                     fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    letterSpacing = 0.08.sp,
+                    color = com.governence.faflow.ui.theme.FaflowText3,
+                    modifier = Modifier.padding(start = 2.dp, top = 8.dp, bottom = 8.dp)
                 )
-                Spacer(modifier = Modifier.height(FaflowSpacing.xs))
-                com.governence.faflow.ui.components.FaflowSurface(
-                    modifier = Modifier.fillMaxWidth(),
-                    contentPadding = PaddingValues(0.dp)
-                ) {
-                    Column {
-                        MoreMenuItem(
-                            title = "Apply for Leave",
-                            subtitle = "Single period or full-day leave request",
-                            icon = Icons.AutoMirrored.Filled.EventNote,
-                            iconTint = FaflowRoleColors.TeacherPrimary,
-                            onClick = onNavigateToApplyLeave
-                        )
-                        MoreMenuDivider()
-                        MoreMenuItem(
-                            title = "Leave History",
-                            subtitle = "Review and track status of submitted leaves",
-                            icon = Icons.Default.History,
-                            iconTint = FaflowStatusColors.Approved,
-                            onClick = onNavigateToLeaveHistory
-                        )
-                        MoreMenuDivider()
-                        MoreMenuItem(
-                            title = "Casual Leave Credits",
-                            subtitle = "Credit ledger and transaction breakdown",
-                            icon = Icons.Default.AccountBalanceWallet,
-                            iconTint = FaflowStatusColors.Approved,
-                            onClick = onNavigateToCredits
-                        )
-                    }
+                com.governence.faflow.ui.components.FaflowListCard {
+                    com.governence.faflow.ui.components.FaflowListRow(
+                        icon = Icons.AutoMirrored.Filled.EventNote,
+                        iconBg = com.governence.faflow.ui.theme.FaflowNavyTint,
+                        iconTint = com.governence.faflow.ui.theme.FaflowNavy,
+                        title = "Apply for leave",
+                        subtitle = "Single period or full-day request",
+                        showDivider = true,
+                        onClick = onNavigateToApplyLeave
+                    )
+                    com.governence.faflow.ui.components.FaflowListRow(
+                        icon = Icons.Default.History,
+                        iconBg = com.governence.faflow.ui.theme.FaflowSlateTint,
+                        iconTint = com.governence.faflow.ui.theme.FaflowSlate,
+                        title = "Leave history",
+                        subtitle = "Track approvals and ledger deductions",
+                        showDivider = true,
+                        onClick = onNavigateToLeaveHistory
+                    )
+                    com.governence.faflow.ui.components.FaflowListRow(
+                        icon = Icons.Default.AccountBalanceWallet,
+                        iconBg = com.governence.faflow.ui.theme.FaflowGoldTint,
+                        iconTint = com.governence.faflow.ui.theme.FaflowGold,
+                        title = "Casual leave credits",
+                        subtitle = "Credit ledger and transaction breakdown",
+                        showDivider = false,
+                        onClick = onNavigateToCredits
+                    )
                 }
             }
 
+            // Group 2: BIOMETRICS & PREFERENCES
             item {
                 Text(
                     text = "BIOMETRICS & PREFERENCES",
-                    style = MaterialTheme.typography.labelSmall,
+                    fontSize = 10.5.sp,
                     fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    letterSpacing = 0.08.sp,
+                    color = com.governence.faflow.ui.theme.FaflowText3,
+                    modifier = Modifier.padding(start = 2.dp, top = 20.dp, bottom = 8.dp)
                 )
-                Spacer(modifier = Modifier.height(FaflowSpacing.xs))
-                com.governence.faflow.ui.components.FaflowSurface(
-                    modifier = Modifier.fillMaxWidth(),
-                    contentPadding = PaddingValues(0.dp)
-                ) {
-                    Column {
-                        MoreMenuItem(
-                            title = "Face Biometrics Enrollment",
-                            subtitle = "Institutional face capture & template update",
-                            icon = Icons.Default.Face,
-                            iconTint = MaterialTheme.colorScheme.primary,
-                            onClick = onNavigateToFaceEnrollment
-                        )
-                        MoreMenuDivider()
-                        MoreMenuItem(
-                            title = "Substitution Preferences",
-                            subtitle = "Daily limits and cross-department options",
-                            icon = Icons.Default.Tune,
-                            iconTint = FaflowRoleColors.TeacherPrimary,
-                            onClick = onNavigateToPreferences
-                        )
-                    }
+                com.governence.faflow.ui.components.FaflowListCard {
+                    com.governence.faflow.ui.components.FaflowListRow(
+                        icon = Icons.Default.Face,
+                        iconBg = com.governence.faflow.ui.theme.FaflowVioletTint,
+                        iconTint = com.governence.faflow.ui.theme.FaflowViolet,
+                        title = "Face biometrics enrollment",
+                        subtitle = "Institutional face capture & template update",
+                        showDivider = true,
+                        onClick = onNavigateToFaceEnrollment
+                    )
+                    com.governence.faflow.ui.components.FaflowListRow(
+                        icon = Icons.Default.Tune,
+                        iconBg = com.governence.faflow.ui.theme.FaflowTealTint,
+                        iconTint = com.governence.faflow.ui.theme.FaflowTeal,
+                        title = "Substitution preferences",
+                        subtitle = "Daily limits and cross-department options",
+                        showDivider = false,
+                        onClick = onNavigateToPreferences
+                    )
                 }
             }
 
+            // Group 3: ACCOUNT & SETTINGS
             item {
                 Text(
                     text = "ACCOUNT & SETTINGS",
-                    style = MaterialTheme.typography.labelSmall,
+                    fontSize = 10.5.sp,
                     fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    letterSpacing = 0.08.sp,
+                    color = com.governence.faflow.ui.theme.FaflowText3,
+                    modifier = Modifier.padding(start = 2.dp, top = 20.dp, bottom = 8.dp)
                 )
-                Spacer(modifier = Modifier.height(FaflowSpacing.xs))
-                com.governence.faflow.ui.components.FaflowSurface(
-                    modifier = Modifier.fillMaxWidth(),
-                    contentPadding = PaddingValues(0.dp)
-                ) {
-                    Column {
-                        MoreMenuItem(
-                            title = "Staff Profile",
-                            subtitle = "View personal, institutional, and role details",
-                            icon = Icons.Default.Person,
-                            iconTint = MaterialTheme.colorScheme.onSurface,
-                            onClick = onNavigateToProfile
-                        )
-                        MoreMenuDivider()
-                        MoreMenuItem(
-                            title = "Notifications",
-                            subtitle = "Review institutional alerts and status updates",
-                            icon = Icons.Default.Notifications,
-                            iconTint = FaflowStatusColors.Pending,
-                            onClick = onNavigateToNotifications
-                        )
-                        MoreMenuDivider()
-                        MoreMenuItem(
-                            title = "Settings",
-                            subtitle = "App configurations, network, and preferences",
-                            icon = Icons.Default.Settings,
-                            iconTint = MaterialTheme.colorScheme.onSurface,
-                            onClick = onNavigateToSettings
-                        )
-                    }
+                com.governence.faflow.ui.components.FaflowListCard {
+                    com.governence.faflow.ui.components.FaflowListRow(
+                        icon = Icons.Default.Person,
+                        iconBg = com.governence.faflow.ui.theme.FaflowSlateTint,
+                        iconTint = com.governence.faflow.ui.theme.FaflowSlate,
+                        title = "Staff profile",
+                        subtitle = "Personal, institutional and role details",
+                        showDivider = true,
+                        onClick = onNavigateToProfile
+                    )
+                    com.governence.faflow.ui.components.FaflowListRow(
+                        icon = Icons.Default.Settings,
+                        iconBg = com.governence.faflow.ui.theme.FaflowSlateTint,
+                        iconTint = com.governence.faflow.ui.theme.FaflowSlate,
+                        title = "Settings",
+                        subtitle = "App configuration, network & preferences",
+                        showDivider = false,
+                        onClick = onNavigateToSettings
+                    )
                 }
-            }
-
-            item {
-                Spacer(modifier = Modifier.height(FaflowSpacing.xl))
             }
         }
     }

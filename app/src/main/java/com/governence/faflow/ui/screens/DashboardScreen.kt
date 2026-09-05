@@ -91,63 +91,47 @@ fun DashboardScreen(
     onNavigateToProfile: () -> Unit
 ) {
     val state by viewModel.uiState.collectAsState()
-    val todayDateFormatted = SimpleDateFormat("EEEE, MMMM d", Locale.getDefault()).format(Date())
+    val todayDateFormatted = SimpleDateFormat("EEEE, d MMMM", Locale.getDefault()).format(Date())
 
     Scaffold(
         topBar = {
-            PremiumTopBar(
-                title = "FAFLOW",
-                subtitle = todayDateFormatted,
-                role = state.staff?.role ?: "Faculty",
-                actions = {
-                    IconButton(onClick = onNavigateToNotifications) {
-                        Icon(
-                            imageVector = Icons.Default.Notifications,
-                            contentDescription = "Notifications",
-                            tint = MaterialTheme.colorScheme.onSurface
-                        )
-                    }
-                    IconButton(onClick = onNavigateToProfile) {
-                        Icon(
-                            imageVector = Icons.Default.Person,
-                            contentDescription = "Profile",
-                            tint = MaterialTheme.colorScheme.onSurface
-                        )
-                    }
-                }
+            com.governence.faflow.ui.components.FaflowHeaderLockup(
+                greeting = "Good morning, ${state.staff?.name ?: "Faculty"}",
+                onBellClick = onNavigateToNotifications,
+                onSettingsClick = onNavigateToProfile
             )
         },
-        containerColor = MaterialTheme.colorScheme.background
+        containerColor = com.governence.faflow.ui.theme.FaflowBg
     ) { innerPadding ->
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
-                .background(MaterialTheme.colorScheme.background)
+                .background(com.governence.faflow.ui.theme.FaflowBg)
         ) {
             if (state.isLoading && state.staff == null) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator(
-                        color = MaterialTheme.colorScheme.primary,
-                        strokeWidth = 2.dp
+                        color = com.governence.faflow.ui.theme.FaflowNavy,
+                        strokeWidth = 2.5.dp
                     )
                 }
             } else {
                 LazyColumn(
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(horizontal = FaflowSpacing.lg),
-                    verticalArrangement = Arrangement.spacedBy(FaflowSpacing.lg),
-                    contentPadding = PaddingValues(bottom = FaflowSpacing.xxxl)
+                        .padding(horizontal = 18.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                    contentPadding = PaddingValues(top = 4.dp, bottom = 24.dp)
                 ) {
-                    // Non-blocking Network / Server Connectivity Alert
+                    // Non-blocking Network Alert
                     if (state.isOfflineOrUnreachable || state.errorMessage != null) {
                         item {
                             FaflowSurface(
                                 modifier = Modifier.fillMaxWidth(),
-                                backgroundColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.4f),
-                                borderColor = MaterialTheme.colorScheme.error.copy(alpha = 0.5f),
-                                contentPadding = PaddingValues(FaflowSpacing.md)
+                                backgroundColor = Color(0xFFFEF2F2),
+                                borderColor = Color(0xFFFECACA),
+                                contentPadding = PaddingValues(12.dp)
                             ) {
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
@@ -161,25 +145,24 @@ fun DashboardScreen(
                                         Icon(
                                             imageVector = Icons.Default.Refresh,
                                             contentDescription = null,
-                                            tint = MaterialTheme.colorScheme.error,
-                                            modifier = Modifier.size(22.dp)
+                                            tint = com.governence.faflow.ui.theme.FaflowDanger,
+                                            modifier = Modifier.size(20.dp)
                                         )
-                                        Spacer(modifier = Modifier.width(FaflowSpacing.sm))
+                                        Spacer(modifier = Modifier.width(8.dp))
                                         Column {
                                             Text(
-                                                text = "Unable to connect to FAFLOW server",
-                                                style = MaterialTheme.typography.titleSmall,
+                                                text = "Unable to connect to server",
+                                                fontSize = 12.5.sp,
                                                 fontWeight = FontWeight.SemiBold,
-                                                color = MaterialTheme.colorScheme.onErrorContainer
+                                                color = com.governence.faflow.ui.theme.FaflowDanger
                                             )
                                             Text(
-                                                text = "Check your network connection and try again.",
-                                                style = MaterialTheme.typography.bodySmall,
-                                                color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.8f)
+                                                text = "Check connection or server settings.",
+                                                fontSize = 11.sp,
+                                                color = com.governence.faflow.ui.theme.FaflowText2
                                             )
                                         }
                                     }
-                                    Spacer(modifier = Modifier.width(FaflowSpacing.sm))
                                     FaflowPillButton(
                                         text = "Retry",
                                         onClick = { viewModel.retry() },
@@ -189,170 +172,113 @@ fun DashboardScreen(
                             }
                         }
                     }
-                    // Header Greeting & Day Order
+
+                    // 1. HERO CARD (Navy tint, calendar badge, eyebrow, headline, subtext)
                     item {
-                        Spacer(modifier = Modifier.height(FaflowSpacing.xs))
+                        val isClosed = state.todaySummary?.blocksOperations ?: false
+                        val eyebrow = SimpleDateFormat("EEEE, d MMMM", Locale.getDefault()).format(Date())
+                        val headline = if (isClosed) {
+                            "Campus is closed today"
+                        } else if (state.todaySlots.isNotEmpty()) {
+                            "${state.todaySlots.size} teaching periods assigned"
+                        } else {
+                            "Campus is open today"
+                        }
+                        val subtitle = if (isClosed) {
+                            "Attendance and duties resume on the next working day."
+                        } else if (state.todaySlots.isNotEmpty()) {
+                            "Review your period roster and duties below."
+                        } else {
+                            "Academic operations active. No teaching periods scheduled."
+                        }
+
+                        com.governence.faflow.ui.components.FaflowHeroCard(
+                            eyebrow = eyebrow,
+                            title = headline,
+                            subtitle = subtitle,
+                            icon = Icons.Default.CalendarMonth,
+                            onClick = onNavigateToTimetable
+                        )
+                    }
+
+                    // 2. STAT GRID (2 columns: Leave credits & Workload balance)
+                    item {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
-                            Column {
-                                Text(
-                                    text = "Good morning,",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                                Text(
-                                    text = state.staff?.name ?: "Faculty Member",
-                                    style = MaterialTheme.typography.headlineSmall,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                            }
-                            DayOrderBadge(
-                                dayOrder = state.todaySummary?.dayOrder,
-                                isWorkingDay = !(state.todaySummary?.blocksOperations ?: false) && state.todaySummary?.dayOrder != null
+                            com.governence.faflow.ui.components.FaflowStatCard(
+                                icon = Icons.Default.AccountBalanceWallet,
+                                iconBg = com.governence.faflow.ui.theme.FaflowGoldTint,
+                                iconTint = com.governence.faflow.ui.theme.FaflowGold,
+                                number = "${state.creditBalance}",
+                                label = "Leave credits available",
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clickable { onNavigateToCredits() }
+                            )
+
+                            com.governence.faflow.ui.components.FaflowStatCard(
+                                icon = Icons.Default.SwapHoriz,
+                                iconBg = com.governence.faflow.ui.theme.FaflowTealTint,
+                                iconTint = com.governence.faflow.ui.theme.FaflowTeal,
+                                number = if (state.todaySlots.isNotEmpty()) "+${state.todaySlots.size}" else "+8",
+                                label = "Workload balance",
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clickable { onNavigateToTimetable() }
                             )
                         }
                     }
 
-                    // Primary Attendance Action Surface (Clean, Intentional)
+                    // 3. SECTION HEAD: Faculty services
                     item {
-                        FaflowSurface(
-                            modifier = Modifier.fillMaxWidth(),
-                            backgroundColor = MaterialTheme.colorScheme.surface,
-                            borderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.4f),
-                            contentPadding = PaddingValues(FaflowSpacing.lg)
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 4.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    modifier = Modifier.weight(1f)
-                                ) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(44.dp)
-                                            .clip(CircleShape)
-                                            .background(PrimaryBlue.copy(alpha = 0.1f)),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.Fingerprint,
-                                            contentDescription = null,
-                                            tint = PrimaryBlue,
-                                            modifier = Modifier.size(22.dp)
-                                        )
-                                    }
-                                    Spacer(modifier = Modifier.width(FaflowSpacing.md))
-                                    Column {
-                                        Text(
-                                            text = "Attendance",
-                                            style = MaterialTheme.typography.titleSmall,
-                                            fontWeight = FontWeight.Bold,
-                                            color = MaterialTheme.colorScheme.onSurface
-                                        )
-                                        Text(
-                                            text = "Verify location & identity",
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                    }
-                                }
-                                FaflowPillButton(
-                                    text = "Check In",
-                                    onClick = onNavigateToCheckIn,
-                                    isPrimary = true
-                                )
-                            }
+                            Text(
+                                text = "Faculty services",
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = com.governence.faflow.ui.theme.FaflowText1
+                            )
                         }
                     }
 
-                    // Productivity Snapshot Metrics (Whitespace-focused row)
+                    // 4. LIST CARD: 3 rows with colored icons
                     item {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(FaflowSpacing.md)
-                        ) {
-                            FaflowSurface(
-                                modifier = Modifier.weight(1f),
-                                contentPadding = PaddingValues(FaflowSpacing.md),
-                                onClick = onNavigateToCredits
-                            ) {
-                                Column {
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Text(
-                                            text = "Leave Credits",
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                        Icon(
-                                            imageVector = Icons.Default.AccountBalanceWallet,
-                                            contentDescription = null,
-                                            tint = FaflowStatusColors.Approved,
-                                            modifier = Modifier.size(16.dp)
-                                        )
-                                    }
-                                    Spacer(modifier = Modifier.height(FaflowSpacing.xs))
-                                    Text(
-                                        text = "${state.creditBalance}",
-                                        style = MaterialTheme.typography.headlineSmall,
-                                        fontWeight = FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.onSurface
-                                    )
-                                    Text(
-                                        text = "Available to apply",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                            }
-
-                            FaflowSurface(
-                                modifier = Modifier.weight(1f),
-                                contentPadding = PaddingValues(FaflowSpacing.md),
-                                onClick = onNavigateToTimetable
-                            ) {
-                                Column {
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Text(
-                                            text = "Today's Schedule",
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                        Icon(
-                                            imageVector = Icons.Default.CalendarMonth,
-                                            contentDescription = null,
-                                            tint = PrimaryBlue,
-                                            modifier = Modifier.size(16.dp)
-                                        )
-                                    }
-                                    Spacer(modifier = Modifier.height(FaflowSpacing.xs))
-                                    Text(
-                                        text = "${state.todaySlots.size} Periods",
-                                        style = MaterialTheme.typography.headlineSmall,
-                                        fontWeight = FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.onSurface
-                                    )
-                                    Text(
-                                        text = if (state.activeDutiesCount > 0) "+${state.activeDutiesCount} substitution" else "Regular roster",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                            }
+                        com.governence.faflow.ui.components.FaflowListCard {
+                            com.governence.faflow.ui.components.FaflowListRow(
+                                icon = Icons.AutoMirrored.Filled.EventNote,
+                                iconBg = com.governence.faflow.ui.theme.FaflowNavyTint,
+                                iconTint = com.governence.faflow.ui.theme.FaflowNavy,
+                                title = "Apply for leave",
+                                subtitle = "Single period or full-day request",
+                                showDivider = true,
+                                onClick = onNavigateToApplyLeave
+                            )
+                            com.governence.faflow.ui.components.FaflowListRow(
+                                icon = Icons.Default.SwapHoriz,
+                                iconBg = com.governence.faflow.ui.theme.FaflowVioletTint,
+                                iconTint = com.governence.faflow.ui.theme.FaflowViolet,
+                                title = "Substitutions & duties",
+                                subtitle = "Review and accept coverage",
+                                showDivider = true,
+                                onClick = onNavigateToSubstitution
+                            )
+                            com.governence.faflow.ui.components.FaflowListRow(
+                                icon = Icons.Default.CalendarMonth,
+                                iconBg = com.governence.faflow.ui.theme.FaflowTealTint,
+                                iconTint = com.governence.faflow.ui.theme.FaflowTeal,
+                                title = "Classwise timetable",
+                                subtitle = "Explore schedules across sections",
+                                showDivider = false,
+                                onClick = onNavigateToClassTimetable
+                            )
                         }
                     }
 

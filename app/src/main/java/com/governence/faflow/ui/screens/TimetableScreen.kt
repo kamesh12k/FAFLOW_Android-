@@ -19,6 +19,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.MeetingRoom
@@ -64,81 +65,94 @@ fun TimetableScreen(
 
     Scaffold(
         topBar = {
-            Row(
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = FaflowSpacing.md, vertical = FaflowSpacing.sm),
-                verticalAlignment = Alignment.CenterVertically
+                    .background(com.governence.faflow.ui.theme.FaflowBg)
+                    .padding(horizontal = 18.dp, vertical = 12.dp)
             ) {
-                IconButton(onClick = onNavigateBack) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                        contentDescription = "Back",
-                        tint = MaterialTheme.colorScheme.onSurface
-                    )
-                }
-                Spacer(modifier = Modifier.width(FaflowSpacing.xs))
-                Column {
-                    Text(
-                        text = "Weekly Timetable",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Text(
-                        text = "Academic schedule by Day Order",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(
+                        onClick = onNavigateBack,
+                        modifier = Modifier.size(34.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Back",
+                            tint = com.governence.faflow.ui.theme.FaflowText1,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Column {
+                        Text(
+                            text = "Weekly timetable",
+                            fontSize = 19.sp,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = (-0.01).sp,
+                            color = com.governence.faflow.ui.theme.FaflowText1
+                        )
+                        Text(
+                            text = "Academic schedule by day order",
+                            fontSize = 12.sp,
+                            color = com.governence.faflow.ui.theme.FaflowText3
+                        )
+                    }
                 }
             }
         },
-        containerColor = MaterialTheme.colorScheme.background
+        containerColor = com.governence.faflow.ui.theme.FaflowBg
     ) { innerPadding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
+                .background(com.governence.faflow.ui.theme.FaflowBg)
         ) {
-            // Day Order Selector Pill Bar (Day Order 1 through 6)
+            // Day tabs (.daytabs)
             LazyRow(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = FaflowSpacing.lg, vertical = FaflowSpacing.sm),
-                horizontalArrangement = Arrangement.spacedBy(FaflowSpacing.sm)
+                    .background(com.governence.faflow.ui.theme.FaflowBg)
+                    .padding(horizontal = 18.dp)
             ) {
-                items((1..6).toList()) { day ->
+                items((1..5).toList()) { day ->
                     val isSelected = day == state.selectedDayOrder
-                    val pillBg = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface
-                    val pillFg = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurface
-                    val borderCol = if (isSelected) Color.Transparent else MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)
-
-                    Box(
+                    Column(
                         modifier = Modifier
-                            .clip(FaflowShapes.pill)
-                            .background(pillBg)
-                            .border(width = 1.dp, color = borderCol, shape = FaflowShapes.pill)
                             .clickable { viewModel.selectDayOrder(day) }
-                            .padding(horizontal = 16.dp, vertical = 9.dp),
-                        contentAlignment = Alignment.Center
+                            .padding(horizontal = 14.dp, vertical = 10.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                         Text(
                             text = "Day $day",
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                            color = pillFg
+                            fontSize = 12.5.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = if (isSelected) com.governence.faflow.ui.theme.FaflowNavy else com.governence.faflow.ui.theme.FaflowText3
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Box(
+                            modifier = Modifier
+                                .width(36.dp)
+                                .height(2.dp)
+                                .background(if (isSelected) com.governence.faflow.ui.theme.FaflowNavy else Color.Transparent)
                         )
                     }
                 }
             }
 
-            Spacer(modifier = Modifier.height(FaflowSpacing.xs))
+            androidx.compose.material3.HorizontalDivider(
+                thickness = 1.dp,
+                color = com.governence.faflow.ui.theme.FaflowBorder
+            )
 
             if (state.isLoading) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator(
-                        color = MaterialTheme.colorScheme.primary,
-                        strokeWidth = 2.dp
+                        color = com.governence.faflow.ui.theme.FaflowNavy,
+                        strokeWidth = 2.5.dp
                     )
                 }
             } else if (state.errorMessage != null && state.allSlots.isEmpty()) {
@@ -148,24 +162,24 @@ fun TimetableScreen(
                 )
             } else {
                 LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(horizontal = FaflowSpacing.lg, vertical = FaflowSpacing.md),
-                    verticalArrangement = Arrangement.spacedBy(FaflowSpacing.md)
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 18.dp),
+                    contentPadding = PaddingValues(top = 14.dp, bottom = 28.dp)
                 ) {
                     item {
-                        FaflowSectionHeader(
-                            title = "Day Order ${state.selectedDayOrder} Schedule",
-                            subtitle = "${state.daySlots.size} teaching periods assigned"
+                        Text(
+                            text = "${state.daySlots.size} teaching period assigned",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = com.governence.faflow.ui.theme.FaflowText1,
+                            modifier = Modifier.padding(bottom = 12.dp)
                         )
                     }
 
                     items((1..5).toList()) { period ->
                         val slot = state.daySlots.find { it.periodNumber == period }
                         TimetablePeriodItem(period = period, slot = slot)
-                    }
-
-                    item {
-                        Spacer(modifier = Modifier.height(FaflowSpacing.xxl))
                     }
                 }
             }
@@ -175,160 +189,112 @@ fun TimetableScreen(
 
 @Composable
 fun TimetablePeriodItem(period: Int, slot: TimetableSlot?) {
-    val periodTimes = when (period) {
-        1 -> "08:45 - 09:40"
-        2 -> "09:40 - 10:35"
-        3 -> "10:50 - 11:45"
-        4 -> "11:45 - 12:40"
-        5 -> "01:30 - 02:25"
+    val periodTime = when (period) {
+        1 -> "08:45"
+        2 -> "09:40"
+        3 -> "10:50"
+        4 -> "11:45"
+        5 -> "01:30"
         else -> "Slot $period"
     }
 
-    if (slot != null) {
-        FaflowSurface(
-            modifier = Modifier.fillMaxWidth(),
-            contentPadding = PaddingValues(FaflowSpacing.md)
+    val isBusy = slot != null
+
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 14.dp),
+            verticalAlignment = Alignment.Top
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
+            // Period Time column (width: 60dp)
+            Column(
+                modifier = Modifier.width(60.dp)
             ) {
-                // Period Indicator
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    modifier = Modifier.width(48.dp)
-                ) {
-                    Text(
-                        text = "P0$period",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.ExtraBold,
-                        color = PrimaryBlue
-                    )
-                    Text(
-                        text = periodTimes.substringBefore(" -"),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontSize = 9.sp
-                    )
-                }
-
-                Spacer(modifier = Modifier.width(FaflowSpacing.md))
-
-                // Divider line
-                Box(
-                    modifier = Modifier
-                        .width(2.dp)
-                        .height(40.dp)
-                        .background(PrimaryBlue.copy(alpha = 0.2f))
+                Text(
+                    text = "P0$period",
+                    fontSize = 10.5.sp,
+                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                    fontWeight = FontWeight.Medium,
+                    color = com.governence.faflow.ui.theme.FaflowText3
                 )
+                Spacer(modifier = Modifier.height(3.dp))
+                Text(
+                    text = periodTime,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = com.governence.faflow.ui.theme.FaflowText2
+                )
+            }
 
-                Spacer(modifier = Modifier.width(FaflowSpacing.md))
+            // Period Line (3px, rounded)
+            Box(
+                modifier = Modifier
+                    .width(3.dp)
+                    .height(48.dp)
+                    .clip(RoundedCornerShape(3.dp))
+                    .background(
+                        if (isBusy) com.governence.faflow.ui.theme.FaflowViolet else com.governence.faflow.ui.theme.FaflowDivider
+                    )
+            )
 
-                // Subject & Class Info
-                Column(modifier = Modifier.weight(1f)) {
+            Spacer(modifier = Modifier.width(14.dp))
+
+            // Period Body
+            Column(modifier = Modifier.weight(1f)) {
+                if (isBusy && slot != null) {
                     Text(
                         text = slot.subjectName,
-                        style = MaterialTheme.typography.titleSmall,
+                        fontSize = 14.sp,
                         fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface
+                        color = com.governence.faflow.ui.theme.FaflowText1
                     )
-                    Spacer(modifier = Modifier.height(2.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            text = "${slot.className} (${slot.section})",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Text(
-                            text = " • ",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = Icons.Default.MeetingRoom,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(13.dp)
-                            )
-                            Spacer(modifier = Modifier.width(2.dp))
-                            Text(
-                                text = "Room ${slot.roomNumber}",
-                                style = MaterialTheme.typography.bodySmall,
-                                fontWeight = FontWeight.Medium,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                        }
+                    Spacer(modifier = Modifier.height(3.dp))
+                    val roomDisplay = if (slot.roomNumber.startsWith("Room", ignoreCase = true)) {
+                        slot.roomNumber
+                    } else {
+                        "Room ${slot.roomNumber}"
                     }
-                }
-
-                FaflowStatusBadge(
-                    text = slot.subjectCode,
-                    statusColor = PrimaryBlue,
-                    showDot = false
-                )
-            }
-        }
-    } else {
-        // Free / Research Period
-        FaflowSurface(
-            modifier = Modifier.fillMaxWidth(),
-            backgroundColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.6f),
-            borderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.25f),
-            contentPadding = PaddingValues(FaflowSpacing.md)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    modifier = Modifier.width(48.dp)
-                ) {
                     Text(
-                        text = "P0$period",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                        text = "${slot.className} (${slot.section}) · $roomDisplay",
+                        fontSize = 11.5.sp,
+                        color = com.governence.faflow.ui.theme.FaflowText3
                     )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(5.dp))
+                            .background(com.governence.faflow.ui.theme.FaflowVioletTint)
+                            .padding(horizontal = 8.dp, vertical = 3.dp)
+                    ) {
+                        Text(
+                            text = slot.subjectCode,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = com.governence.faflow.ui.theme.FaflowViolet
+                        )
+                    }
+                } else {
                     Text(
-                        text = periodTimes.substringBefore(" -"),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                        fontSize = 9.sp
-                    )
-                }
-
-                Spacer(modifier = Modifier.width(FaflowSpacing.md))
-
-                Box(
-                    modifier = Modifier
-                        .width(2.dp)
-                        .height(36.dp)
-                        .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
-                )
-
-                Spacer(modifier = Modifier.width(FaflowSpacing.md))
-
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "Free Period",
-                        style = MaterialTheme.typography.titleSmall,
+                        text = "Free period",
+                        fontSize = 14.sp,
                         fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = com.governence.faflow.ui.theme.FaflowText3
                     )
+                    Spacer(modifier = Modifier.height(3.dp))
                     Text(
                         text = "Research, syllabus preparation & grading",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                        fontSize = 11.5.sp,
+                        color = com.governence.faflow.ui.theme.FaflowText3
                     )
                 }
-
-                FaflowStatusBadge(
-                    text = "Open",
-                    statusColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                    showDot = false
-                )
             }
         }
+
+        androidx.compose.material3.HorizontalDivider(
+            thickness = 1.dp,
+            color = com.governence.faflow.ui.theme.FaflowDivider
+        )
     }
 }
+

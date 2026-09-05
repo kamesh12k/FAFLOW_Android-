@@ -84,6 +84,7 @@ import com.governence.faflow.auth.ui.AuthUiState
 import com.governence.faflow.auth.ui.AuthViewModel
 import com.governence.faflow.core.network.FaflowApiClient
 import com.governence.faflow.ui.components.FacultyFlowBrandHeader
+import com.governence.faflow.ui.components.FaflowLogoMark
 import com.governence.faflow.ui.components.FaflowPillButton
 import com.governence.faflow.ui.components.FaflowStatusBadge
 import com.governence.faflow.ui.components.FaflowSurface
@@ -181,27 +182,10 @@ fun LoginScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(backgroundBrush)
+            .background(Color.White)
     ) {
-        // Subtle ambient atmospheric aura behind brand header
-        Box(
-            modifier = Modifier
-                .align(Alignment.TopCenter)
-                .padding(top = 10.dp)
-                .size(340.dp)
-                .background(
-                    Brush.radialGradient(
-                        colors = listOf(
-                            PrimaryBlue.copy(alpha = if (isDark) 0.22f else 0.12f),
-                            SecondaryTeal.copy(alpha = if (isDark) 0.08f else 0.04f),
-                            Color.Transparent
-                        )
-                    )
-                )
-        )
-
         Scaffold(
-            containerColor = Color.Transparent,
+            containerColor = Color.White,
             contentWindowInsets = WindowInsets(0, 0, 0, 0)
         ) { innerPadding ->
             Column(
@@ -209,259 +193,202 @@ fun LoginScreen(
                     .fillMaxSize()
                     .padding(innerPadding)
                     .imePadding()
-                    .padding(horizontal = 20.dp)
+                    .padding(horizontal = 30.dp)
                     .verticalScroll(rememberScrollState()),
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Top
+                verticalArrangement = Arrangement.Center
             ) {
-                Spacer(modifier = Modifier.height(if (isImeOpen) 16.dp else 36.dp))
+                Spacer(modifier = Modifier.height(if (isImeOpen) 24.dp else 52.dp))
 
-                // 1. FAFLOW BRAND LOGO (Official Vector Symbol & Wordmark)
-                FacultyFlowBrandHeader(
-                    markSize = if (isImeOpen) 36.dp else 50.dp
+                // 56x56dp Navy Logo Mark (14dp radius) with white checkmark
+                FaflowLogoMark(size = 56.dp, cornerRadius = 14.dp)
+
+                Spacer(modifier = Modifier.height(20.dp))
+
+                Text(
+                    text = "GOVERNANCE",
+                    fontSize = 10.5.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 0.14.sp,
+                    color = com.governence.faflow.ui.theme.FaflowText3
+                )
+
+                Text(
+                    text = "FAFLOW",
+                    fontSize = 28.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    letterSpacing = (-0.02).sp,
+                    color = com.governence.faflow.ui.theme.FaflowNavy
                 )
 
                 Spacer(modifier = Modifier.height(6.dp))
 
-                // 2. WELCOME / GREETING & INSTITUTIONAL BADGE
-                FaflowStatusBadge(
-                    text = "FAFLOW UNIFIED PORTAL",
-                    statusColor = PrimaryBlue
-                )
-
-                Spacer(modifier = Modifier.height(4.dp))
-
                 Text(
-                    text = "Institutional Academic & Mobility Ecosystem",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    text = "Sign in to manage attendance, schedules\nand substitution duties",
+                    fontSize = 12.5.sp,
+                    color = com.governence.faflow.ui.theme.FaflowText2,
                     textAlign = TextAlign.Center,
                     lineHeight = 18.sp
                 )
 
-                Spacer(modifier = Modifier.height(if (isImeOpen) 12.dp else 22.dp))
+                Spacer(modifier = Modifier.height(28.dp))
 
-                // 3. ELEVATED LOGIN CARD CONTAINER
-                ElevatedCard(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .shadow(
-                            elevation = if (isDark) 10.dp else 8.dp,
-                            shape = RoundedCornerShape(24.dp),
-                            spotColor = PrimaryBlue.copy(alpha = 0.15f)
-                        ),
-                    shape = RoundedCornerShape(24.dp),
-                    colors = CardDefaults.elevatedCardColors(
-                        containerColor = if (isDark) Color(0xFF131B2E) else Color(0xFFFFFFFF)
-                    ),
-                    elevation = CardDefaults.elevatedCardElevation(
-                        defaultElevation = 6.dp
-                    )
+                // Error Banner
+                AnimatedVisibility(
+                    visible = uiState is AuthUiState.Error,
+                    enter = fadeIn() + scaleIn(),
+                    exit = fadeOut() + scaleOut()
                 ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(20.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        // FRAMED LOTTIE ILLUSTRATION HERO
+                    if (uiState is AuthUiState.Error) {
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(lottieHeight)
-                                .clip(RoundedCornerShape(18.dp))
-                                .background(
-                                    if (isDark) {
-                                        Color(0xFF1E293B).copy(alpha = 0.6f)
-                                    } else {
-                                        Color(0xFFF8FAFC)
-                                    }
-                                )
-                                .border(
-                                    width = 1.dp,
-                                    color = if (isDark) Color(0xFF334155) else Color(0xFFE2E8F0),
-                                    shape = RoundedCornerShape(18.dp)
-                                ),
+                                .padding(bottom = 14.dp)
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(com.governence.faflow.ui.theme.FaflowDanger.copy(alpha = 0.1f))
+                                .border(1.dp, com.governence.faflow.ui.theme.FaflowDanger.copy(alpha = 0.3f), RoundedCornerShape(10.dp))
+                                .padding(10.dp),
                             contentAlignment = Alignment.Center
                         ) {
-                            if (composition != null) {
-                                LottieAnimation(
-                                    composition = composition,
-                                    progress = { lottieProgress },
-                                    modifier = Modifier.fillMaxSize()
-                                )
-                            } else {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(28.dp),
-                                    color = PrimaryBlue,
-                                    strokeWidth = 2.dp
-                                )
-                            }
+                            Text(
+                                text = (uiState as AuthUiState.Error).message,
+                                fontSize = 12.sp,
+                                color = com.governence.faflow.ui.theme.FaflowDanger,
+                                fontWeight = FontWeight.SemiBold,
+                                textAlign = TextAlign.Center
+                            )
                         }
+                    }
+                }
 
-                        Spacer(modifier = Modifier.height(16.dp))
-
-            // ERROR / SUCCESS NOTIFICATION BANNER
-            AnimatedVisibility(
-                visible = uiState is AuthUiState.Error,
-                enter = fadeIn() + scaleIn(),
-                exit = fadeOut() + scaleOut()
-            ) {
-                if (uiState is AuthUiState.Error) {
-                    FaflowSurface(
+                // Field 1: Institutional email
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        text = "Institutional email",
+                        fontSize = 11.5.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = com.governence.faflow.ui.theme.FaflowText2
+                    )
+                    Spacer(modifier = Modifier.height(7.dp))
+                    OutlinedTextField(
+                        value = identifier,
+                        onValueChange = {
+                            identifier = it
+                            authViewModel.clearError()
+                        },
+                        placeholder = {
+                            Text(
+                                text = "rekha.devi@college.edu",
+                                fontSize = 14.sp,
+                                color = com.governence.faflow.ui.theme.FaflowText3
+                            )
+                        },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Default.AlternateEmail,
+                                contentDescription = null,
+                                tint = com.governence.faflow.ui.theme.FaflowText3,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        },
+                        singleLine = true,
+                        shape = RoundedCornerShape(10.dp),
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Email,
+                            imeAction = ImeAction.Next
+                        ),
+                        keyboardActions = KeyboardActions(
+                            onNext = { focusManager.moveFocus(FocusDirection.Down) }
+                        ),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedContainerColor = Color.White,
+                            unfocusedContainerColor = Color(0xFFFCFCFD),
+                            focusedBorderColor = com.governence.faflow.ui.theme.FaflowNavy,
+                            unfocusedBorderColor = com.governence.faflow.ui.theme.FaflowBorder,
+                            focusedTextColor = com.governence.faflow.ui.theme.FaflowText1,
+                            unfocusedTextColor = com.governence.faflow.ui.theme.FaflowText1
+                        ),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(bottom = 12.dp),
-                        backgroundColor = StatusError.copy(alpha = 0.12f),
-                        borderColor = StatusError.copy(alpha = 0.35f)
-                    ) {
-                        Text(
-                            text = (uiState as AuthUiState.Error).message,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = StatusError,
-                            fontWeight = FontWeight.SemiBold,
-                            textAlign = TextAlign.Center
-                        )
-                    }
-                }
-            }
-
-            AnimatedVisibility(
-                visible = isAuthenticated,
-                enter = fadeIn() + scaleIn(),
-                exit = fadeOut()
-            ) {
-                FaflowSurface(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = 12.dp),
-                    backgroundColor = StatusSuccess.copy(alpha = 0.12f),
-                    borderColor = StatusSuccess.copy(alpha = 0.35f)
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.CheckCircle,
-                            contentDescription = null,
-                            tint = StatusSuccess,
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "Authentication Verified. Welcome!",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = StatusSuccess,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                }
-            }
-
-            // 4. LOGIN FORM
-            // Identifier Input (Email or Username)
-            OutlinedTextField(
-                value = identifier,
-                onValueChange = {
-                    identifier = it
-                    authViewModel.clearError()
-                },
-                label = { Text("Institutional Email / Username") },
-                placeholder = { Text("rekha.devi@college.edu or admin") },
-                leadingIcon = {
-                    Icon(
-                        imageVector = Icons.Default.AlternateEmail,
-                        contentDescription = "Identifier Icon",
-                        tint = if (isInputFocused) PrimaryBlue else MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                },
-                singleLine = true,
-                shape = RoundedCornerShape(14.dp),
-                keyboardOptions = KeyboardOptions(
-                    keyboardType = KeyboardType.Email,
-                    imeAction = ImeAction.Next
-                ),
-                keyboardActions = KeyboardActions(
-                    onNext = { focusManager.moveFocus(FocusDirection.Down) }
-                ),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = PrimaryBlue,
-                    unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.35f)
-                ),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .onFocusChanged { isInputFocused = it.isFocused }
-            )
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            // Password Input
-            OutlinedTextField(
-                value = password,
-                onValueChange = {
-                    password = it
-                    authViewModel.clearError()
-                },
-                label = { Text("Password") },
-                leadingIcon = {
-                    Icon(
-                        imageVector = Icons.Default.Lock,
-                        contentDescription = "Password Icon",
-                        tint = if (isInputFocused) PrimaryBlue else MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                },
-                trailingIcon = {
-                    IconButton(onClick = { passwordVisible = !passwordVisible }) {
-                        Icon(
-                            imageVector = if (passwordVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
-                            contentDescription = if (passwordVisible) "Hide password" else "Show password"
-                        )
-                    }
-                },
-                singleLine = true,
-                visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
-                shape = RoundedCornerShape(14.dp),
-                keyboardOptions = KeyboardOptions(
-                    keyboardType = KeyboardType.Password,
-                    imeAction = ImeAction.Done
-                ),
-                keyboardActions = KeyboardActions(
-                    onDone = {
-                        focusManager.clearFocus()
-                        if (identifier.isNotBlank() && password.isNotBlank()) {
-                            authViewModel.login(identifier, password)
-                        }
-                    }
-                ),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = PrimaryBlue,
-                    unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.35f)
-                ),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .onFocusChanged { isInputFocused = it.isFocused }
-            )
-
-            Spacer(modifier = Modifier.height(20.dp))
-
-            // 5. PRIMARY ACTION
-            if (isAuthenticating) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(50.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(32.dp),
-                        color = PrimaryBlue,
-                        strokeWidth = 3.dp
+                            .onFocusChanged { isInputFocused = it.isFocused }
                     )
                 }
-            } else {
-                FaflowPillButton(
-                    text = "Sign In",
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Field 2: Password
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        text = "Password",
+                        fontSize = 11.5.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = com.governence.faflow.ui.theme.FaflowText2
+                    )
+                    Spacer(modifier = Modifier.height(7.dp))
+                    OutlinedTextField(
+                        value = password,
+                        onValueChange = {
+                            password = it
+                            authViewModel.clearError()
+                        },
+                        placeholder = {
+                            Text(
+                                text = "Enter your password",
+                                fontSize = 14.sp,
+                                color = com.governence.faflow.ui.theme.FaflowText3
+                            )
+                        },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Default.Lock,
+                                contentDescription = null,
+                                tint = com.governence.faflow.ui.theme.FaflowText3,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        },
+                        trailingIcon = {
+                            IconButton(onClick = { passwordVisible = !passwordVisible }) {
+                                Icon(
+                                    imageVector = if (passwordVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                                    contentDescription = if (passwordVisible) "Hide" else "Show",
+                                    tint = com.governence.faflow.ui.theme.FaflowText3,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                        },
+                        singleLine = true,
+                        visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                        shape = RoundedCornerShape(10.dp),
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Password,
+                            imeAction = ImeAction.Done
+                        ),
+                        keyboardActions = KeyboardActions(
+                            onDone = {
+                                focusManager.clearFocus()
+                                if (identifier.isNotBlank() && password.isNotBlank()) {
+                                    authViewModel.login(identifier, password)
+                                }
+                            }
+                        ),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedContainerColor = Color.White,
+                            unfocusedContainerColor = Color(0xFFFCFCFD),
+                            focusedBorderColor = com.governence.faflow.ui.theme.FaflowNavy,
+                            unfocusedBorderColor = com.governence.faflow.ui.theme.FaflowBorder,
+                            focusedTextColor = com.governence.faflow.ui.theme.FaflowText1,
+                            unfocusedTextColor = com.governence.faflow.ui.theme.FaflowText1
+                        ),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .onFocusChanged { isInputFocused = it.isFocused }
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // Sign In Button
+                Button(
                     onClick = {
                         focusManager.clearFocus()
                         if (identifier.isBlank() || password.isBlank()) {
@@ -470,167 +397,145 @@ fun LoginScreen(
                             authViewModel.login(identifier, password)
                         }
                     },
-                    modifier = Modifier.fillMaxWidth(),
-                    isPrimary = true
-                )
-            }
-
-            Spacer(modifier = Modifier.height(18.dp))
-
-            // 6. QUICK DEMO PRESETS
-            FaflowSurface(
-                modifier = Modifier.fillMaxWidth(),
-                backgroundColor = if (isDark) Color(0xFF1E293B).copy(alpha = 0.5f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
-                borderColor = if (isDark) Color(0xFF334155) else MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
-            ) {
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Security,
-                            contentDescription = null,
-                            tint = SecondaryTeal,
-                            modifier = Modifier.size(14.dp)
+                    enabled = !isAuthenticating,
+                    shape = RoundedCornerShape(10.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = com.governence.faflow.ui.theme.FaflowNavy,
+                        contentColor = Color.White,
+                        disabledContainerColor = com.governence.faflow.ui.theme.FaflowNavy.copy(alpha = 0.5f)
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp)
+                        .shadow(4.dp, RoundedCornerShape(10.dp), spotColor = com.governence.faflow.ui.theme.FaflowNavy.copy(alpha = 0.22f))
+                ) {
+                    if (isAuthenticating) {
+                        CircularProgressIndicator(
+                            color = Color.White,
+                            strokeWidth = 2.5.dp,
+                            modifier = Modifier.size(20.dp)
                         )
-                        Spacer(modifier = Modifier.width(6.dp))
+                    } else {
                         Text(
-                            text = "Quick Demo Access",
-                            style = MaterialTheme.typography.labelSmall,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            text = "Sign in",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold
                         )
-                    }
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        // Admin Demo
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(if (isDark) Color(0xFF0F172A) else MaterialTheme.colorScheme.surface)
-                                .border(
-                                    width = 1.dp,
-                                    color = if (isDark) Color(0xFF334155) else MaterialTheme.colorScheme.outline.copy(alpha = 0.25f),
-                                    shape = RoundedCornerShape(10.dp)
-                                )
-                                .clickable {
-                                    identifier = "admin"
-                                    password = "admin"
-                                    authViewModel.clearError()
-                                }
-                                .padding(vertical = 8.dp, horizontal = 4.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = "Admin",
-                                style = MaterialTheme.typography.labelSmall,
-                                fontWeight = FontWeight.Bold,
-                                color = PrimaryBlue
-                            )
-                        }
-
-                        // Faculty Demo
-                        Box(
-                            modifier = Modifier
-                                .weight(1.1f)
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(if (isDark) Color(0xFF0F172A) else MaterialTheme.colorScheme.surface)
-                                .border(
-                                    width = 1.dp,
-                                    color = if (isDark) Color(0xFF334155) else MaterialTheme.colorScheme.outline.copy(alpha = 0.25f),
-                                    shape = RoundedCornerShape(10.dp)
-                                )
-                                .clickable {
-                                    identifier = "rekha.devi@college.edu"
-                                    password = "Password123"
-                                    authViewModel.clearError()
-                                }
-                                .padding(vertical = 8.dp, horizontal = 4.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = "Faculty",
-                                style = MaterialTheme.typography.labelSmall,
-                                fontWeight = FontWeight.Bold,
-                                color = PrimaryBlue
-                            )
-                        }
-
-                        // HOD Demo
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(if (isDark) Color(0xFF0F172A) else MaterialTheme.colorScheme.surface)
-                                .border(
-                                    width = 1.dp,
-                                    color = if (isDark) Color(0xFF334155) else MaterialTheme.colorScheme.outline.copy(alpha = 0.25f),
-                                    shape = RoundedCornerShape(10.dp)
-                                )
-                                .clickable {
-                                    identifier = "hod_ece"
-                                    password = "Password123"
-                                    authViewModel.clearError()
-                                }
-                                .padding(vertical = 8.dp, horizontal = 4.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = "HOD",
-                                style = MaterialTheme.typography.labelSmall,
-                                fontWeight = FontWeight.Bold,
-                                color = PrimaryBlue
-                            )
-                        }
                     }
                 }
-            }
-        } // End of Column inside ElevatedCard
-    } // End of ElevatedCard
 
-    Spacer(modifier = Modifier.height(18.dp))
+                Spacer(modifier = Modifier.height(24.dp))
 
-    // 7. ACTIVE SERVER ENDPOINT INDICATOR & QUICK SWITCHER
-    Row(
-        modifier = Modifier
-            .clip(CircleShape)
-            .background(if (isDark) Color(0xFF131B2E) else Color.White)
-            .border(
-                width = 1.dp,
-                color = if (isDark) Color(0xFF334155) else Color(0xFFE2E8F0),
-                shape = CircleShape
-            )
-            .clickable {
-                serverUrlInput = FaflowApiClient.baseUrl
-                showServerConfigDialog = true
+                // Demo links (Faculty demo, Admin demo, HOD demo)
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(20.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // Faculty demo
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.clickable {
+                            identifier = "rekha.devi@college.edu"
+                            password = "Password123"
+                            authViewModel.clearError()
+                        }
+                    ) {
+                        Text(
+                            text = "Faculty demo",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = com.governence.faflow.ui.theme.FaflowText2
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Box(
+                            modifier = Modifier
+                                .width(70.dp)
+                                .height(1.5.dp)
+                                .background(com.governence.faflow.ui.theme.FaflowBorder)
+                        )
+                    }
+
+                    // Admin demo
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.clickable {
+                            identifier = "admin"
+                            password = "admin"
+                            authViewModel.clearError()
+                        }
+                    ) {
+                        Text(
+                            text = "Admin demo",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = com.governence.faflow.ui.theme.FaflowText2
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Box(
+                            modifier = Modifier
+                                .width(65.dp)
+                                .height(1.5.dp)
+                                .background(com.governence.faflow.ui.theme.FaflowBorder)
+                        )
+                    }
+
+                    // HOD demo
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.clickable {
+                            identifier = "hod_ece"
+                            password = "Password123"
+                            authViewModel.clearError()
+                        }
+                    ) {
+                        Text(
+                            text = "HOD demo",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = com.governence.faflow.ui.theme.FaflowText2
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Box(
+                            modifier = Modifier
+                                .width(56.dp)
+                                .height(1.5.dp)
+                                .background(com.governence.faflow.ui.theme.FaflowBorder)
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(36.dp))
+
+                // Server status indicator
+                Row(
+                    modifier = Modifier
+                        .clickable {
+                            serverUrlInput = FaflowApiClient.baseUrl
+                            showServerConfigDialog = true
+                        }
+                        .padding(vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(6.dp)
+                            .clip(CircleShape)
+                            .background(com.governence.faflow.ui.theme.FaflowSuccess)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "Connected — ${FaflowApiClient.baseUrl.removePrefix("http://").removePrefix("https://").trimEnd('/')}",
+                        fontSize = 10.5.sp,
+                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                        color = com.governence.faflow.ui.theme.FaflowText3
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(28.dp))
             }
-            .padding(horizontal = 14.dp, vertical = 7.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.Center
-    ) {
-        Box(
-            modifier = Modifier
-                .size(8.dp)
-                .clip(CircleShape)
-                .background(Color(0xFF10B981))
-        )
-        Spacer(modifier = Modifier.width(7.dp))
-        Text(
-            text = "Server: ${FaflowApiClient.baseUrl}",
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            fontWeight = FontWeight.Medium
-        )
+        }
     }
-
-    Spacer(modifier = Modifier.height(28.dp))
-} // End of Scrollable Column
-} // End of Scaffold
-} // End of Root Box
 
     // Backend Server URL Configuration Modal
     if (showServerConfigDialog) {
