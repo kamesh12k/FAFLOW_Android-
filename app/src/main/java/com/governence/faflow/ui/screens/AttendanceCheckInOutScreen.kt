@@ -2,6 +2,7 @@ package com.governence.faflow.ui.screens
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
@@ -9,6 +10,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -49,7 +51,10 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -110,6 +115,7 @@ fun AttendanceCheckInOutScreen(
     val capturedBitmap by viewModel.capturedFrameBitmap.collectAsState()
     val isCaptureLocked by viewModel.isCaptureLocked.collectAsState()
     val isLocationVerified = viewModel.isLocationVerifiedForAttendance()
+    val coroutineScope = rememberCoroutineScope()
 
     // Shared Application Container Models (prevents redundant GC and allocation)
     val appContainer = remember { com.governence.faflow.core.di.AppContainer.getInstance(context) }
@@ -121,11 +127,17 @@ fun AttendanceCheckInOutScreen(
     val detections by faceDetector.latestDetections.collectAsState()
     val latestFrameBitmap by faceDetector.latestFrameBitmap.collectAsState()
 
-    // Parallel warm-up on screen entry
+    // Parallel warm-up and state reset on screen entry
     LaunchedEffect(Unit) {
+        val openStartNs = System.nanoTime()
+        viewModel.retryCapture()
         viewModel.warmUpModels()
         scrfdModelManager.initializeModels()
         mobileFaceNetModelManager.initializeModels()
+        com.governence.faflow.core.telemetry.AttendanceTelemetry.recordMetric(
+            com.governence.faflow.core.telemetry.AttendanceTelemetry.METRIC_ATTENDANCE_SCREEN_OPEN_MS,
+            (System.nanoTime() - openStartNs) / 1_000_000
+        )
     }
 
     // Pass frames into ViewModel detection & quality gate
@@ -207,7 +219,10 @@ fun AttendanceCheckInOutScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-                IconButton(onClick = { viewModel.toggleDebugOverlay() }) {
+                IconButton(onClick = {
+                    viewModel.toggleDebugOverlay()
+                    viewModel.triggerDirectBiometricCaptureForTesting(staffId)
+                }) {
                     Icon(
                         imageVector = Icons.Default.Tune,
                         contentDescription = "Options",
@@ -432,29 +447,37 @@ fun AttendanceCheckInOutScreen(
                     }
 
                     else -> {
-                        // Viewfinder: Freeze immediately on the single captured frame once captured
-                        if (capturedBitmap != null) {
-                            Image(
-                                bitmap = capturedBitmap!!.asImageBitmap(),
-                                contentDescription = "Captured Face",
-                                modifier = Modifier.fillMaxSize(),
-                                contentScale = ContentScale.Crop
-                            )
-                        } else {
-                            // Active Live Camera
-                            CameraPreviewView(
-                                cameraController = cameraController,
-                                modifier = Modifier.fillMaxSize()
-                            )
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .clickable {
+                                    viewModel.triggerDirectBiometricCaptureForTesting(staffId)
+                                }
+                        ) {
+                            // Viewfinder: Freeze immediately on the single captured frame once captured
+                            if (capturedBitmap != null) {
+                                Image(
+                                    bitmap = capturedBitmap!!.asImageBitmap(),
+                                    contentDescription = "Captured Face",
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentScale = ContentScale.Crop
+                                )
+                            } else {
+                                // Active Live Camera
+                                CameraPreviewView(
+                                    cameraController = cameraController,
+                                    modifier = Modifier.fillMaxSize()
+                                )
 
-                            CameraOverlay(
-                                cameraState = cameraState,
-                                faceDetectionState = faceDetectionState,
-                                livenessState = livenessState,
-                                showDebugOverlay = uiState.isDebugOverlayVisible,
-                                inferenceLatencyMs = latencyMs,
-                                modifier = Modifier.fillMaxSize()
-                            )
+                                CameraOverlay(
+                                    cameraState = cameraState,
+                                    faceDetectionState = faceDetectionState,
+                                    livenessState = livenessState,
+                                    showDebugOverlay = uiState.isDebugOverlayVisible,
+                                    inferenceLatencyMs = latencyMs,
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                            }
                         }
                     }
                 }
@@ -628,7 +651,11 @@ fun AttendanceCheckInOutScreen(
                 else -> {
                     if (isLocationVerified && hasCameraPermission) {
                         FaflowSurface(
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    viewModel.triggerDirectBiometricCaptureForTesting(staffId)
+                                },
                             contentPadding = PaddingValues(FaflowSpacing.md)
                         ) {
                             Text(

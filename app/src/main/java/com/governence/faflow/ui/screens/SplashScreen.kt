@@ -41,8 +41,7 @@ fun SplashScreen(
     onNavigateToLogin: () -> Unit,
     onNavigateToDashboard: () -> Unit
 ) {
-    LaunchedEffect(Unit) {
-        delay(750)
+    LaunchedEffect(isLoggedIn) {
         if (isLoggedIn) {
             onNavigateToDashboard()
         } else {

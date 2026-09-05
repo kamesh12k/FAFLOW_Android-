@@ -67,6 +67,10 @@ fun StaffAttendanceScreen(
     val hasCheckedIn = uiState.checkInTime != null
     val hasCheckedOut = uiState.checkOutTime != null
 
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        viewModel.loadTodaySummary()
+    }
+
     Scaffold(
         topBar = {
             Column(
@@ -266,7 +270,14 @@ fun StaffAttendanceScreen(
                 }
 
                 Button(
-                    onClick = onNavigateToCheckIn,
+                    onClick = {
+                        if (!hasCheckedIn) {
+                            viewModel.prepareSessionForCheckIn()
+                        } else {
+                            viewModel.prepareSessionForCheckOut()
+                        }
+                        onNavigateToCheckIn()
+                    },
                     enabled = !hasCheckedOut,
                     shape = RoundedCornerShape(11.dp),
                     colors = ButtonDefaults.buttonColors(

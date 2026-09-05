@@ -69,16 +69,17 @@ fun NavGraph(
     val userRole = (authState as? AuthUiState.Authenticated)?.staff?.role ?: "teacher"
     val isHod = userRole.lowercase() == "admin" || userRole.lowercase() == "hod"
 
-    // P1 FIX: Create ONE shared HodViewModel at NavGraph level.
-    // Previously, each of 7 HOD screen destinations created its own HodViewModel instance,
-    // each firing 3+ HTTP requests in init {}. This single instance is reused across all
-    // HOD screens and lives for the full session (scoped to NavGraph composition).
-    val hodViewModel = remember {
-        HodViewModel(
-            hodRepository = appContainer.hodRepository,
-            authRepository = appContainer.authRepository,
-            academicSummaryRepository = appContainer.academicSummaryRepository
-        )
+    // Lazy HodViewModel provider: only instantiated on-demand when an HOD screen or timetable/coverage is visited.
+    // This prevents firing 5 parallel HTTP requests during splash/teacher startup.
+    val getHodViewModel = remember {
+        var vm: HodViewModel? = null
+        {
+            vm ?: HodViewModel(
+                hodRepository = appContainer.hodRepository,
+                authRepository = appContainer.authRepository,
+                academicSummaryRepository = appContainer.academicSummaryRepository
+            ).also { vm = it }
+        }
     }
 
     // P1 FIX: Create ONE shared AttendanceViewModel at NavGraph level.
@@ -211,10 +212,10 @@ fun NavGraph(
                 )
             }
 
-            // HOD Dedicated Screens — all use the single shared hodViewModel.
+            // HOD Dedicated Screens — all use the single shared hodViewModel on-demand.
             composable(Screen.HodDashboard.route) {
                 HodDashboardScreen(
-                    hodViewModel = hodViewModel,
+                    hodViewModel = getHodViewModel(),
                     onNavigateToLeaveApprovals = { navController.navigate(Screen.HodLeaveApprovals.route) },
                     onNavigateToCoverage = { navController.navigate(Screen.HodCoverage.route) },
                     onNavigateToDepartmentTimetable = { navController.navigate(Screen.ClasswiseTimetable.route) },
@@ -226,28 +227,28 @@ fun NavGraph(
 
             composable(Screen.HodLeaveApprovals.route) {
                 HodLeaveApprovalScreen(
-                    hodViewModel = hodViewModel,
+                    hodViewModel = getHodViewModel(),
                     onNavigateBack = { navController.popBackStack() }
                 )
             }
 
             composable(Screen.HodCoverage.route) {
                 TodayCoverageScreen(
-                    hodViewModel = hodViewModel,
+                    hodViewModel = getHodViewModel(),
                     onNavigateBack = { navController.popBackStack() }
                 )
             }
 
             composable(Screen.HodFacultyDirectory.route) {
                 HodFacultyDirectoryScreen(
-                    hodViewModel = hodViewModel,
+                    hodViewModel = getHodViewModel(),
                     onNavigateBack = { navController.popBackStack() }
                 )
             }
 
             composable(Screen.HodAttendance.route) {
                 HodAttendanceScreen(
-                    hodViewModel = hodViewModel,
+                    hodViewModel = getHodViewModel(),
                     onNavigateBack = { navController.popBackStack() }
                 )
             }
@@ -255,14 +256,14 @@ fun NavGraph(
             // Shared / Parity Feature Sub-Screens
             composable(Screen.ClasswiseTimetable.route) {
                 ClasswiseTimetableScreen(
-                    hodViewModel = hodViewModel,
+                    hodViewModel = getHodViewModel(),
                     onNavigateBack = { navController.popBackStack() }
                 )
             }
 
             composable(Screen.TodayCoverage.route) {
                 TodayCoverageScreen(
-                    hodViewModel = hodViewModel,
+                    hodViewModel = getHodViewModel(),
                     onNavigateBack = { navController.popBackStack() }
                 )
             }
@@ -377,9 +378,13 @@ fun NavGraph(
                     staffId = staffId,
                     onNavigateBack = { navController.popBackStack() },
                     onAttendanceSuccess = {
-                        val homeDest = if (isHod) Screen.HodDashboard.route else Screen.Home.route
-                        navController.navigate(homeDest) {
-                            popUpTo(homeDest) { inclusive = true }
+                        attendanceViewModel.loadTodaySummary()
+                        val popped = navController.popBackStack(Screen.Attendance.route, inclusive = false)
+                        if (!popped) {
+                            navController.navigate(Screen.Attendance.route) {
+                                val homeDest = if (isHod) Screen.HodDashboard.route else Screen.Home.route
+                                popUpTo(homeDest) { inclusive = false }
+                            }
                         }
                     }
                 )
