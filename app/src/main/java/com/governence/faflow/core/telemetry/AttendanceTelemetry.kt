@@ -20,7 +20,7 @@ object AttendanceTelemetry {
     fun recordMetric(metricName: String, durationMs: Long) {
         if (!isTelemetryEnabled) return
         metricsMap.computeIfAbsent(metricName) { AtomicLong(0) }.set(durationMs)
-        android.util.Log.d("AttendanceTelemetry", "METRIC $metricName: ${durationMs}ms")
+        com.governence.faflow.core.logging.FaflowLogger.d("AttendanceTelemetry", "METRIC $metricName: ${durationMs}ms")
     }
 
     fun recordEvent(eventName: String, eventValue: String) {

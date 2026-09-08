@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -71,6 +72,64 @@ fun HodLeaveApprovalScreen(
     val leavesState by hodViewModel.leavesState.collectAsState()
     var selectedTab by remember { mutableStateOf("pending") }
     var selectedLeaveForAssign by remember { mutableStateOf<LeaveOutDto?>(null) }
+    var leaveToApprove by remember { mutableStateOf<LeaveOutDto?>(null) }
+    var leaveToReject by remember { mutableStateOf<LeaveOutDto?>(null) }
+
+    // Approve confirmation
+    if (leaveToApprove != null) {
+        val leave = leaveToApprove!!
+        AlertDialog(
+            onDismissRequest = { leaveToApprove = null },
+            icon = {
+                Icon(Icons.Default.Check, contentDescription = null,
+                    tint = FaflowStatusColors.Approved, modifier = Modifier.size(28.dp))
+            },
+            title = { Text("Approve Leave?", fontWeight = FontWeight.Bold) },
+            text = {
+                Text(
+                    "Approve leave for ${leave.teacherName ?: "Faculty"} on ${leave.date} (Period ${leave.periodNumber})?\n\nSubstitution will be required.",
+                    fontSize = 14.sp
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = { hodViewModel.approveLeave(leave.id); leaveToApprove = null },
+                    colors = ButtonDefaults.buttonColors(containerColor = FaflowStatusColors.Approved)
+                ) { Text("Approve", fontWeight = FontWeight.Bold) }
+            },
+            dismissButton = {
+                TextButton(onClick = { leaveToApprove = null }) { Text("Cancel") }
+            }
+        )
+    }
+
+    // Reject confirmation
+    if (leaveToReject != null) {
+        val leave = leaveToReject!!
+        AlertDialog(
+            onDismissRequest = { leaveToReject = null },
+            icon = {
+                Icon(Icons.Default.Close, contentDescription = null,
+                    tint = FaflowStatusColors.Rejected, modifier = Modifier.size(28.dp))
+            },
+            title = { Text("Reject Leave?", fontWeight = FontWeight.Bold) },
+            text = {
+                Text(
+                    "Reject leave request for ${leave.teacherName ?: "Faculty"} on ${leave.date} (Period ${leave.periodNumber})?",
+                    fontSize = 14.sp
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = { hodViewModel.rejectLeave(leave.id); leaveToReject = null },
+                    colors = ButtonDefaults.buttonColors(containerColor = FaflowStatusColors.Rejected)
+                ) { Text("Reject", fontWeight = FontWeight.Bold, color = Color.White) }
+            },
+            dismissButton = {
+                TextButton(onClick = { leaveToReject = null }) { Text("Keep Pending") }
+            }
+        )
+    }
 
     LaunchedEffect(Unit) {
         hodViewModel.loadDepartmentLeaves()
@@ -107,12 +166,14 @@ fun HodLeaveApprovalScreen(
             ) {
                 Spacer(modifier = Modifier.height(FaflowSpacing.sm))
 
-                // Status Filter Chips
-                Row(
+                // Status Filter Chips — horizontally scrollable
+                androidx.compose.foundation.lazy.LazyRow(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(FaflowSpacing.sm)
                 ) {
-                    listOf("pending", "approved", "rejected", "all").forEach { tab ->
+                    val tabs = listOf("pending", "approved", "rejected", "all")
+                    items(tabs.size) { idx ->
+                        val tab = tabs[idx]
                         val isSelected = selectedTab == tab
                         FilterChip(
                             selected = isSelected,
@@ -176,8 +237,8 @@ fun HodLeaveApprovalScreen(
                             items(filteredLeaves) { leave ->
                                 HodLeaveItemCard(
                                     leave = leave,
-                                    onApprove = { hodViewModel.approveLeave(leave.id) },
-                                    onReject = { hodViewModel.rejectLeave(leave.id) },
+                                    onApprove = { leaveToApprove = leave },
+                                    onReject = { leaveToReject = leave },
                                     onAssignSubstitute = { selectedLeaveForAssign = leave }
                                 )
                             }

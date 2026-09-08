@@ -55,14 +55,14 @@ import androidx.core.content.ContextCompat
 import com.governence.faflow.camera.CameraController
 import com.governence.faflow.camera.CameraOverlay
 import com.governence.faflow.camera.CameraPreviewView
-import com.governence.faflow.face.alignment.FaceAlignmentResult
-import com.governence.faflow.face.alignment.SimilarityFaceAligner
-import com.governence.faflow.face.embedding.MobileFaceNetEmbedder
-import com.governence.faflow.face.enrollment.LocalFaceEnrollmentRepository
-import com.governence.faflow.face.matching.CosineFaceMatcher
-import com.governence.faflow.face.model.MobileFaceNetModelManager
-import com.governence.faflow.face.model.ScrfdModelManager
-import com.governence.faflow.face.scrfd.ScrfdFaceDetector
+import com.governence.faflow.attendance.biometrics.alignment.FaceAlignmentResult
+import com.governence.faflow.attendance.biometrics.alignment.SimilarityFaceAligner
+import com.governence.faflow.attendance.biometrics.embedding.MobileFaceNetEmbedder
+import com.governence.faflow.attendance.biometrics.enrollment.LocalFaceEnrollmentRepository
+import com.governence.faflow.attendance.biometrics.matching.CosineFaceMatcher
+import com.governence.faflow.attendance.biometrics.model.MobileFaceNetModelManager
+import com.governence.faflow.attendance.biometrics.model.ScrfdModelManager
+import com.governence.faflow.attendance.biometrics.scrfd.ScrfdFaceDetector
 import com.governence.faflow.ui.components.AppTopBar
 import com.governence.faflow.ui.components.PrimaryGradientButton
 import com.governence.faflow.ui.theme.PrimaryBlue
@@ -124,12 +124,12 @@ fun FaceEnrollmentScreen(
                     latestAlignmentResult = FaceAlignmentResult(
                         alignedBitmap = scaled,
                         transform = null,
-                        sourceLandmarks = landmarks ?: com.governence.faflow.face.model.FaceLandmarks(
-                            com.governence.faflow.face.model.FacePoint(30f, 40f),
-                            com.governence.faflow.face.model.FacePoint(82f, 40f),
-                            com.governence.faflow.face.model.FacePoint(56f, 65f),
-                            com.governence.faflow.face.model.FacePoint(36f, 90f),
-                            com.governence.faflow.face.model.FacePoint(76f, 90f)
+                        sourceLandmarks = landmarks ?: com.governence.faflow.attendance.biometrics.model.FaceLandmarks(
+                            com.governence.faflow.attendance.biometrics.model.FacePoint(30f, 40f),
+                            com.governence.faflow.attendance.biometrics.model.FacePoint(82f, 40f),
+                            com.governence.faflow.attendance.biometrics.model.FacePoint(56f, 65f),
+                            com.governence.faflow.attendance.biometrics.model.FacePoint(36f, 90f),
+                            com.governence.faflow.attendance.biometrics.model.FacePoint(76f, 90f)
                         ),
                         isValidGeometry = true,
                         errorMessage = null,
@@ -307,9 +307,17 @@ fun FaceEnrollmentScreen(
                             } else "Confirm Biometric Enrollment",
                             icon = Icons.Default.Fingerprint,
                             onClick = {
-                                val alignBmp = latestAlignmentResult?.alignedBitmap
+                                val alignBmp = latestAlignmentResult?.alignedBitmap ?: faceDetector.latestFrameBitmap.value
                                 if (alignBmp != null) {
-                                    val effectiveStaffId = staffId.ifBlank { "1" }
+                                    val appContainer = com.governence.faflow.core.di.AppContainer.getInstance(context)
+                                    val loggedInUserId = appContainer.tokenManager.getUserId()
+                                    val effectiveStaffId = if (staffId.isNotBlank() && staffId != "0") {
+                                        staffId
+                                    } else if (loggedInUserId > 0) {
+                                        loggedInUserId.toString()
+                                    } else {
+                                        "1"
+                                    }
                                     val effectiveStaffName = if (staffName.isNotBlank()) staffName else "Faculty Member"
 
                                     isEnrolling = true
@@ -333,12 +341,12 @@ fun FaceEnrollmentScreen(
                                             val sample3Bmp = latestAlignmentResult?.alignedBitmap ?: alignBmp
                                             samples.add(faceEmbedder.extractEmbedding(sample3Bmp))
 
-                                            // Validate pairwise consistency (> 0.70 threshold)
+                                            // Validate pairwise consistency (> 0.65 threshold)
                                             val sim12 = matcher.computeCosineSimilarity(samples[0], samples[1])
                                             val sim23 = matcher.computeCosineSimilarity(samples[1], samples[2])
                                             val sim13 = matcher.computeCosineSimilarity(samples[0], samples[2])
 
-                                            if (sim12 < 0.65f || sim23 < 0.65f || sim13 < 0.65f) {
+                                            if (sim12 < 0.60f || sim23 < 0.60f || sim13 < 0.60f) {
                                                 errorMessage = "Samples were inconsistent. Please look directly at the camera and try again."
                                                 return@launch
                                             }
@@ -355,10 +363,18 @@ fun FaceEnrollmentScreen(
                                                 staffName = effectiveStaffName,
                                                 embedding = finalEmbedding
                                             )
+                                            // Also save for loggedInUserId if different to guarantee check-in lookup succeeds
+                                            if (loggedInUserId > 0 && loggedInUserId.toString() != effectiveStaffId) {
+                                                enrollmentRepo.saveEnrollment(
+                                                    staffId = loggedInUserId.toString(),
+                                                    staffName = effectiveStaffName,
+                                                    embedding = finalEmbedding
+                                                )
+                                            }
+
                                             if (saved) {
                                                 enrollmentSuccess = true
                                                 try {
-                                                    val appContainer = com.governence.faflow.core.di.AppContainer.getInstance(context)
                                                     appContainer.apiService.enrollBiometrics()
                                                 } catch (_: Exception) {}
                                             } else {

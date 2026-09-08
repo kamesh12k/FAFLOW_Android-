@@ -24,6 +24,8 @@ import com.governence.faflow.ui.screens.ClasswiseTimetableScreen
 import com.governence.faflow.ui.screens.CreditsScreen
 import com.governence.faflow.ui.screens.DashboardScreen
 import com.governence.faflow.ui.screens.FaceEnrollmentScreen
+import com.governence.faflow.ui.screens.GeofenceAdminScreen
+import com.governence.faflow.ui.viewmodels.GeofenceAdminViewModel
 import com.governence.faflow.ui.screens.HodAttendanceScreen
 import com.governence.faflow.ui.screens.HodDashboardScreen
 import com.governence.faflow.ui.screens.HodFacultyDirectoryScreen
@@ -198,6 +200,7 @@ fun NavGraph(
             // Primary Bottom Nav Tab 4: More (Faculty Hub)
             composable(Screen.More.route) {
                 MoreScreen(
+                    userRole = userRole,
                     onNavigateToApplyLeave = { navController.navigate(Screen.ApplyLeave.route) },
                     onNavigateToLeaveHistory = { navController.navigate(Screen.LeaveHistory.route) },
                     onNavigateToCredits = { navController.navigate(Screen.Credits.route) },
@@ -208,7 +211,10 @@ fun NavGraph(
                     onNavigateToPreferences = { navController.navigate(Screen.Preferences.route) },
                     onNavigateToNotifications = { navController.navigate(Screen.Notifications.route) },
                     onNavigateToProfile = { navController.navigate(Screen.Profile.route) },
-                    onNavigateToSettings = { navController.navigate(Screen.Settings.route) }
+                    onNavigateToGeofences = { navController.navigate(Screen.GeofenceAdmin.route) },
+                    onNavigateToLeaveApprovals = { navController.navigate(Screen.HodLeaveApprovals.route) },
+                    onNavigateToLiveAttendance = { navController.navigate(Screen.HodAttendance.route) },
+                    onNavigateToFacultyDirectory = { navController.navigate(Screen.HodFacultyDirectory.route) }
                 )
             }
 
@@ -370,12 +376,10 @@ fun NavGraph(
             }
 
             // Attendance Check In/Out — uses shared attendanceViewModel.
-            // staffId is sourced from authState (StateFlow) to avoid main-thread EncryptedSharedPreferences access.
+            // Staff identity is derived inside the ViewModel from the authenticated session token.
             composable(Screen.AttendanceCheckInOut.route) {
-                val staffId = (authState as? AuthUiState.Authenticated)?.staff?.id?.toString() ?: ""
                 AttendanceCheckInOutScreen(
                     viewModel = attendanceViewModel,
-                    staffId = staffId,
                     onNavigateBack = { navController.popBackStack() },
                     onAttendanceSuccess = {
                         attendanceViewModel.loadTodaySummary()
@@ -386,7 +390,11 @@ fun NavGraph(
                                 popUpTo(homeDest) { inclusive = false }
                             }
                         }
-                    }
+                    },
+                    onNavigateToFaceEnrollment = {
+                        navController.navigate(Screen.FaceEnrollment.route)
+                    },
+                    userRole = userRole
                 )
             }
 
@@ -413,6 +421,18 @@ fun NavGraph(
 
             composable(Screen.SyncStatus.route) {
                 SyncStatusScreen(
+                    onNavigateBack = { navController.popBackStack() }
+                )
+            }
+
+            composable(Screen.GeofenceAdmin.route) { backStackEntry ->
+                val geofenceViewModel = remember(backStackEntry) {
+                    GeofenceAdminViewModel(
+                        apiService = appContainer.apiService
+                    )
+                }
+                GeofenceAdminScreen(
+                    viewModel = geofenceViewModel,
                     onNavigateBack = { navController.popBackStack() }
                 )
             }

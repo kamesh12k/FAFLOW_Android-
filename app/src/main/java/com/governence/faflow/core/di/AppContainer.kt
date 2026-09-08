@@ -13,8 +13,8 @@ import com.governence.faflow.faflow.data.NotificationRepositoryImpl
 import com.governence.faflow.faflow.data.PreferencesRepositoryImpl
 import com.governence.faflow.faflow.data.SubstitutionRepositoryImpl
 import com.governence.faflow.faflow.data.TimetableRepositoryImpl
-import com.governence.faflow.location.GeofenceValidator
-import com.governence.faflow.location.StaffLocationProvider
+import com.governence.faflow.attendance.geolocation.GeofenceValidator
+import com.governence.faflow.attendance.geolocation.StaffLocationProvider
 
 /**
  * Service locator / Dependency container for FAFLOW Staff Mobile.
@@ -96,13 +96,14 @@ class AppContainer(private val context: Context) {
     }
 
     val geofenceValidator: GeofenceValidator by lazy {
-        GeofenceValidator(maxAccuracyThresholdMeters = 30.0f)
+        GeofenceValidator(maxAccuracyThresholdMeters = 50.0f)
     }
 
     val geofenceRepository: GeofenceRepository by lazy {
         GeofenceRepository(
             locationProvider = staffLocationProvider,
-            geofenceValidator = geofenceValidator
+            geofenceValidator = geofenceValidator,
+            apiService = apiService
         )
     }
 
@@ -120,45 +121,52 @@ class AppContainer(private val context: Context) {
     }
 
     // Milestone 8 & 9: On-Device Biometric Face AI Subsystem (Lazy - does not block startup)
-    val scrfdModelManager: com.governence.faflow.face.model.ScrfdModelManager by lazy {
-        com.governence.faflow.face.model.ScrfdModelManager(context.applicationContext)
+    val scrfdModelManager: com.governence.faflow.attendance.biometrics.model.ScrfdModelManager by lazy {
+        com.governence.faflow.attendance.biometrics.model.ScrfdModelManager(context.applicationContext)
     }
 
-    val faceDetector: com.governence.faflow.face.scrfd.ScrfdFaceDetector by lazy {
-        com.governence.faflow.face.scrfd.ScrfdFaceDetector(scrfdModelManager)
+    val faceDetector: com.governence.faflow.attendance.biometrics.scrfd.ScrfdFaceDetector by lazy {
+        com.governence.faflow.attendance.biometrics.scrfd.ScrfdFaceDetector(scrfdModelManager)
     }
 
-    val mobileFaceNetModelManager: com.governence.faflow.face.model.MobileFaceNetModelManager by lazy {
-        com.governence.faflow.face.model.MobileFaceNetModelManager(context.applicationContext)
+    val mobileFaceNetModelManager: com.governence.faflow.attendance.biometrics.model.MobileFaceNetModelManager by lazy {
+        com.governence.faflow.attendance.biometrics.model.MobileFaceNetModelManager(context.applicationContext)
     }
 
-    val faceEmbedder: com.governence.faflow.face.FaceEmbedder by lazy {
-        com.governence.faflow.face.embedding.MobileFaceNetEmbedder(mobileFaceNetModelManager)
+    val faceEmbedder: com.governence.faflow.attendance.biometrics.FaceEmbedder by lazy {
+        com.governence.faflow.attendance.biometrics.embedding.MobileFaceNetEmbedder(mobileFaceNetModelManager)
     }
 
-    val faceAligner: com.governence.faflow.face.alignment.SimilarityFaceAligner by lazy {
-        com.governence.faflow.face.alignment.SimilarityFaceAligner()
+    val faceAligner: com.governence.faflow.attendance.biometrics.alignment.SimilarityFaceAligner by lazy {
+        com.governence.faflow.attendance.biometrics.alignment.SimilarityFaceAligner()
     }
 
-    val faceEnrollmentRepository: com.governence.faflow.face.enrollment.LocalFaceEnrollmentRepository by lazy {
-        com.governence.faflow.face.enrollment.LocalFaceEnrollmentRepository(context.applicationContext)
+    val faceEnrollmentRepository: com.governence.faflow.attendance.biometrics.enrollment.LocalFaceEnrollmentRepository by lazy {
+        com.governence.faflow.attendance.biometrics.enrollment.LocalFaceEnrollmentRepository(context.applicationContext)
     }
 
-    val faceMatcher: com.governence.faflow.face.matching.CosineFaceMatcher by lazy {
-        com.governence.faflow.face.matching.CosineFaceMatcher()
+    val faceMatcher: com.governence.faflow.attendance.biometrics.matching.CosineFaceMatcher by lazy {
+        com.governence.faflow.attendance.biometrics.matching.CosineFaceMatcher()
     }
 
-    val livenessEngine: com.governence.faflow.face.liveness.LivenessEngine by lazy {
-        com.governence.faflow.face.liveness.LivenessEngine()
+    val livenessEngine: com.governence.faflow.attendance.biometrics.liveness.LivenessEngine by lazy {
+        com.governence.faflow.attendance.biometrics.liveness.LivenessEngine()
     }
 
-    val faceRecognitionEngine: com.governence.faflow.face.recognition.FaceRecognitionEngine by lazy {
-        com.governence.faflow.face.recognition.FaceRecognitionEngine(
+    val faceRecognitionEngine: com.governence.faflow.attendance.biometrics.recognition.FaceRecognitionEngine by lazy {
+        com.governence.faflow.attendance.biometrics.recognition.FaceRecognitionEngine(
             aligner = faceAligner,
             embedder = faceEmbedder,
             matcher = faceMatcher,
             enrollmentRepository = faceEnrollmentRepository,
             livenessEngine = livenessEngine
+        )
+    }
+
+    val attendancePipelineOrchestrator: com.governence.faflow.attendance.pipeline.AttendancePipelineOrchestrator by lazy {
+        com.governence.faflow.attendance.pipeline.AttendancePipelineOrchestrator(
+            attendanceRepository = attendanceRepository,
+            recognitionEngine = faceRecognitionEngine
         )
     }
 

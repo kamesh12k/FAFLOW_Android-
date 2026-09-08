@@ -48,6 +48,12 @@ android {
         }
     }
 
+    testOptions {
+        unitTests {
+            isReturnDefaultValues = true
+        }
+    }
+
     kotlin {
         compilerOptions {
             freeCompilerArgs.add("-Xannotation-default-target=param-property")

@@ -1,21 +1,21 @@
 package com.governence.faflow.face
 
-import com.governence.faflow.face.alignment.SimilarityFaceAligner
-import com.governence.faflow.face.embedding.FaceRecognitionConfig
-import com.governence.faflow.face.embedding.MobileFaceNetEmbedder
-import com.governence.faflow.face.matching.CosineFaceMatcher
-import com.governence.faflow.face.model.FaceBox
-import com.governence.faflow.face.model.FaceDetectionResult
-import com.governence.faflow.face.model.FaceLandmarks
-import com.governence.faflow.face.model.FacePoint
-import com.governence.faflow.face.model.FaceQuality
-import com.governence.faflow.face.model.MobileFaceNetModelMetadata
-import com.governence.faflow.face.quality.FaceQualityCheckResult
-import com.governence.faflow.face.quality.FaceQualityValidator
-import com.governence.faflow.face.quality.QualityErrorCode
+import com.governence.faflow.attendance.biometrics.alignment.SimilarityFaceAligner
+import com.governence.faflow.attendance.biometrics.embedding.FaceRecognitionConfig
+import com.governence.faflow.attendance.biometrics.embedding.MobileFaceNetEmbedder
+import com.governence.faflow.attendance.biometrics.matching.CosineFaceMatcher
+import com.governence.faflow.attendance.biometrics.model.FaceBox
+import com.governence.faflow.attendance.biometrics.model.FaceDetectionResult
+import com.governence.faflow.attendance.biometrics.model.FaceLandmarks
+import com.governence.faflow.attendance.biometrics.model.FacePoint
+import com.governence.faflow.attendance.biometrics.model.FaceQuality
+import com.governence.faflow.attendance.biometrics.model.MobileFaceNetModelMetadata
+import com.governence.faflow.attendance.biometrics.quality.FaceQualityCheckResult
+import com.governence.faflow.attendance.biometrics.quality.FaceQualityValidator
+import com.governence.faflow.attendance.biometrics.quality.QualityErrorCode
 import com.governence.faflow.faflow.data.GeofenceRepository
-import com.governence.faflow.location.LocationProvider
-import com.governence.faflow.location.StaffLiveLocation
+import com.governence.faflow.attendance.geolocation.LocationProvider
+import com.governence.faflow.attendance.geolocation.StaffLiveLocation
 import com.governence.faflow.ui.viewmodels.AttendanceViewModel
 import com.governence.faflow.ui.viewmodels.AutoCaptureState
 import kotlinx.coroutines.flow.Flow
@@ -60,10 +60,12 @@ class FaceRecognitionProductionTest {
     @Before
     fun setUp() {
         Dispatchers.setMain(testDispatcher)
+        AttendanceViewModel.BYPASS_LIVENESS_FOR_TESTING = true
     }
 
     @After
     fun tearDown() {
+        AttendanceViewModel.BYPASS_LIVENESS_FOR_TESTING = false
         Dispatchers.resetMain()
     }
 

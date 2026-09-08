@@ -47,10 +47,15 @@ import com.governence.faflow.ui.components.PremiumTopBar
 import com.governence.faflow.ui.theme.FaflowRoleColors
 import com.governence.faflow.ui.theme.FaflowShapes
 import com.governence.faflow.ui.theme.FaflowSpacing
+import androidx.compose.material.icons.filled.AssignmentTurnedIn
+import androidx.compose.material.icons.filled.Groups
+import androidx.compose.material.icons.filled.LocationOn
+import androidx.compose.material.icons.filled.SupervisorAccount
 import com.governence.faflow.ui.theme.FaflowStatusColors
 
 @Composable
 fun MoreScreen(
+    userRole: String? = "teacher",
     onNavigateToApplyLeave: () -> Unit,
     onNavigateToLeaveHistory: () -> Unit,
     onNavigateToCredits: () -> Unit,
@@ -61,8 +66,14 @@ fun MoreScreen(
     onNavigateToPreferences: () -> Unit,
     onNavigateToNotifications: () -> Unit,
     onNavigateToProfile: () -> Unit,
-    onNavigateToSettings: () -> Unit
+    onNavigateToGeofences: () -> Unit = {},
+    onNavigateToLeaveApprovals: () -> Unit = {},
+    onNavigateToLiveAttendance: () -> Unit = {},
+    onNavigateToFacultyDirectory: () -> Unit = {}
 ) {
+    val roleLower = userRole?.lowercase() ?: "teacher"
+    val isManagement = roleLower == "admin" || roleLower == "hod" || roleLower == "principal" || roleLower == "governance" || roleLower == "manager"
+
     Scaffold(
         topBar = {
             Column(
@@ -72,7 +83,7 @@ fun MoreScreen(
                     .padding(horizontal = 18.dp, vertical = 12.dp)
             ) {
                 Text(
-                    text = "Faculty hub",
+                    text = if (isManagement) "Operations hub" else "Faculty hub",
                     fontSize = 19.sp,
                     fontWeight = FontWeight.Bold,
                     letterSpacing = (-0.01).sp,
@@ -80,7 +91,7 @@ fun MoreScreen(
                 )
                 Spacer(modifier = Modifier.height(2.dp))
                 Text(
-                    text = "Services, preferences & management",
+                    text = if (isManagement) "Department administration & oversight" else "Services, preferences & management",
                     fontSize = 12.sp,
                     color = com.governence.faflow.ui.theme.FaflowText3
                 )
@@ -97,6 +108,57 @@ fun MoreScreen(
             contentPadding = PaddingValues(top = 0.dp, bottom = 28.dp),
             verticalArrangement = Arrangement.spacedBy(0.dp)
         ) {
+            if (isManagement) {
+                item {
+                    Text(
+                        text = "DEPARTMENT & GOVERNANCE",
+                        fontSize = 10.5.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 0.08.sp,
+                        color = com.governence.faflow.ui.theme.FaflowText3,
+                        modifier = Modifier.padding(start = 2.dp, top = 8.dp, bottom = 8.dp)
+                    )
+                    com.governence.faflow.ui.components.FaflowListCard {
+                        com.governence.faflow.ui.components.FaflowListRow(
+                            icon = Icons.Default.AssignmentTurnedIn,
+                            iconBg = com.governence.faflow.ui.theme.FaflowNavyTint,
+                            iconTint = com.governence.faflow.ui.theme.FaflowNavy,
+                            title = "Leave approvals queue",
+                            subtitle = "Review and approve faculty requests",
+                            showDivider = true,
+                            onClick = onNavigateToLeaveApprovals
+                        )
+                        com.governence.faflow.ui.components.FaflowListRow(
+                            icon = Icons.Default.LocationOn,
+                            iconBg = com.governence.faflow.ui.theme.FaflowTealTint,
+                            iconTint = com.governence.faflow.ui.theme.FaflowTeal,
+                            title = "Campus geofence boundaries",
+                            subtitle = "Manage authorized attendance zones",
+                            showDivider = true,
+                            onClick = onNavigateToGeofences
+                        )
+                        com.governence.faflow.ui.components.FaflowListRow(
+                            icon = Icons.Default.SupervisorAccount,
+                            iconBg = com.governence.faflow.ui.theme.FaflowVioletTint,
+                            iconTint = com.governence.faflow.ui.theme.FaflowViolet,
+                            title = "Live attendance shifts",
+                            subtitle = "Real-time presence across departments",
+                            showDivider = true,
+                            onClick = onNavigateToLiveAttendance
+                        )
+                        com.governence.faflow.ui.components.FaflowListRow(
+                            icon = Icons.Default.Groups,
+                            iconBg = com.governence.faflow.ui.theme.FaflowGoldTint,
+                            iconTint = com.governence.faflow.ui.theme.FaflowGold,
+                            title = "Faculty directory",
+                            subtitle = "Workload and profile inspection",
+                            showDivider = false,
+                            onClick = onNavigateToFacultyDirectory
+                        )
+                    }
+                }
+            }
+
             // Group 1: LEAVES & CREDITS
             item {
                 Text(
@@ -105,7 +167,7 @@ fun MoreScreen(
                     fontWeight = FontWeight.Bold,
                     letterSpacing = 0.08.sp,
                     color = com.governence.faflow.ui.theme.FaflowText3,
-                    modifier = Modifier.padding(start = 2.dp, top = 8.dp, bottom = 8.dp)
+                    modifier = Modifier.padding(start = 2.dp, top = if (isManagement) 20.dp else 8.dp, bottom = 8.dp)
                 )
                 com.governence.faflow.ui.components.FaflowListCard {
                     com.governence.faflow.ui.components.FaflowListRow(
@@ -170,10 +232,10 @@ fun MoreScreen(
                 }
             }
 
-            // Group 3: ACCOUNT & SETTINGS
+            // Group 3: ACCOUNT
             item {
                 Text(
-                    text = "ACCOUNT & SETTINGS",
+                    text = "ACCOUNT",
                     fontSize = 10.5.sp,
                     fontWeight = FontWeight.Bold,
                     letterSpacing = 0.08.sp,
@@ -187,17 +249,8 @@ fun MoreScreen(
                         iconTint = com.governence.faflow.ui.theme.FaflowSlate,
                         title = "Staff profile",
                         subtitle = "Personal, institutional and role details",
-                        showDivider = true,
-                        onClick = onNavigateToProfile
-                    )
-                    com.governence.faflow.ui.components.FaflowListRow(
-                        icon = Icons.Default.Settings,
-                        iconBg = com.governence.faflow.ui.theme.FaflowSlateTint,
-                        iconTint = com.governence.faflow.ui.theme.FaflowSlate,
-                        title = "Settings",
-                        subtitle = "App configuration, network & preferences",
                         showDivider = false,
-                        onClick = onNavigateToSettings
+                        onClick = onNavigateToProfile
                     )
                 }
             }

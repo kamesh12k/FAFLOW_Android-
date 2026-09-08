@@ -41,7 +41,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.governence.faflow.location.LocationVerificationResult
+import com.governence.faflow.attendance.geolocation.LocationVerificationResult
 import com.governence.faflow.ui.components.AppTopBar
 import com.governence.faflow.ui.components.PrimaryGradientButton
 import com.governence.faflow.ui.theme.PrimaryBlue
@@ -264,21 +264,21 @@ fun StaffAttendanceScreen(
             // 3. BIOMETRIC ACTION BUTTON (.btn-checkin)
             item {
                 val buttonText = when {
-                    hasCheckedOut -> "Shift Completed for Today"
+                    hasCheckedOut -> "Test Another Check-In"
                     hasCheckedIn -> "Check out with biometrics"
                     else -> "Check in with biometrics"
                 }
 
                 Button(
                     onClick = {
-                        if (!hasCheckedIn) {
+                        if (!hasCheckedIn || hasCheckedOut) {
                             viewModel.prepareSessionForCheckIn()
                         } else {
                             viewModel.prepareSessionForCheckOut()
                         }
                         onNavigateToCheckIn()
                     },
-                    enabled = !hasCheckedOut,
+                    enabled = true,
                     shape = RoundedCornerShape(11.dp),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = com.governence.faflow.ui.theme.FaflowNavy,
