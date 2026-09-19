@@ -20,13 +20,13 @@ import com.squareup.moshi.Types
 class StudentAttendanceLocalDb(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, null, DATABASE_VERSION) {
 
     private val moshi = FaflowApiClient.moshi
-    private val scheduleAdapter = moshi.adapter(TeacherTodayScheduleDto::class.java)
+    private val scheduleAdapter = moshi.adapter(TeacherTodayScheduleDto::class.java).lenient()
     private val classListAdapter = moshi.adapter<List<ClassOutDto>>(
         Types.newParameterizedType(List::class.java, ClassOutDto::class.java)
-    )
-    private val rosterAdapter = moshi.adapter(ClassRosterDto::class.java)
-    private val sessionAdapter = moshi.adapter(AttendanceSessionDto::class.java)
-    private val operationAdapter = moshi.adapter(OfflineSyncOperationDto::class.java)
+    ).lenient()
+    private val rosterAdapter = moshi.adapter(ClassRosterDto::class.java).lenient()
+    private val sessionAdapter = moshi.adapter(AttendanceSessionDto::class.java).lenient()
+    private val operationAdapter = moshi.adapter(OfflineSyncOperationDto::class.java).lenient()
 
     override fun onCreate(db: SQLiteDatabase) {
         // 1. Cached Schedule
