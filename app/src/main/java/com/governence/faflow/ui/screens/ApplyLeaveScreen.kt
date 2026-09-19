@@ -60,13 +60,9 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-private val PERIOD_TIME_MAP = mapOf(
-    1 to "8:00–9:00",
-    2 to "9:00–10:00",
-    3 to "10:15–11:15",
-    4 to "11:15–12:15",
-    5 to "1:00–2:00"
-)
+import com.governence.faflow.domain.model.InstitutionalSchedule
+
+private val PERIOD_TIME_MAP = InstitutionalSchedule.PERIOD_TIMES
 
 private val REASON_PRESETS = listOf(
     "Personal reason",
@@ -324,12 +320,36 @@ fun ApplyLeaveScreen(
             Spacer(modifier = Modifier.height(FaflowSpacing.lg))
 
             // Period Selector Chips
-            Text(
-                text = if (isWholeDay) "All Periods Included" else "Select Absence Periods",
-                style = MaterialTheme.typography.labelMedium,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurface
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = if (isWholeDay) "All Periods Included" else "Select Absence Periods",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                if (!isWholeDay) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(
+                            text = "Select All",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = com.governence.faflow.ui.theme.PrimaryBlue,
+                            modifier = Modifier.clickable { selectedPeriods = setOf(1, 2, 3, 4, 5) }
+                        )
+                        Text(
+                            text = "Clear All",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = com.governence.faflow.ui.theme.StatusError,
+                            modifier = Modifier.clickable { selectedPeriods = setOf(1) }
+                        )
+                    }
+                }
+            }
             Spacer(modifier = Modifier.height(FaflowSpacing.xs))
             Row(
                 modifier = Modifier.fillMaxWidth(),

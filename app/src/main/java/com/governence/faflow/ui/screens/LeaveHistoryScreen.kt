@@ -84,15 +84,10 @@ import com.governence.faflow.ui.theme.StatusWarning
 import com.governence.faflow.ui.viewmodels.LeaveViewModel
 import java.text.SimpleDateFormat
 import java.util.Calendar
+import com.governence.faflow.domain.model.InstitutionalSchedule
 import java.util.Locale
 
-private val PERIOD_TIME_MAP = mapOf(
-    1 to "8:00–9:00",
-    2 to "9:00–10:00",
-    3 to "10:15–11:15",
-    4 to "11:15–12:15",
-    5 to "1:00–2:00"
-)
+private val PERIOD_TIME_MAP = InstitutionalSchedule.PERIOD_TIMES
 
 private fun formatDisplayDate(isoStr: String): String {
     return try {
@@ -593,6 +588,19 @@ fun LeaveHistoryScreen(
                                     selectedLabelColor = FaflowNavy
                                 )
                             )
+                        }
+                        if (selectedFilterTab != "ALL" || searchQuery.isNotEmpty()) {
+                            item {
+                                TextButton(
+                                    onClick = {
+                                        selectedFilterTab = "ALL"
+                                        searchQuery = ""
+                                    },
+                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                                ) {
+                                    Text("Clear All Filters", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = FaflowNavy)
+                                }
+                            }
                         }
                     }
                 }

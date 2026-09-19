@@ -92,20 +92,20 @@ fun NotificationsScreen(
                 canNavigateBack = true,
                 onNavigateBack = onNavigateBack,
                 actions = {
-                    if (state.unreadCount > 0) {
+                    if (state.notifications.isNotEmpty()) {
                         TextButton(onClick = { viewModel.markAllRead() }) {
                             Icon(
                                 Icons.Default.DoneAll,
-                                contentDescription = "Mark all read",
+                                contentDescription = "Clear All Notifications",
                                 tint = FaflowNavy,
                                 modifier = Modifier.size(18.dp)
                             )
                             Spacer(Modifier.width(4.dp))
                             Text(
-                                "Mark all",
+                                "Clear All",
                                 color = FaflowNavy,
                                 fontSize = 13.sp,
-                                fontWeight = FontWeight.SemiBold
+                                fontWeight = FontWeight.Bold
                             )
                         }
                     }

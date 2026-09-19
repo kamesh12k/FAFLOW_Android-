@@ -165,17 +165,7 @@ fun TimetableScreen(
 
 @Composable
 fun TimetablePeriodItem(period: Int, slot: TimetableSlot?) {
-    val periodTime = when (period) {
-        1 -> "9:20 – 10:20"
-        2 -> "10:20 – 11:15"
-        3 -> "11:40 – 12:35"
-        4 -> "13:35 – 14:30"
-        5 -> "14:55 – 15:50"
-        6 -> "Period 6"
-        7 -> "Period 7"
-        8 -> "Period 8"
-        else -> "Period $period"
-    }
+    val periodTime = com.governence.faflow.domain.model.InstitutionalSchedule.getPeriodTime(period)
 
     val isBusy = slot != null
 

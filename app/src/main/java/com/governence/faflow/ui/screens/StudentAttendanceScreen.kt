@@ -679,9 +679,9 @@ fun StudentAttendanceScreen(
                                     onClick = { viewModel.clearAttendance() },
                                     contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
                                 ) {
-                                    Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(14.dp), tint = Color(0xFF64748B))
+                                    Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(14.dp), tint = Color(0xFFE11D48))
                                     Spacer(modifier = Modifier.width(4.dp))
-                                    Text("Reset", fontSize = 12.sp, color = Color(0xFF64748B))
+                                    Text("Clear All", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFFE11D48))
                                 }
                             }
                         }
@@ -719,7 +719,8 @@ fun StudentAttendanceScreen(
                         // Filter Chips Row
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
                             FilterChip(
                                 selected = state.selectedFilter == RosterFilter.ALL,
@@ -757,6 +758,17 @@ fun StudentAttendanceScreen(
                                     selectedLabelColor = Color.White
                                 )
                             )
+                            if (state.selectedFilter != RosterFilter.ALL || state.searchQuery.isNotBlank()) {
+                                TextButton(
+                                    onClick = {
+                                        viewModel.setFilter(RosterFilter.ALL)
+                                        viewModel.updateSearchQuery("")
+                                    },
+                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
+                                ) {
+                                    Text("Clear All Filters", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF64748B))
+                                }
+                            }
                         }
                     }
                 }

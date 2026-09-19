@@ -79,25 +79,7 @@ class DashboardViewModel(
         val minutesSinceMidnight = cal.get(java.util.Calendar.HOUR_OF_DAY) * 60 + cal.get(java.util.Calendar.MINUTE)
 
         // Calculate period based on standard academic timings or server authority
-        val period = serverCurrentPeriod ?: when (minutesSinceMidnight) {
-            // Period 1: 09:20 – 10:20
-            in (9 * 60 + 20)..(10 * 60 + 19) -> 1
-            // Period 2: 10:20 – 11:15
-            in (10 * 60 + 20)..(11 * 60 + 14) -> 2
-            // Break: 11:15 – 11:40 (no period)
-            in (11 * 60 + 15)..(11 * 60 + 39) -> null
-            // Period 3: 11:40 – 12:35
-            in (11 * 60 + 40)..(12 * 60 + 34) -> 3
-            // Lunch: 12:35 – 13:35 (no period)
-            in (12 * 60 + 35)..(13 * 60 + 34) -> null
-            // Period 4: 13:35 – 14:30
-            in (13 * 60 + 35)..(14 * 60 + 29) -> 4
-            // Break: 14:30 – 14:55 (no period)
-            in (14 * 60 + 30)..(14 * 60 + 54) -> null
-            // Period 5: 14:55 – 15:50
-            in (14 * 60 + 55)..(15 * 60 + 49) -> 5
-            else -> null
-        }
+        val period = serverCurrentPeriod ?: com.governence.faflow.domain.model.InstitutionalSchedule.resolvePeriodNumber(minutesSinceMidnight)
 
         val active = if (period != null) slots.firstOrNull { it.periodNumber == period } else null
         val nextUpcoming = if (period != null) {
@@ -184,7 +166,9 @@ class DashboardViewModel(
                     }
                 }
                 is NetworkResult.Error -> {
-                    if (summaryRes.code == -1) hasConnectionError = true
+                    if (summaryRes.code == -1) {
+                        hasConnectionError = true
+                    }
                     _uiState.value = _uiState.value.copy(isSummaryLoading = false)
                 }
                 NetworkResult.Loading -> Unit
@@ -215,7 +199,6 @@ class DashboardViewModel(
                     )
                 }
                 is NetworkResult.Error -> {
-                    if (creditRes.code == -1) hasConnectionError = true
                     _uiState.value = _uiState.value.copy(isCreditsLoading = false)
                 }
                 NetworkResult.Loading -> Unit
@@ -230,7 +213,6 @@ class DashboardViewModel(
                     )
                 }
                 is NetworkResult.Error -> {
-                    if (dutyRes.code == -1) hasConnectionError = true
                     _uiState.value = _uiState.value.copy(isDutiesLoading = false)
                 }
                 NetworkResult.Loading -> Unit

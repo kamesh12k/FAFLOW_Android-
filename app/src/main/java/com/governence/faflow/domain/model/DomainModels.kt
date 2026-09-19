@@ -164,13 +164,8 @@ data class LeaveHistoryDay(
         get() = coveredPeriodsCount > 0
 
     companion object {
-        val PERIOD_TIMES = mapOf(
-            1 to "9:20–10:20",
-            2 to "10:20–11:15",
-            3 to "11:40–12:35",
-            4 to "13:35–14:30",
-            5 to "14:55–15:50"
-        )
+        val PERIOD_TIMES: Map<Int, String>
+            get() = InstitutionalSchedule.PERIOD_TIMES
     }
 }
 
