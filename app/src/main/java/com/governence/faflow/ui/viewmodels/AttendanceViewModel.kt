@@ -263,7 +263,13 @@ class AttendanceViewModel(
                                 is StaffBiometricVerificationState.Embedding -> AttendancePipelineStatus.FaceVerification
                                 is StaffBiometricVerificationState.VerificationFailed -> AttendancePipelineStatus.VerificationFailed(identity.reason)
                                 is StaffBiometricVerificationState.Verified -> {
-                                    when (liveness) {
+                                    if (BYPASS_LIVENESS_FOR_TESTING) {
+                                        if (_uiState.value.isCheckingIn) {
+                                            AttendancePipelineStatus.ReadyForCheckIn(identity.staffId, identity.similarity)
+                                        } else {
+                                            AttendancePipelineStatus.ReadyForCheckOut(identity.staffId)
+                                        }
+                                    } else when (liveness) {
                                         is LivenessState.ChallengeActive -> AttendancePipelineStatus.LivenessCheck(liveness.instructions, liveness.progress)
                                         is LivenessState.SpoofSuspected -> AttendancePipelineStatus.VerificationFailed("Liveness rejected: ${liveness.reason}")
                                         is LivenessState.Passed -> {
@@ -301,17 +307,25 @@ class AttendanceViewModel(
                                         is StaffBiometricVerificationState.Embedding -> AttendancePipelineStatus.FaceVerification
                                         is StaffBiometricVerificationState.VerificationFailed -> AttendancePipelineStatus.VerificationFailed(identity.reason)
                                         is StaffBiometricVerificationState.Verified -> {
-                                            when (liveness) {
-                                                is LivenessState.ChallengeActive -> AttendancePipelineStatus.LivenessCheck(liveness.instructions, liveness.progress)
-                                                is LivenessState.SpoofSuspected -> AttendancePipelineStatus.VerificationFailed("Liveness rejected: ${liveness.reason}")
-                                                is LivenessState.Passed -> {
-                                                    if (_uiState.value.isCheckingIn) {
-                                                        AttendancePipelineStatus.ReadyForCheckIn(identity.staffId, identity.similarity)
-                                                    } else {
-                                                        AttendancePipelineStatus.ReadyForCheckOut(identity.staffId)
-                                                    }
+                                            if (BYPASS_LIVENESS_FOR_TESTING) {
+                                                if (_uiState.value.isCheckingIn) {
+                                                    AttendancePipelineStatus.ReadyForCheckIn(identity.staffId, identity.similarity)
+                                                } else {
+                                                    AttendancePipelineStatus.ReadyForCheckOut(identity.staffId)
                                                 }
-                                                else -> AttendancePipelineStatus.FaceDetected
+                                            } else {
+                                                when (liveness) {
+                                                    is LivenessState.ChallengeActive -> AttendancePipelineStatus.LivenessCheck(liveness.instructions, liveness.progress)
+                                                    is LivenessState.SpoofSuspected -> AttendancePipelineStatus.VerificationFailed("Liveness rejected: ${liveness.reason}")
+                                                    is LivenessState.Passed -> {
+                                                        if (_uiState.value.isCheckingIn) {
+                                                            AttendancePipelineStatus.ReadyForCheckIn(identity.staffId, identity.similarity)
+                                                        } else {
+                                                            AttendancePipelineStatus.ReadyForCheckOut(identity.staffId)
+                                                        }
+                                                    }
+                                                    else -> AttendancePipelineStatus.FaceDetected
+                                                }
                                             }
                                         }
                                         else -> AttendancePipelineStatus.FaceDetected
@@ -356,13 +370,13 @@ class AttendanceViewModel(
             identity is StaffBiometricVerificationState.VerificationFailed -> AttendanceEligibilityState.Blocked(identity.reason)
             identity is StaffBiometricVerificationState.NoEnrollment -> AttendanceEligibilityState.Blocked("Biometric profile not enrolled for staff member #${identity.staffId}")
             identity !is StaffBiometricVerificationState.Verified -> AttendanceEligibilityState.IdentityVerificationRequired
-            liveness is LivenessState.SpoofSuspected -> AttendanceEligibilityState.Blocked("Presentation attack suspected: ${liveness.reason}")
-            liveness is LivenessState.TimedOut -> AttendanceEligibilityState.Blocked("Liveness challenge timed out. Please try again.")
-            liveness !is LivenessState.Passed -> AttendanceEligibilityState.LivenessRequired
+            !BYPASS_LIVENESS_FOR_TESTING && liveness is LivenessState.SpoofSuspected -> AttendanceEligibilityState.Blocked("Presentation attack suspected: ${liveness.reason}")
+            !BYPASS_LIVENESS_FOR_TESTING && liveness is LivenessState.TimedOut -> AttendanceEligibilityState.Blocked("Liveness challenge timed out. Please try again.")
+            !BYPASS_LIVENESS_FOR_TESTING && liveness !is LivenessState.Passed -> AttendanceEligibilityState.LivenessRequired
             else -> AttendanceEligibilityState.VerifiedAndReady(
                 staffId = (identity as StaffBiometricVerificationState.Verified).staffId,
                 similarity = identity.similarity,
-                livenessScore = (liveness as LivenessState.Passed).livenessScore
+                livenessScore = if (BYPASS_LIVENESS_FOR_TESTING) 1.0f else (liveness as LivenessState.Passed).livenessScore
             )
         }
     }.stateIn(viewModelScope, SharingStarted.Eagerly, AttendanceEligibilityState.CheckingRequirements)
@@ -466,13 +480,13 @@ class AttendanceViewModel(
         frameHeight: Int = 480
     ) {
         // 0. Once captured and locked, bypass unless we are in liveness verification stage
-        if (isCaptureLockedFlag.get() && _verificationStep.value != VerificationStep.LIVENESS_VERIFYING) {
+        if (isCaptureLockedFlag.get() && (BYPASS_LIVENESS_FOR_TESTING || _verificationStep.value != VerificationStep.LIVENESS_VERIFYING)) {
             return
         }
 
         // Concurrency backpressure: discard frame if prior evaluation is still in flight
         if (!isEvaluatingFrame.compareAndSet(false, true)) {
-            if (_verificationStep.value == VerificationStep.LIVENESS_VERIFYING) {
+            if (!BYPASS_LIVENESS_FOR_TESTING && _verificationStep.value == VerificationStep.LIVENESS_VERIFYING) {
                 droppedLivenessFrames.incrementAndGet()
             }
             return
@@ -480,8 +494,8 @@ class AttendanceViewModel(
 
         val frameStartNs = System.nanoTime()
         try {
-            // 1. TWO-BLINK LIVENESS STAGE (Runs ONLY after Face Verification has passed)
-            if (_verificationStep.value == VerificationStep.LIVENESS_VERIFYING) {
+            // 1. TWO-BLINK LIVENESS STAGE (Runs ONLY after Face Verification has passed and liveness is not bypassed)
+            if (!BYPASS_LIVENESS_FOR_TESTING && _verificationStep.value == VerificationStep.LIVENESS_VERIFYING) {
                 val currentFrameIndex = totalLivenessFrames.incrementAndGet()
                 val primaryFace = detections.firstOrNull()
                 if (primaryFace != null) {
@@ -873,7 +887,7 @@ class AttendanceViewModel(
                         activeSession.markFaceVerified(targetStaffId, recognitionResult.similarity)
 
                         if (BYPASS_LIVENESS_FOR_TESTING) {
-                            activeSession.recordBlink(2)
+                            activeSession.markLivenessBypassed()
                             _verificationStep.value = VerificationStep.VERIFIED
                             _livenessState.value = LivenessState.Passed(1.0f, PresentationAttackRisk.LOW)
                             isCaptureLockedFlag.set(false)
@@ -951,7 +965,7 @@ class AttendanceViewModel(
         sessionId: String,
         capturedBitmap: Bitmap? = null
     ) {
-        if (!activeSession.canSubmitAttendance(sessionId)) {
+        if (!activeSession.canSubmitAttendance(sessionId, bypassLiveness = BYPASS_LIVENESS_FOR_TESTING)) {
             logAttendance("BLOCKED - Verification criteria not satisfied (session=$sessionId)")
             return
         }
@@ -1049,7 +1063,7 @@ class AttendanceViewModel(
 
     companion object {
         var BYPASS_GEOLOCATION_FOR_TESTING = false
-        var BYPASS_LIVENESS_FOR_TESTING = false  // Zero-bypass policy enforced
+        var BYPASS_LIVENESS_FOR_TESTING = true  // Liveness detection disabled per request: face match only
 
         fun calculateLiveWorkingDuration(checkInStr: String?): String? {
             if (checkInStr.isNullOrBlank()) return null

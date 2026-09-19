@@ -174,39 +174,47 @@ class HodViewModel(
     }
 
     fun approveLeave(leaveId: Int) {
+        approveLeaves(listOf(leaveId))
+    }
+
+    fun approveLeaves(leaveIds: List<Int>) {
+        if (leaveIds.isEmpty()) return
         viewModelScope.launch {
             _leavesState.value = _leavesState.value.copy(isLoading = true)
-            when (val res = hodRepository.approveLeave(leaveId)) {
-                is NetworkResult.Success -> {
-                    loadDepartmentLeaves()
-                    loadDashboardData()
+            var lastError: String? = null
+            for (id in leaveIds) {
+                val res = hodRepository.approveLeave(id)
+                if (res is NetworkResult.Error) {
+                    lastError = res.message
                 }
-                is NetworkResult.Error -> {
-                    _leavesState.value = _leavesState.value.copy(
-                        isLoading = false,
-                        errorMessage = res.message
-                    )
-                }
-                NetworkResult.Loading -> {}
+            }
+            loadDepartmentLeaves()
+            loadDashboardData()
+            if (lastError != null) {
+                _leavesState.value = _leavesState.value.copy(errorMessage = lastError)
             }
         }
     }
 
     fun rejectLeave(leaveId: Int) {
+        rejectLeaves(listOf(leaveId))
+    }
+
+    fun rejectLeaves(leaveIds: List<Int>) {
+        if (leaveIds.isEmpty()) return
         viewModelScope.launch {
             _leavesState.value = _leavesState.value.copy(isLoading = true)
-            when (val res = hodRepository.rejectLeave(leaveId)) {
-                is NetworkResult.Success -> {
-                    loadDepartmentLeaves()
-                    loadDashboardData()
+            var lastError: String? = null
+            for (id in leaveIds) {
+                val res = hodRepository.rejectLeave(id)
+                if (res is NetworkResult.Error) {
+                    lastError = res.message
                 }
-                is NetworkResult.Error -> {
-                    _leavesState.value = _leavesState.value.copy(
-                        isLoading = false,
-                        errorMessage = res.message
-                    )
-                }
-                NetworkResult.Loading -> {}
+            }
+            loadDepartmentLeaves()
+            loadDashboardData()
+            if (lastError != null) {
+                _leavesState.value = _leavesState.value.copy(errorMessage = lastError)
             }
         }
     }

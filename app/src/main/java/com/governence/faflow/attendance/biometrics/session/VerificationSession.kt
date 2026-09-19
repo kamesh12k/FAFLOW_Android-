@@ -111,6 +111,12 @@ data class VerificationSession(
         livenessStatus = LivenessVerificationStatus.TIMED_OUT
     }
 
+    fun markLivenessBypassed() {
+        livenessStatus = LivenessVerificationStatus.VERIFIED
+        blinkCount = 2
+        livenessVerifiedTimeMs = System.currentTimeMillis()
+    }
+
     fun cancel() {
         isCancelled = true
     }
@@ -119,13 +125,14 @@ data class VerificationSession(
      * Absolute atomic condition required before attendance submission is permitted.
      * Fails closed if session has expired, was cancelled, does not match, or either
      * face verification or double-blink liveness is incomplete.
+     * When bypassLiveness is true, only genuine face verification is mandated.
      */
-    fun canSubmitAttendance(targetSessionId: String): Boolean {
+    fun canSubmitAttendance(targetSessionId: String, bypassLiveness: Boolean = false): Boolean {
         return sessionId == targetSessionId &&
                 !isCancelled &&
                 !isExpired &&
                 isFaceVerified &&
-                isLivenessVerified &&
-                blinkCount >= 2
+                (bypassLiveness || (isLivenessVerified && blinkCount >= 2))
     }
 }
+
