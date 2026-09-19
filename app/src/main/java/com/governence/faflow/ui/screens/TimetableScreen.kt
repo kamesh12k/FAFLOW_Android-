@@ -166,14 +166,14 @@ fun TimetableScreen(
 @Composable
 fun TimetablePeriodItem(period: Int, slot: TimetableSlot?) {
     val periodTime = when (period) {
-        1 -> "8:45 – 9:40"
-        2 -> "9:40 – 10:35"
-        3 -> "10:50 – 11:45"
-        4 -> "11:45 – 12:40"
-        5 -> "1:30 – 2:25"
-        6 -> "2:25 – 3:20"
-        7 -> "3:20 – 4:15"
-        8 -> "4:15 – 5:00"
+        1 -> "9:20 – 10:20"
+        2 -> "10:20 – 11:15"
+        3 -> "11:40 – 12:35"
+        4 -> "13:35 – 14:30"
+        5 -> "14:55 – 15:50"
+        6 -> "Period 6"
+        7 -> "Period 7"
+        8 -> "Period 8"
         else -> "Period $period"
     }
 

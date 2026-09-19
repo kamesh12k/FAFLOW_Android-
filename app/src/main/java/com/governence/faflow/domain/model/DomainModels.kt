@@ -165,11 +165,11 @@ data class LeaveHistoryDay(
 
     companion object {
         val PERIOD_TIMES = mapOf(
-            1 to "8:00–9:00",
-            2 to "9:00–10:00",
-            3 to "10:15–11:15",
-            4 to "11:15–12:15",
-            5 to "1:00–2:00"
+            1 to "9:20–10:20",
+            2 to "10:20–11:15",
+            3 to "11:40–12:35",
+            4 to "13:35–14:30",
+            5 to "14:55–15:50"
         )
     }
 }

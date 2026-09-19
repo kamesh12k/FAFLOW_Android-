@@ -80,21 +80,30 @@ class DashboardViewModel(
 
         // Calculate period based on standard academic timings or server authority
         val period = serverCurrentPeriod ?: when (minutesSinceMidnight) {
-            in (8 * 60 + 15)..(9 * 60 + 25) -> 1
-            in (9 * 60 + 25)..(10 * 60 + 20) -> 2
-            in (10 * 60 + 20)..(11 * 60 + 30) -> 3
-            in (11 * 60 + 30)..(12 * 60 + 25) -> 4
-            in (12 * 60 + 25)..(14 * 60 + 10) -> 5
-            in (14 * 60 + 10)..(15 * 60 + 5) -> 6
-            in (15 * 60 + 5)..(16 * 60) -> 7
-            in (16 * 60)..(16 * 60 + 50) -> 8
+            // Period 1: 09:20 – 10:20
+            in (9 * 60 + 20)..(10 * 60 + 19) -> 1
+            // Period 2: 10:20 – 11:15
+            in (10 * 60 + 20)..(11 * 60 + 14) -> 2
+            // Break: 11:15 – 11:40 (no period)
+            in (11 * 60 + 15)..(11 * 60 + 39) -> null
+            // Period 3: 11:40 – 12:35
+            in (11 * 60 + 40)..(12 * 60 + 34) -> 3
+            // Lunch: 12:35 – 13:35 (no period)
+            in (12 * 60 + 35)..(13 * 60 + 34) -> null
+            // Period 4: 13:35 – 14:30
+            in (13 * 60 + 35)..(14 * 60 + 29) -> 4
+            // Break: 14:30 – 14:55 (no period)
+            in (14 * 60 + 30)..(14 * 60 + 54) -> null
+            // Period 5: 14:55 – 15:50
+            in (14 * 60 + 55)..(15 * 60 + 49) -> 5
             else -> null
         }
 
         val active = if (period != null) slots.firstOrNull { it.periodNumber == period } else null
         val nextUpcoming = if (period != null) {
             slots.filter { it.periodNumber > period }.minByOrNull { it.periodNumber }
-        } else if (minutesSinceMidnight < (8 * 60 + 15)) {
+        } else if (minutesSinceMidnight < (9 * 60 + 20)) {
+            // Before college starts (09:20) — show first period as upcoming
             slots.minByOrNull { it.periodNumber }
         } else {
             null
