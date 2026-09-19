@@ -21,6 +21,9 @@ data class UserOutDto(
     @Json(name = "department") val department: String?,
     @Json(name = "department_id") val departmentId: Int?,
     @Json(name = "must_change_credentials") val mustChangeCredentials: Boolean = false,
+    @Json(name = "policy_version_accepted") val policyVersionAccepted: String? = null,
+    @Json(name = "policy_accepted_at") val policyAcceptedAt: String? = null,
+    @Json(name = "onboarding_completed") val onboardingCompleted: Boolean = false,
     @Json(name = "is_active") val isActive: Boolean = true,
     @Json(name = "created_at") val createdAt: String? = null
 )
@@ -29,6 +32,43 @@ data class UserOutDto(
 data class TokenDto(
     @Json(name = "access_token") val accessToken: String,
     @Json(name = "token_type") val tokenType: String = "bearer",
+    @Json(name = "user") val user: UserOutDto
+)
+
+// ---------- Policy & Onboarding DTOs ----------
+
+@JsonClass(generateAdapter = true)
+data class PolicySectionDto(
+    @Json(name = "id") val id: String,
+    @Json(name = "title") val title: String,
+    @Json(name = "content") val content: String,
+    @Json(name = "required") val required: Boolean = true
+)
+
+@JsonClass(generateAdapter = true)
+data class CurrentPolicyDto(
+    @Json(name = "version") val version: String,
+    @Json(name = "effective_date") val effectiveDate: String,
+    @Json(name = "sections") val sections: List<PolicySectionDto> = emptyList()
+)
+
+@JsonClass(generateAdapter = true)
+data class PolicyAcceptRequestDto(
+    @Json(name = "version") val version: String
+)
+
+@JsonClass(generateAdapter = true)
+data class PolicyAcceptResponseDto(
+    @Json(name = "success") val success: Boolean,
+    @Json(name = "version_accepted") val versionAccepted: String,
+    @Json(name = "accepted_at") val acceptedAt: String?,
+    @Json(name = "user") val user: UserOutDto
+)
+
+@JsonClass(generateAdapter = true)
+data class OnboardingStatusResponseDto(
+    @Json(name = "success") val success: Boolean,
+    @Json(name = "onboarding_completed") val onboardingCompleted: Boolean,
     @Json(name = "user") val user: UserOutDto
 )
 

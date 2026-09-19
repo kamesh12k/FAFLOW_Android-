@@ -13,7 +13,10 @@ data class StaffMember(
     val departmentName: String? = null,
     val isActive: Boolean = true,
     val faceEnrolled: Boolean = false,
-    val creditBalance: Int = 0
+    val creditBalance: Int = 0,
+    val policyVersionAccepted: String? = null,
+    val policyAcceptedAt: String? = null,
+    val onboardingCompleted: Boolean = false
 )
 
 /**

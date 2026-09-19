@@ -40,7 +40,10 @@ class AuthRepository(
                     role = userDto.role,
                     departmentId = userDto.departmentId,
                     departmentName = userDto.department,
-                    isActive = userDto.isActive
+                    isActive = userDto.isActive,
+                    policyVersionAccepted = userDto.policyVersionAccepted,
+                    policyAcceptedAt = userDto.policyAcceptedAt,
+                    onboardingCompleted = userDto.onboardingCompleted
                 )
 
                 NetworkResult.Success(staffMember)
@@ -70,7 +73,10 @@ class AuthRepository(
                     role = u.role,
                     departmentId = u.departmentId,
                     departmentName = u.department,
-                    isActive = u.isActive
+                    isActive = u.isActive,
+                    policyVersionAccepted = u.policyVersionAccepted,
+                    policyAcceptedAt = u.policyAcceptedAt,
+                    onboardingCompleted = u.onboardingCompleted
                 )
                 NetworkResult.Success(staff)
             } else {
@@ -78,6 +84,72 @@ class AuthRepository(
             }
         } catch (e: Exception) {
             NetworkResult.Error(-1, e.localizedMessage ?: "Failed to connect to FAFLOW server", e)
+        }
+    }
+
+    suspend fun getCurrentPolicy(): NetworkResult<com.governence.faflow.core.network.CurrentPolicyDto> {
+        return try {
+            val response = apiService.getCurrentPolicy()
+            if (response.isSuccessful && response.body() != null) {
+                NetworkResult.Success(response.body()!!)
+            } else {
+                NetworkResult.Error(response.code(), "Could not load institutional policy")
+            }
+        } catch (e: Exception) {
+            NetworkResult.Error(-1, e.localizedMessage ?: "Network error loading policies", e)
+        }
+    }
+
+    suspend fun acceptPolicy(version: String): NetworkResult<StaffMember> {
+        return try {
+            val response = apiService.acceptPolicy(com.governence.faflow.core.network.PolicyAcceptRequestDto(version))
+            if (response.isSuccessful && response.body() != null) {
+                val u = response.body()!!.user
+                val staff = StaffMember(
+                    id = u.id,
+                    name = u.name,
+                    email = u.email ?: "",
+                    username = u.username,
+                    role = u.role,
+                    departmentId = u.departmentId,
+                    departmentName = u.department,
+                    isActive = u.isActive,
+                    policyVersionAccepted = u.policyVersionAccepted,
+                    policyAcceptedAt = u.policyAcceptedAt,
+                    onboardingCompleted = u.onboardingCompleted
+                )
+                NetworkResult.Success(staff)
+            } else {
+                NetworkResult.Error(response.code(), "Failed to record policy consent")
+            }
+        } catch (e: Exception) {
+            NetworkResult.Error(-1, e.localizedMessage ?: "Network error recording consent", e)
+        }
+    }
+
+    suspend fun completeOnboarding(): NetworkResult<Boolean> {
+        return try {
+            val response = apiService.completeOnboarding()
+            if (response.isSuccessful) {
+                NetworkResult.Success(true)
+            } else {
+                NetworkResult.Error(response.code(), "Failed to record onboarding completion")
+            }
+        } catch (e: Exception) {
+            NetworkResult.Error(-1, e.localizedMessage ?: "Network error completing onboarding", e)
+        }
+    }
+
+    suspend fun resetOnboarding(): NetworkResult<Boolean> {
+        return try {
+            val response = apiService.resetOnboarding()
+            if (response.isSuccessful) {
+                NetworkResult.Success(true)
+            } else {
+                NetworkResult.Error(response.code(), "Failed to reset onboarding")
+            }
+        } catch (e: Exception) {
+            NetworkResult.Error(-1, e.localizedMessage ?: "Network error resetting onboarding", e)
         }
     }
 

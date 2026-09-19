@@ -70,7 +70,8 @@ fun MoreScreen(
     onNavigateToLeaveApprovals: () -> Unit = {},
     onNavigateToLiveAttendance: () -> Unit = {},
     onNavigateToFacultyDirectory: () -> Unit = {},
-    onNavigateToStudentAttendance: () -> Unit = {}
+    onNavigateToStudentAttendance: () -> Unit = {},
+    onReplayTour: () -> Unit = {}
 ) {
     val roleLower = userRole?.lowercase() ?: "teacher"
     val isManagement = roleLower == "admin" || roleLower == "hod" || roleLower == "principal" || roleLower == "governance" || roleLower == "manager"
@@ -257,8 +258,17 @@ fun MoreScreen(
                         iconTint = com.governence.faflow.ui.theme.FaflowSlate,
                         title = "Staff profile",
                         subtitle = "Personal, institutional and role details",
-                        showDivider = false,
+                        showDivider = true,
                         onClick = onNavigateToProfile
+                    )
+                    com.governence.faflow.ui.components.FaflowListRow(
+                        icon = Icons.Default.Tune,
+                        iconBg = com.governence.faflow.ui.theme.FaflowNavyTint,
+                        iconTint = com.governence.faflow.ui.theme.FaflowNavy,
+                        title = "Help & Guided Tour",
+                        subtitle = "Replay interactive onboarding & view policies",
+                        showDivider = false,
+                        onClick = onReplayTour
                     )
                 }
             }

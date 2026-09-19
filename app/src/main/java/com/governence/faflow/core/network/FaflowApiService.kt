@@ -24,6 +24,21 @@ interface FaflowApiService {
     @GET("teachers/me")
     suspend fun getMe(): Response<UserOutDto>
 
+    // ---------- Policy & Onboarding ----------
+    @GET("policy/current")
+    suspend fun getCurrentPolicy(): Response<CurrentPolicyDto>
+
+    @POST("policy/accept")
+    suspend fun acceptPolicy(
+        @Body request: PolicyAcceptRequestDto
+    ): Response<PolicyAcceptResponseDto>
+
+    @POST("policy/onboarding/complete")
+    suspend fun completeOnboarding(): Response<OnboardingStatusResponseDto>
+
+    @POST("policy/onboarding/reset")
+    suspend fun resetOnboarding(): Response<OnboardingStatusResponseDto>
+
     // ---------- Academic Calendar & Day Order ----------
     @GET("academic-calendar/my-today-summary")
     suspend fun getMyTodaySummary(

@@ -6,6 +6,8 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -101,6 +103,32 @@ fun NavGraph(
             repository = appContainer.studentAttendanceRepository
         )
     }
+
+    var showTourReplay by remember { androidx.compose.runtime.mutableStateOf(false) }
+    var userAcceptedPolicyLocally by remember { androidx.compose.runtime.mutableStateOf<Boolean?>(null) }
+    var userCompletedTourLocally by remember { androidx.compose.runtime.mutableStateOf<Boolean?>(null) }
+
+    val currentStaff = (authState as? AuthUiState.Authenticated)?.staff
+    val needsPolicyConsent = currentStaff != null && (userAcceptedPolicyLocally == false || (userAcceptedPolicyLocally == null && currentStaff.policyVersionAccepted == null))
+    val needsTour = currentStaff != null && !needsPolicyConsent && (userCompletedTourLocally == false || (userCompletedTourLocally == null && !currentStaff.onboardingCompleted))
+
+    com.governence.faflow.ui.components.PolicyConsentDialog(
+        isOpen = needsPolicyConsent,
+        authRepository = appContainer.authRepository,
+        onConsentAccepted = {
+            userAcceptedPolicyLocally = true
+        }
+    )
+
+    com.governence.faflow.ui.components.OnboardingTourDialog(
+        isOpen = showTourReplay || needsTour,
+        userRole = userRole,
+        authRepository = appContainer.authRepository,
+        onTourFinished = {
+            showTourReplay = false
+            userCompletedTourLocally = true
+        }
+    )
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
@@ -228,7 +256,8 @@ fun NavGraph(
                     onNavigateToLeaveApprovals = { navController.navigate(Screen.HodLeaveApprovals.route) },
                     onNavigateToLiveAttendance = { navController.navigate(Screen.HodAttendance.route) },
                     onNavigateToFacultyDirectory = { navController.navigate(Screen.HodFacultyDirectory.route) },
-                    onNavigateToStudentAttendance = { navController.navigate(Screen.StudentAttendance.route) }
+                    onNavigateToStudentAttendance = { navController.navigate(Screen.StudentAttendance.route) },
+                    onReplayTour = { showTourReplay = true }
                 )
             }
 
