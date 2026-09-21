@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.governence.faflow.auth.data.AuthRepository
 import com.governence.faflow.core.network.NetworkResult
 import com.governence.faflow.core.network.NotificationOutDto
+import com.governence.faflow.core.network.RecommendationOutDto
 import com.governence.faflow.core.network.SubstitutionPreferenceOutDto
 import com.governence.faflow.core.network.SubstitutionPreferenceUpdateDto
 import com.governence.faflow.domain.model.CreditTransaction
@@ -40,9 +41,12 @@ data class LeaveUiState(
     val errorMessage: String? = null,
     // Flexible Mode
     val isFlexibleMode: Boolean = false,
-    val slotCandidates: List<com.governence.faflow.core.network.SlotCandidateOutDto> = emptyList(),
-    val candidatesPerPeriod: Map<Int, List<com.governence.faflow.core.network.SlotCandidateOutDto>> = emptyMap(),
+    val slotCandidates: List<RecommendationOutDto> = emptyList(),
+    val candidatesPerPeriod: Map<Int, List<RecommendationOutDto>> = emptyMap(),
     val isLoadingCandidates: Boolean = false,
+    val includeCrossDepartment: Boolean = false,
+    val onlyHandlesClass: Boolean = false,
+    val candidateSearchQuery: String = "",
     // Map<periodNumber, selectedSubstituteId>
     val selectedSubstitutePerPeriod: Map<Int, Int> = emptyMap(),
     // Teacher schedule awareness
@@ -240,10 +244,15 @@ class LeaveViewModel(
     }
 
     /** Load ranked slot candidates for a specific date + period (Flexible Mode only). */
-    fun loadSlotCandidates(date: String, periodNumber: Int) {
+    fun loadSlotCandidates(
+        date: String,
+        periodNumber: Int,
+        crossDept: Boolean = _uiState.value.includeCrossDepartment,
+        handlesClass: Boolean = _uiState.value.onlyHandlesClass
+    ) {
         _uiState.value = _uiState.value.copy(isLoadingCandidates = true, slotCandidates = emptyList())
         viewModelScope.launch {
-            when (val res = leaveRepository.getSlotCandidates(date, periodNumber)) {
+            when (val res = leaveRepository.getSlotCandidates(date, periodNumber, crossDept, handlesClass)) {
                 is NetworkResult.Success -> {
                     val currentMap = _uiState.value.candidatesPerPeriod.toMutableMap()
                     currentMap[periodNumber] = res.data
@@ -265,13 +274,18 @@ class LeaveViewModel(
     }
 
     /** Load ranked slot candidates for multiple periods (Flexible Mode). */
-    fun loadCandidatesForPeriods(date: String, periods: Set<Int>) {
+    fun loadCandidatesForPeriods(
+        date: String,
+        periods: Set<Int>,
+        crossDept: Boolean = _uiState.value.includeCrossDepartment,
+        handlesClass: Boolean = _uiState.value.onlyHandlesClass
+    ) {
         if (date.length != 10 || periods.isEmpty()) return
         _uiState.value = _uiState.value.copy(isLoadingCandidates = true)
         viewModelScope.launch {
             val currentMap = _uiState.value.candidatesPerPeriod.toMutableMap()
             for (period in periods) {
-                when (val res = leaveRepository.getSlotCandidates(date, period)) {
+                when (val res = leaveRepository.getSlotCandidates(date, period, crossDept, handlesClass)) {
                     is NetworkResult.Success -> {
                         currentMap[period] = res.data
                     }
@@ -285,6 +299,22 @@ class LeaveViewModel(
                 slotCandidates = currentMap[periods.firstOrNull() ?: 1] ?: emptyList()
             )
         }
+    }
+
+    fun toggleCrossDepartment(date: String, periods: Set<Int>) {
+        val next = !_uiState.value.includeCrossDepartment
+        _uiState.value = _uiState.value.copy(includeCrossDepartment = next)
+        loadCandidatesForPeriods(date, periods, crossDept = next, handlesClass = _uiState.value.onlyHandlesClass)
+    }
+
+    fun toggleOnlyHandlesClass(date: String, periods: Set<Int>) {
+        val next = !_uiState.value.onlyHandlesClass
+        _uiState.value = _uiState.value.copy(onlyHandlesClass = next)
+        loadCandidatesForPeriods(date, periods, crossDept = _uiState.value.includeCrossDepartment, handlesClass = next)
+    }
+
+    fun setCandidateSearchQuery(query: String) {
+        _uiState.value = _uiState.value.copy(candidateSearchQuery = query)
     }
 
     fun selectSubstituteForPeriod(periodNumber: Int, substituteId: Int) {

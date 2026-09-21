@@ -237,8 +237,10 @@ data class RecommendationOutDto(
     @Json(name = "projected_week_workload") val projectedWeekWorkload: Int? = null,
     @Json(name = "longest_continuous_periods") val longestContinuousPeriods: Int? = null,
     @Json(name = "projected_longest_continuous_periods") val projectedLongestContinuousPeriods: Int? = null,
+    @Json(name = "today_periods") val todayPeriods: List<Int> = emptyList(),
     @Json(name = "substitutions_week") val substitutionsWeek: Int? = null,
     // Fallback flat fields for backwards compatibility
+    @Json(name = "id") val explicitId: Int? = null,
     @Json(name = "teacher_id") val flatTeacherId: Int? = null,
     @Json(name = "teacher_name") val flatTeacherName: String? = null,
     @Json(name = "department") val flatDepartment: String? = null,
@@ -262,7 +264,8 @@ data class RecommendationOutDto(
         flatReason = reason
     )
 
-    val teacherId: Int get() = teacher?.id ?: flatTeacherId ?: 0
+    val teacherId: Int get() = teacher?.id ?: explicitId ?: flatTeacherId ?: 0
+    val id: Int get() = teacherId
     val teacherName: String get() = teacher?.name ?: flatTeacherName ?: "Faculty #${teacherId}"
     val department: String? get() = teacher?.department ?: flatDepartment
     val compatibilityScore: Float get() = score ?: flatCompatibilityScore ?: 0f
@@ -281,6 +284,15 @@ data class RecommendationOutDto(
         }
     }
     val reason: String? get() = reasons.firstOrNull() ?: flatReason
+
+    // Simulation helpers matching web ApplyLeave.jsx
+    val resolvedTodayLoad: Int get() = todayWorkload ?: 0
+    val resolvedProjToday: Int get() = projectedTodayWorkload ?: (resolvedTodayLoad + 1)
+    val resolvedWeekLoad: Int get() = weekWorkload ?: 0
+    val resolvedProjWeek: Int get() = projectedWeekWorkload ?: (resolvedWeekLoad + 1)
+    val resolvedContLoad: Int get() = longestContinuousPeriods ?: 0
+    val resolvedProjCont: Int get() = projectedLongestContinuousPeriods ?: (resolvedContLoad + 1)
+    val hasContinuousWarning: Boolean get() = resolvedProjCont >= 4
 }
 
 @JsonClass(generateAdapter = true)

@@ -231,21 +231,16 @@ class LeaveRepositoryImpl(
         }
     }
 
-    suspend fun getSlotCandidates(date: String, periodNumber: Int): NetworkResult<List<com.governence.faflow.core.network.SlotCandidateOutDto>> {
+    suspend fun getSlotCandidates(
+        date: String,
+        periodNumber: Int,
+        includeCrossDepartment: Boolean = false,
+        onlyHandlesClass: Boolean = false
+    ): NetworkResult<List<RecommendationOutDto>> {
         return try {
-            val response = apiService.getSlotCandidates(date, periodNumber)
+            val response = apiService.getSlotCandidates(date, periodNumber, includeCrossDepartment, onlyHandlesClass)
             if (response.isSuccessful && response.body() != null) {
-                val list = response.body()!!.map { rec ->
-                    com.governence.faflow.core.network.SlotCandidateOutDto(
-                        id = rec.teacherId,
-                        name = rec.teacherName,
-                        departmentName = rec.department,
-                        compatibilityScore = rec.compatibilityScore,
-                        weeklyAssignmentCount = rec.substitutionsWeek ?: rec.weekWorkload ?: 0,
-                        todayAssignmentCount = rec.todayWorkload ?: 0
-                    )
-                }
-                NetworkResult.Success(list)
+                NetworkResult.Success(response.body()!!)
             } else {
                 NetworkResult.Error(response.code(), "Failed to fetch slot candidates (${response.code()})")
             }

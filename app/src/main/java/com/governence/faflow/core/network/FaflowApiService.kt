@@ -181,7 +181,9 @@ interface FaflowApiService {
     @GET("leaves/slot-candidates")
     suspend fun getSlotCandidates(
         @Query("date") date: String,
-        @Query("period_number") periodNumber: Int
+        @Query("period_number") periodNumber: Int,
+        @Query("include_cross_department") includeCrossDepartment: Boolean = false,
+        @Query("only_handles_class") onlyHandlesClass: Boolean = false
     ): Response<List<RecommendationOutDto>>
 
     // ---------- Campus Operations Mode ----------
