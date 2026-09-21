@@ -114,6 +114,18 @@ fun NavGraph(
     // Track whether we've delivered the notification deep-link to avoid double-firing
     var deepLinkConsumed by remember { androidx.compose.runtime.mutableStateOf(false) }
 
+    val isLoggedIn by appContainer.tokenManager.isLoggedIn.collectAsState()
+    androidx.compose.runtime.LaunchedEffect(isLoggedIn) {
+        if (!isLoggedIn) {
+            val currentRoute = navController.currentBackStackEntry?.destination?.route
+            if (currentRoute != null && currentRoute != Screen.Splash.route && currentRoute != Screen.Login.route) {
+                navController.navigate(Screen.Login.route) {
+                    popUpTo(0) { inclusive = true }
+                }
+            }
+        }
+    }
+
     val currentStaff = (authState as? AuthUiState.Authenticated)?.staff
     val needsPolicyConsent = currentStaff != null && (userAcceptedPolicyLocally == false || (userAcceptedPolicyLocally == null && currentStaff.policyVersionAccepted.isNullOrBlank()))
     val needsTour = currentStaff != null && !needsPolicyConsent && (userCompletedTourLocally == false || (userCompletedTourLocally == null && !currentStaff.onboardingCompleted))
@@ -381,7 +393,9 @@ fun NavGraph(
                 val leaveViewModel = remember(backStackEntry) {
                     LeaveViewModel(
                         leaveRepository = appContainer.leaveRepository,
-                        academicSummaryRepository = appContainer.academicSummaryRepository
+                        academicSummaryRepository = appContainer.academicSummaryRepository,
+                        timetableRepository = appContainer.timetableRepository,
+                        authRepository = appContainer.authRepository
                     )
                 }
                 ApplyLeaveScreen(
@@ -399,7 +413,9 @@ fun NavGraph(
                 val leaveViewModel = remember(backStackEntry) {
                     LeaveViewModel(
                         leaveRepository = appContainer.leaveRepository,
-                        academicSummaryRepository = appContainer.academicSummaryRepository
+                        academicSummaryRepository = appContainer.academicSummaryRepository,
+                        timetableRepository = appContainer.timetableRepository,
+                        authRepository = appContainer.authRepository
                     )
                 }
                 LeaveHistoryScreen(

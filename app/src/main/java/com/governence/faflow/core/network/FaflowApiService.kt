@@ -182,11 +182,11 @@ interface FaflowApiService {
     suspend fun getSlotCandidates(
         @Query("date") date: String,
         @Query("period_number") periodNumber: Int
-    ): Response<List<SlotCandidateOutDto>>
+    ): Response<List<RecommendationOutDto>>
 
     // ---------- Campus Operations Mode ----------
     @GET("campus-operations/mode")
-    suspend fun getCampusOperationsMode(): Response<Map<String, String>>
+    suspend fun getCampusOperationsMode(): Response<CampusOperationsModeDto>
 
     // ---------- Preferences ----------
     @GET("campus-operations/preferences/me")

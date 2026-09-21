@@ -11,7 +11,9 @@ import com.governence.faflow.domain.model.CreditTransaction
 import com.governence.faflow.domain.model.LeaveHistoryDay
 import com.governence.faflow.domain.model.LeaveRequest
 import com.governence.faflow.domain.model.LeaveStatus
+import com.governence.faflow.domain.model.TimetableSlot
 import com.governence.faflow.faflow.CreditRepository
+import com.governence.faflow.faflow.TimetableRepository
 import com.governence.faflow.faflow.data.AcademicSummaryRepository
 import com.governence.faflow.faflow.data.LeaveRepositoryImpl
 import com.governence.faflow.faflow.data.NotificationRepositoryImpl
@@ -42,12 +44,19 @@ data class LeaveUiState(
     val candidatesPerPeriod: Map<Int, List<com.governence.faflow.core.network.SlotCandidateOutDto>> = emptyMap(),
     val isLoadingCandidates: Boolean = false,
     // Map<periodNumber, selectedSubstituteId>
-    val selectedSubstitutePerPeriod: Map<Int, Int> = emptyMap()
+    val selectedSubstitutePerPeriod: Map<Int, Int> = emptyMap(),
+    // Teacher schedule awareness
+    val teacherSlots: List<TimetableSlot> = emptyList(),
+    val scheduledPeriodsForDate: Set<Int> = emptySet(),
+    val scheduledSlotsForDate: List<TimetableSlot> = emptyList(),
+    val isTimetableLoaded: Boolean = false
 )
 
 class LeaveViewModel(
     private val leaveRepository: LeaveRepositoryImpl,
-    private val academicSummaryRepository: AcademicSummaryRepository
+    private val academicSummaryRepository: AcademicSummaryRepository,
+    private val timetableRepository: TimetableRepository? = null,
+    private val authRepository: AuthRepository? = null
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(LeaveUiState())
@@ -56,6 +65,41 @@ class LeaveViewModel(
     init {
         loadMyLeaves()
         loadCampusMode()
+        loadTeacherTimetable()
+    }
+
+    /** Load complete timetable slots for the authenticated teacher. */
+    fun loadTeacherTimetable() {
+        val staffId = authRepository?.getStoredStaffInfo()?.id ?: return
+        viewModelScope.launch {
+            when (val res = timetableRepository?.getTimetableForTeacher(staffId)) {
+                is NetworkResult.Success -> {
+                    _uiState.value = _uiState.value.copy(
+                        teacherSlots = res.data,
+                        isTimetableLoaded = true
+                    )
+                    val currentDayOrder = _uiState.value.resolvedDayOrder
+                    if (currentDayOrder != null) {
+                        updateScheduledPeriodsForDayOrder(currentDayOrder, res.data)
+                    }
+                }
+                else -> {
+                    _uiState.value = _uiState.value.copy(isTimetableLoaded = true)
+                }
+            }
+        }
+    }
+
+    private fun updateScheduledPeriodsForDayOrder(
+        dayOrder: Int,
+        allSlots: List<TimetableSlot>
+    ) {
+        val daySlots = allSlots.filter { it.dayOrder == dayOrder }.sortedBy { it.periodNumber }
+        val periods = daySlots.map { it.periodNumber }.toSet()
+        _uiState.value = _uiState.value.copy(
+            scheduledPeriodsForDate = periods,
+            scheduledSlotsForDate = daySlots
+        )
     }
 
     /** Detect if the campus is currently in Flexible mode. */
@@ -108,11 +152,31 @@ class LeaveViewModel(
             when (val res = academicSummaryRepository.resolveDate(date)) {
                 is NetworkResult.Success -> {
                     val isBlocked = res.data.blocksOperations || res.data.dayType.contains("HOLIDAY", ignoreCase = true)
+                    val dayOrder = res.data.dayOrder
                     _uiState.value = _uiState.value.copy(
-                        resolvedDayOrder = res.data.dayOrder,
+                        resolvedDayOrder = dayOrder,
                         isBlockedDate = isBlocked,
                         dayType = res.data.dayType
                     )
+                    if (dayOrder != null) {
+                        var slots = _uiState.value.teacherSlots
+                        if (slots.isEmpty()) {
+                            val staffId = authRepository?.getStoredStaffInfo()?.id
+                            if (staffId != null && timetableRepository != null) {
+                                when (val ttRes = timetableRepository.getTimetableForTeacher(staffId)) {
+                                    is NetworkResult.Success -> {
+                                        slots = ttRes.data
+                                        _uiState.value = _uiState.value.copy(
+                                            teacherSlots = slots,
+                                            isTimetableLoaded = true
+                                        )
+                                    }
+                                    else -> Unit
+                                }
+                            }
+                        }
+                        updateScheduledPeriodsForDayOrder(dayOrder, slots)
+                    }
                 }
                 is NetworkResult.Error -> Unit
                 NetworkResult.Loading -> Unit
@@ -152,11 +216,12 @@ class LeaveViewModel(
         periodNumbers: List<Int>,
         reason: String,
         onComplete: () -> Unit,
-        periodSubstitutes: Map<String, Int>? = null
+        periodSubstitutes: Map<String, Int>? = null,
+        wholeDay: Boolean = false
     ) {
         _uiState.value = _uiState.value.copy(isLoading = true, errorMessage = null)
         viewModelScope.launch {
-            when (val res = leaveRepository.applyLeaveBatch(date, periodNumbers, reason, periodSubstitutes)) {
+            when (val res = leaveRepository.applyLeaveBatch(date, periodNumbers, reason, periodSubstitutes, wholeDay)) {
                 is NetworkResult.Success -> {
                     _uiState.value = _uiState.value.copy(
                         isLoading = false,

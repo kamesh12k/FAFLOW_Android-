@@ -97,9 +97,14 @@ fun ApplyLeaveScreen(
     val todayStr = remember { SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date()) }
     var leaveDate by remember { mutableStateOf(todayStr) }
     var isWholeDay by remember { mutableStateOf(true) }
-    var selectedPeriods by remember { mutableStateOf(setOf(1, 2, 3, 4, 5)) }
+    var selectedPeriods by remember { mutableStateOf(emptySet<Int>()) }
     var reason by remember { mutableStateOf("") }
     var expandedPeriod by remember { mutableStateOf<Int?>(null) }
+
+    LaunchedEffect(Unit) {
+        viewModel.loadCampusMode()
+        viewModel.loadTeacherTimetable()
+    }
 
     LaunchedEffect(leaveDate) {
         if (leaveDate.length == 10) {
@@ -107,11 +112,11 @@ fun ApplyLeaveScreen(
         }
     }
 
-    LaunchedEffect(isWholeDay) {
+    LaunchedEffect(isWholeDay, state.isTimetableLoaded, state.scheduledPeriodsForDate) {
         if (isWholeDay) {
-            selectedPeriods = setOf(1, 2, 3, 4, 5)
-        } else if (selectedPeriods.size == 5) {
-            selectedPeriods = setOf(1)
+            if (state.isTimetableLoaded) {
+                selectedPeriods = state.scheduledPeriodsForDate
+            }
         }
     }
 
@@ -255,7 +260,14 @@ fun ApplyLeaveScreen(
                         .weight(1f)
                         .clip(FaflowShapes.pill)
                         .background(if (isWholeDay) com.governence.faflow.ui.theme.FaflowNavy else Color.Transparent)
-                        .clickable { isWholeDay = true }
+                        .clickable {
+                            isWholeDay = true
+                            selectedPeriods = if (state.isTimetableLoaded) {
+                                state.scheduledPeriodsForDate
+                            } else {
+                                emptySet()
+                            }
+                        }
                         .padding(vertical = 8.dp),
                     contentAlignment = Alignment.Center
                 ) {
@@ -271,7 +283,16 @@ fun ApplyLeaveScreen(
                         .weight(1f)
                         .clip(FaflowShapes.pill)
                         .background(if (!isWholeDay) com.governence.faflow.ui.theme.FaflowNavy else Color.Transparent)
-                        .clickable { isWholeDay = false }
+                        .clickable {
+                            isWholeDay = false
+                            if (selectedPeriods.isEmpty()) {
+                                selectedPeriods = if (state.scheduledPeriodsForDate.isNotEmpty()) {
+                                    state.scheduledPeriodsForDate
+                                } else {
+                                    setOf(1)
+                                }
+                            }
+                        }
                         .padding(vertical = 8.dp),
                     contentAlignment = Alignment.Center
                 ) {
@@ -340,13 +361,27 @@ fun ApplyLeaveScreen(
             Spacer(modifier = Modifier.height(FaflowSpacing.lg))
 
             // Period Selector Chips
+            val headerText = if (isWholeDay) {
+                if (state.isTimetableLoaded && state.teacherSlots.isNotEmpty()) {
+                    if (state.scheduledPeriodsForDate.isNotEmpty()) {
+                        "Scheduled Classes (${state.scheduledPeriodsForDate.size} ${if (state.scheduledPeriodsForDate.size == 1) "Period" else "Periods"})"
+                    } else {
+                        "No Scheduled Classes on this Day"
+                    }
+                } else {
+                    "All Periods Included"
+                }
+            } else {
+                "Select Absence Periods"
+            }
+
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = if (isWholeDay) "All Periods Included" else "Select Absence Periods",
+                    text = headerText,
                     style = MaterialTheme.typography.labelMedium,
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onSurface
@@ -370,12 +405,23 @@ fun ApplyLeaveScreen(
                     }
                 }
             }
+
+            if (isWholeDay && state.isTimetableLoaded && state.teacherSlots.isNotEmpty() && state.scheduledPeriodsForDate.isEmpty()) {
+                Spacer(modifier = Modifier.height(FaflowSpacing.xs))
+                Text(
+                    text = "You have no classes scheduled on Day Order ${state.resolvedDayOrder ?: ""}. No substitution coverage needed.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
             Spacer(modifier = Modifier.height(FaflowSpacing.xs))
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 (1..5).forEach { period ->
+                    val isScheduled = state.scheduledPeriodsForDate.contains(period)
                     val isSelected = selectedPeriods.contains(period)
                     val bg = if (isSelected) com.governence.faflow.ui.theme.FaflowNavy else Color.White
                     val fg = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurface
@@ -409,6 +455,18 @@ fun ApplyLeaveScreen(
                             color = if (isSelected) Color.White.copy(alpha = 0.85f) else MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 1
                         )
+                        if (state.isTimetableLoaded && state.teacherSlots.isNotEmpty()) {
+                            Text(
+                                text = if (isScheduled) "Class" else "Free",
+                                fontSize = 8.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (isSelected) {
+                                    if (isScheduled) Color(0xFF93C5FD) else Color.White.copy(alpha = 0.6f)
+                                } else {
+                                    if (isScheduled) PrimaryBlue else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f)
+                                }
+                            )
+                        }
                     }
                 }
             }
@@ -682,21 +740,37 @@ fun ApplyLeaveScreen(
                     modifier = Modifier.align(Alignment.CenterHorizontally)
                 )
             } else {
+                val buttonText = when {
+                    state.isTimetableLoaded && state.teacherSlots.isNotEmpty() && state.scheduledPeriodsForDate.isEmpty() && isWholeDay ->
+                        "No Scheduled Classes to Cover"
+                    selectedPeriods.isEmpty() ->
+                        "Select Absence Period"
+                    isWholeDay && selectedPeriods.size == 1 ->
+                        "Submit Leave (1 Period Covered)"
+                    isWholeDay ->
+                        "Submit Whole Day Leave (${selectedPeriods.size} Periods)"
+                    selectedPeriods.size == 1 ->
+                        "Submit Leave (Period ${selectedPeriods.first()})"
+                    else ->
+                        "Submit Leave (${selectedPeriods.size} Periods)"
+                }
+
                 FaflowPillButton(
-                    text = if (isWholeDay || selectedPeriods.size > 1) "Submit Leave (${selectedPeriods.size} Periods)" else "Submit Leave (Period ${selectedPeriods.first()})",
+                    text = buttonText,
                     onClick = {
                         if (isSubmitEnabled) {
                             val periodsList = selectedPeriods.toList().sorted()
+                            val periodSubstitutes = if (state.isFlexibleMode) {
+                                state.selectedSubstitutePerPeriod
+                                    .mapKeys { it.key.toString() }
+                                    .ifEmpty { null }
+                            } else null
+
                             if (periodsList.size > 1 || isWholeDay) {
-                                // Flexible batch: build period->substituteId map if available
-                                val periodSubstitutes = if (state.isFlexibleMode) {
-                                    state.selectedSubstitutePerPeriod
-                                        .mapKeys { it.key.toString() }
-                                        .ifEmpty { null }
-                                } else null
                                 viewModel.submitLeaveBatch(
                                     leaveDate, periodsList, reason, onLeaveSubmitted,
-                                    periodSubstitutes = periodSubstitutes
+                                    periodSubstitutes = periodSubstitutes,
+                                    wholeDay = isWholeDay
                                 )
                             } else {
                                 val proposedId = if (state.isFlexibleMode)

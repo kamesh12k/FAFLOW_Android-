@@ -174,6 +174,14 @@ data class SlotCandidateOutDto(
 )
 
 @JsonClass(generateAdapter = true)
+data class CampusOperationsModeDto(
+    @Json(name = "mode") val mode: String = "standard",
+    @Json(name = "configured_mode") val configuredMode: String? = null,
+    @Json(name = "global_override") val globalOverride: String? = null,
+    @Json(name = "is_overridden") val isOverridden: Boolean = false
+)
+
+@JsonClass(generateAdapter = true)
 data class AlterAssignmentOutDto(
     @Json(name = "id") val id: Int,
     @Json(name = "leave_request_id") val leaveRequestId: Int,

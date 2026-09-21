@@ -193,13 +193,15 @@ class LeaveRepositoryImpl(
         date: String,
         periodNumbers: List<Int>,
         reason: String,
-        periodSubstitutes: Map<String, Int>? = null
+        periodSubstitutes: Map<String, Int>? = null,
+        wholeDay: Boolean = false
     ): NetworkResult<List<LeaveRequest>> {
         return try {
             val response = apiService.applyLeaveBatch(
                 LeaveBatchCreateDto(
                     date = date,
                     periodNumbers = periodNumbers,
+                    wholeDay = if (wholeDay) true else null,
                     reason = reason,
                     periodSubstitutes = periodSubstitutes
                 )
@@ -233,11 +235,22 @@ class LeaveRepositoryImpl(
         return try {
             val response = apiService.getSlotCandidates(date, periodNumber)
             if (response.isSuccessful && response.body() != null) {
-                NetworkResult.Success(response.body()!!)
+                val list = response.body()!!.map { rec ->
+                    com.governence.faflow.core.network.SlotCandidateOutDto(
+                        id = rec.teacherId,
+                        name = rec.teacherName,
+                        departmentName = rec.department,
+                        compatibilityScore = rec.compatibilityScore,
+                        weeklyAssignmentCount = rec.substitutionsWeek ?: rec.weekWorkload ?: 0,
+                        todayAssignmentCount = rec.todayWorkload ?: 0
+                    )
+                }
+                NetworkResult.Success(list)
             } else {
                 NetworkResult.Error(response.code(), "Failed to fetch slot candidates (${response.code()})")
             }
         } catch (e: Exception) {
+            android.util.Log.e("LeaveRepository", "Error fetching slot candidates", e)
             NetworkResult.Error(-1, e.localizedMessage ?: "Error fetching slot candidates", e)
         }
     }
@@ -246,11 +259,13 @@ class LeaveRepositoryImpl(
         return try {
             val response = apiService.getCampusOperationsMode()
             if (response.isSuccessful && response.body() != null) {
-                NetworkResult.Success(response.body()!!["campus_operations_mode"] ?: "standard")
+                val mode = response.body()!!.mode.ifBlank { "standard" }
+                NetworkResult.Success(mode)
             } else {
                 NetworkResult.Success("standard")
             }
         } catch (e: Exception) {
+            android.util.Log.e("LeaveRepository", "Error fetching campus operations mode", e)
             NetworkResult.Success("standard") // Fail open — non-Flexible behaviour
         }
     }
