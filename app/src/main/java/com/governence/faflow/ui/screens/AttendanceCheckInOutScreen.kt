@@ -210,8 +210,9 @@ fun AttendanceCheckInOutScreen(
         contract = ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
         val fineGranted = permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true
-        val coarseGranted = permissions[Manifest.permission.ACCESS_COARSE_LOCATION] == true
-        if (fineGranted || coarseGranted) {
+        if (fineGranted) {
+            viewModel.refreshLocation()
+        } else {
             viewModel.refreshLocation()
         }
     }
@@ -233,8 +234,7 @@ fun AttendanceCheckInOutScreen(
 
     val requestLocationPermission = {
         val fineGranted = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
-        val coarseGranted = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
-        if (!fineGranted && !coarseGranted) {
+        if (!fineGranted) {
             locationPermissionsLauncher.launch(
                 arrayOf(
                     Manifest.permission.ACCESS_FINE_LOCATION,
@@ -261,8 +261,7 @@ fun AttendanceCheckInOutScreen(
         mobileFaceNetModelManager.initializeModels()
 
         val fineGranted = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
-        val coarseGranted = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
-        if (!fineGranted && !coarseGranted) {
+        if (!fineGranted) {
             locationPermissionsLauncher.launch(
                 arrayOf(
                     Manifest.permission.ACCESS_FINE_LOCATION,
@@ -410,9 +409,17 @@ fun AttendanceCheckInOutScreen(
                 is LocationVerificationResult.InsideGeofence -> Triple("Campus Perimeter Verified", res.geofenceName, StatusSuccess)
                 is LocationVerificationResult.Boundary -> Triple("Campus Perimeter Verified", "${res.geofenceName} (Boundary)", StatusSuccess)
                 is LocationVerificationResult.OutsideAllGeofences -> Triple("Outside Institutional Campus", "Please be inside campus to record attendance", StatusWarning)
-                is LocationVerificationResult.AccuracyInsufficient -> Triple("Calibrating Satellite Lock", "Waiting for optimal GPS accuracy", StatusWarning)
+                is LocationVerificationResult.AccuracyInsufficient -> Triple("Calibrating Satellite Lock", "Current precision: ±${res.currentAccuracyMeters.toInt()}m (target: ≤${res.requiredAccuracyMeters.toInt()}m)", StatusWarning)
                 is LocationVerificationResult.MockLocationDetected -> Triple("Simulated Location Rejected", "Mock GPS prohibited for attendance integrity", StatusError)
-                is LocationVerificationResult.PermissionDenied -> Triple("Location Access Required", "Tap to grant permission", StatusWarning)
+                is LocationVerificationResult.PermissionDenied -> {
+                    val hasCoarseOnly = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED &&
+                            ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED
+                    if (hasCoarseOnly) {
+                        Triple("Precise Location Required", "Tap to enable precise GPS accuracy", StatusWarning)
+                    } else {
+                        Triple("Location Access Required", "Tap to grant permission", StatusWarning)
+                    }
+                }
                 LocationVerificationResult.Loading -> Triple("Acquiring Campus Location…", "Connecting to GPS satellites", MaterialTheme.colorScheme.primary)
                 else -> Triple("Checking Location…", "Locating campus perimeter", MaterialTheme.colorScheme.onSurfaceVariant)
             }
@@ -540,6 +547,8 @@ fun AttendanceCheckInOutScreen(
                         ) {
                             when (val locRes = verificationResult) {
                                 is LocationVerificationResult.PermissionDenied -> {
+                                    val hasCoarseOnly = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED &&
+                                            ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED
                                     Box(
                                         modifier = Modifier
                                             .size(64.dp)
@@ -556,7 +565,7 @@ fun AttendanceCheckInOutScreen(
                                     }
                                     Spacer(modifier = Modifier.height(FaflowSpacing.md))
                                     Text(
-                                        text = "Location Permission Needed",
+                                        text = if (hasCoarseOnly) "Precise Location Needed" else "Location Permission Needed",
                                         style = MaterialTheme.typography.titleMedium,
                                         fontWeight = FontWeight.Bold,
                                         color = MaterialTheme.colorScheme.onSurface,
@@ -564,18 +573,32 @@ fun AttendanceCheckInOutScreen(
                                     )
                                     Spacer(modifier = Modifier.height(FaflowSpacing.xs))
                                     Text(
-                                        text = "FAFLOW requires location access to verify attendance within institutional campus boundaries.",
+                                        text = if (hasCoarseOnly)
+                                            "FAFLOW requires Precise Location to verify attendance within institutional campus boundaries. Currently only Approximate location is enabled."
+                                        else
+                                            "FAFLOW requires location access to verify attendance within institutional campus boundaries.",
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         textAlign = TextAlign.Center
                                     )
                                     Spacer(modifier = Modifier.height(FaflowSpacing.lg))
                                     FaflowPillButton(
-                                        text = "Grant Location Access",
+                                        text = if (hasCoarseOnly) "Enable Precise Location" else "Grant Location Access",
                                         onClick = { requestLocationPermission() },
                                         icon = Icons.Default.LocationOn,
-                                        isPrimary = true
+                                        isPrimary = true,
+                                        modifier = Modifier.fillMaxWidth()
                                     )
+                                    if (hasCoarseOnly) {
+                                        Spacer(modifier = Modifier.height(FaflowSpacing.sm))
+                                        FaflowPillButton(
+                                            text = "Open App Settings",
+                                            onClick = { openAppSettings() },
+                                            icon = Icons.Default.Tune,
+                                            isPrimary = false,
+                                            modifier = Modifier.fillMaxWidth()
+                                        )
+                                    }
                                 }
 
                                 is LocationVerificationResult.LocationServicesDisabled -> {
@@ -665,9 +688,9 @@ fun AttendanceCheckInOutScreen(
                                         contentAlignment = Alignment.Center
                                     ) {
                                         CircularProgressIndicator(
-                                            modifier = Modifier.size(32.dp),
-                                            strokeWidth = 3.dp,
-                                            color = StatusWarning
+                                             modifier = Modifier.size(32.dp),
+                                             strokeWidth = 3.dp,
+                                             color = StatusWarning
                                         )
                                     }
                                     Spacer(modifier = Modifier.height(FaflowSpacing.md))
@@ -680,7 +703,7 @@ fun AttendanceCheckInOutScreen(
                                     )
                                     Spacer(modifier = Modifier.height(FaflowSpacing.xs))
                                     Text(
-                                        text = "Locking onto satellites. Please hold still or step outdoors for optimal accuracy.",
+                                        text = "Acquiring satellite lock (precision: ±${locRes.currentAccuracyMeters.toInt()}m • target: ≤${locRes.requiredAccuracyMeters.toInt()}m). Please wait a moment.",
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         textAlign = TextAlign.Center

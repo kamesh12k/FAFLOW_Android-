@@ -142,7 +142,15 @@ class GeofenceRepository(
 
         monitoringJob?.cancel()
         monitoringJob = externalScope.launch {
-            locationProvider.getLocationUpdates(intervalMs = 3000L)
+            try {
+                val lastLoc = locationProvider.getLastKnownLocation()
+                if (lastLoc != null && (System.currentTimeMillis() - lastLoc.timestamp) < 15_000L && lastLoc.accuracyMeters <= 50f) {
+                    _liveLocation.value = lastLoc
+                    _verificationResult.value = geofenceValidator.validate(lastLoc, _geofences.value)
+                }
+            } catch (_: Exception) {}
+
+            locationProvider.getLocationUpdates(intervalMs = 2000L)
                 .catch { e ->
                     if (e is SecurityException) {
                         _verificationResult.value = LocationVerificationResult.PermissionDenied

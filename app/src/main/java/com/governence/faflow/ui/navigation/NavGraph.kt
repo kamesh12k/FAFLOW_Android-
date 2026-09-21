@@ -109,14 +109,15 @@ fun NavGraph(
     var userCompletedTourLocally by remember { androidx.compose.runtime.mutableStateOf<Boolean?>(null) }
 
     val currentStaff = (authState as? AuthUiState.Authenticated)?.staff
-    val needsPolicyConsent = currentStaff != null && (userAcceptedPolicyLocally == false || (userAcceptedPolicyLocally == null && currentStaff.policyVersionAccepted == null))
+    val needsPolicyConsent = currentStaff != null && (userAcceptedPolicyLocally == false || (userAcceptedPolicyLocally == null && currentStaff.policyVersionAccepted.isNullOrBlank()))
     val needsTour = currentStaff != null && !needsPolicyConsent && (userCompletedTourLocally == false || (userCompletedTourLocally == null && !currentStaff.onboardingCompleted))
 
     com.governence.faflow.ui.components.PolicyConsentDialog(
         isOpen = needsPolicyConsent,
         authRepository = appContainer.authRepository,
-        onConsentAccepted = {
+        onConsentAccepted = { updatedStaff ->
             userAcceptedPolicyLocally = true
+            authViewModel.updateStaff(updatedStaff)
         }
     )
 
@@ -127,6 +128,9 @@ fun NavGraph(
         onTourFinished = {
             showTourReplay = false
             userCompletedTourLocally = true
+            currentStaff?.let {
+                authViewModel.updateStaff(it.copy(onboardingCompleted = true))
+            }
         }
     )
 

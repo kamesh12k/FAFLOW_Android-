@@ -361,7 +361,8 @@ class AttendanceViewModel(
             !isLocValid -> {
                 when (loc) {
                     is LocationVerificationResult.MockLocationDetected -> AttendanceEligibilityState.Blocked("Fake GPS Spoofing Detected")
-                    is LocationVerificationResult.AccuracyInsufficient -> AttendanceEligibilityState.Blocked("GPS accuracy insufficient (±${loc.currentAccuracyMeters.toInt()}m)")
+                    // AccuracyInsufficient is a transient satellite calibrating state, not a permanent rejection
+                    is LocationVerificationResult.AccuracyInsufficient -> AttendanceEligibilityState.LocationRequired
                     else -> AttendanceEligibilityState.LocationRequired
                 }
             }
@@ -1205,7 +1206,18 @@ class AttendanceViewModel(
         val identity = _identityVerificationState.value
 
         if (!isLocationVerifiedForAttendance()) {
-            val err = "Cannot check in: Outside authorized campus perimeter."
+            val err = when (val res = verificationResult.value) {
+                is LocationVerificationResult.AccuracyInsufficient ->
+                    "Acquiring precise GPS satellite lock (current ±${res.currentAccuracyMeters.toInt()}m, required ±${res.requiredAccuracyMeters.toInt()}m). Please wait a moment."
+                is LocationVerificationResult.PermissionDenied ->
+                    "Cannot check in: Precise location permission required."
+                is LocationVerificationResult.LocationServicesDisabled ->
+                    "Cannot check in: Device location services are turned off."
+                is LocationVerificationResult.OutsideAllGeofences ->
+                    "Cannot check in: Outside authorized campus perimeter."
+                else ->
+                    "Cannot check in: Outside authorized campus perimeter."
+            }
             _submissionState.value = AttendanceEligibilityState.Blocked(err)
             onFailure(err)
             return
@@ -1337,7 +1349,18 @@ class AttendanceViewModel(
         val identity = _identityVerificationState.value
 
         if (!isLocationVerifiedForAttendance()) {
-            val err = "Cannot check out: Outside authorized campus perimeter."
+            val err = when (val res = verificationResult.value) {
+                is LocationVerificationResult.AccuracyInsufficient ->
+                    "Acquiring precise GPS satellite lock (current ±${res.currentAccuracyMeters.toInt()}m, required ±${res.requiredAccuracyMeters.toInt()}m). Please wait a moment."
+                is LocationVerificationResult.PermissionDenied ->
+                    "Cannot check out: Precise location permission required."
+                is LocationVerificationResult.LocationServicesDisabled ->
+                    "Cannot check out: Device location services are turned off."
+                is LocationVerificationResult.OutsideAllGeofences ->
+                    "Cannot check out: Outside authorized campus perimeter."
+                else ->
+                    "Cannot check out: Outside authorized campus perimeter."
+            }
             _submissionState.value = AttendanceEligibilityState.Blocked(err)
             onFailure(err)
             return

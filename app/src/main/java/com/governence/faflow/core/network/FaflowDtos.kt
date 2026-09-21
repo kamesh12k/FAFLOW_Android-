@@ -514,93 +514,129 @@ data class InstitutionPolicyDto(
 
 @JsonClass(generateAdapter = true)
 data class StudentItemDto(
-    @Json(name = "id") val id: Int,
-    @Json(name = "roll_number") val rollNumber: String,
-    @Json(name = "name") val name: String,
-    @Json(name = "roll_suffix") val rollSuffix: String,
+    @Json(name = "id") val id: Int = 0,
+    @Json(name = "roll_number") val rollNumber: String = "",
+    @Json(name = "name") val name: String = "",
+    @Json(name = "roll_suffix") val rollSuffix: String = "",
+    @Json(name = "class_id") val classId: Int? = null,
+    @Json(name = "department_id") val departmentId: Int? = null,
     @Json(name = "is_active") val isActive: Boolean = true
 )
 
 @JsonClass(generateAdapter = true)
 data class ClassRosterDto(
-    @Json(name = "class_id") val classId: Int,
-    @Json(name = "class_name") val className: String,
-    @Json(name = "total_students") val totalStudents: Int,
+    @Json(name = "class_id") val classId: Int = 0,
+    @Json(name = "class_name") val className: String = "",
+    @Json(name = "section") val section: String? = null,
+    @Json(name = "department_id") val departmentId: Int? = null,
+    @Json(name = "department_name") val departmentName: String? = null,
+    @Json(name = "total_students") val totalStudents: Int = 0,
     @Json(name = "students") val students: List<StudentItemDto> = emptyList()
 )
 
 @JsonClass(generateAdapter = true)
 data class TeacherPeriodSlotDto(
-    @Json(name = "timetable_slot_id") val timetableSlotId: Int,
-    @Json(name = "period_number") val periodNumber: Int,
-    @Json(name = "start_time") val startTime: String,
-    @Json(name = "end_time") val endTime: String,
-    @Json(name = "class_id") val classId: Int,
-    @Json(name = "class_name") val className: String,
-    @Json(name = "subject_id") val subjectId: Int,
-    @Json(name = "subject_name") val subjectName: String,
+    @Json(name = "timetable_slot_id") val timetableSlotId: Int? = null,
+    @Json(name = "period_number") val periodNumber: Int = 1,
+    @Json(name = "period_time") val periodTime: String? = null,
+    @Json(name = "start_time") val startTime: String? = null,
+    @Json(name = "end_time") val endTime: String? = null,
+    @Json(name = "class_id") val classId: Int = 0,
+    @Json(name = "class_name") val className: String = "",
+    @Json(name = "section") val section: String? = null,
+    @Json(name = "subject_id") val subjectId: Int? = null,
+    @Json(name = "subject_name") val subjectName: String? = null,
     @Json(name = "room_id") val roomId: Int? = null,
+    @Json(name = "room_number") val roomNumber: String? = null,
     @Json(name = "room_name") val roomName: String? = null,
     @Json(name = "is_substitution") val isSubstitution: Boolean = false,
+    @Json(name = "scheduled_teacher_name") val scheduledTeacherName: String? = null,
     @Json(name = "substitution_id") val substitutionId: Int? = null,
     @Json(name = "session_id") val sessionId: Int? = null,
     @Json(name = "session_status") val sessionStatus: String? = null
-)
+) {
+    val displayTime: String get() = periodTime ?: if (startTime != null && endTime != null) "$startTime - $endTime" else "Period $periodNumber"
+}
 
 @JsonClass(generateAdapter = true)
 data class TeacherTodayScheduleDto(
-    @Json(name = "date") val date: String,
-    @Json(name = "day_order") val dayOrder: Int?,
-    @Json(name = "is_holiday") val isHoliday: Boolean = false,
-    @Json(name = "holiday_reason") val holidayReason: String? = null,
+    @Json(name = "date") val date: String = "",
+    @Json(name = "day_order") val dayOrder: Int? = null,
+    @Json(name = "is_blocked_date") val isBlockedDate: Boolean = false,
+    @Json(name = "is_holiday") val isHolidayFallback: Boolean = false,
+    @Json(name = "block_reason") val blockReason: String? = null,
+    @Json(name = "holiday_reason") val holidayReasonFallback: String? = null,
     @Json(name = "current_period") val currentPeriod: Int? = null,
-    @Json(name = "periods") val periods: List<TeacherPeriodSlotDto> = emptyList()
-)
+    @Json(name = "scheduled_classes") val scheduledClasses: List<TeacherPeriodSlotDto> = emptyList(),
+    @Json(name = "substitutions") val substitutions: List<TeacherPeriodSlotDto> = emptyList(),
+    @Json(name = "periods") val directPeriods: List<TeacherPeriodSlotDto> = emptyList()
+) {
+    val isHoliday: Boolean get() = isBlockedDate || isHolidayFallback
+    val holidayReason: String? get() = blockReason ?: holidayReasonFallback
+    val periods: List<TeacherPeriodSlotDto> get() = when {
+        directPeriods.isNotEmpty() -> directPeriods
+        scheduledClasses.isNotEmpty() || substitutions.isNotEmpty() -> (scheduledClasses + substitutions).sortedBy { it.periodNumber }
+        else -> emptyList()
+    }
+}
 
 @JsonClass(generateAdapter = true)
 data class StudentRecordDto(
-    @Json(name = "id") val id: Int,
-    @Json(name = "student_id") val studentId: Int,
-    @Json(name = "student_roll_number") val studentRollNumber: String,
-    @Json(name = "student_name") val studentName: String,
-    @Json(name = "roll_suffix") val rollSuffix: String,
-    @Json(name = "status") val status: String,
+    @Json(name = "id") val id: Int = 0,
+    @Json(name = "student_id") val studentId: Int = 0,
+    @Json(name = "student_roll") val studentRoll: String? = null,
+    @Json(name = "student_roll_number") val fallbackRollNumber: String? = null,
+    @Json(name = "student_name") val studentName: String = "",
+    @Json(name = "student_suffix") val studentSuffix: String? = null,
+    @Json(name = "roll_suffix") val fallbackRollSuffix: String? = null,
+    @Json(name = "status") val status: String = "present",
     @Json(name = "marked_at") val markedAt: String? = null
-)
+) {
+    val studentRollNumber: String get() = studentRoll ?: fallbackRollNumber ?: ""
+    val rollSuffix: String get() = studentSuffix ?: fallbackRollSuffix ?: ""
+}
 
 @JsonClass(generateAdapter = true)
 data class AttendanceSessionDto(
-    @Json(name = "id") val id: Int,
-    @Json(name = "attendance_date") val attendanceDate: String,
-    @Json(name = "period_number") val periodNumber: Int,
-    @Json(name = "class_id") val classId: Int,
-    @Json(name = "class_name") val className: String,
-    @Json(name = "subject_id") val subjectId: Int,
+    @Json(name = "id") val id: Int = 0,
+    @Json(name = "attendance_date") val attendanceDate: String = "",
+    @Json(name = "period_number") val periodNumber: Int = 0,
+    @Json(name = "day_order") val dayOrder: Int? = null,
+    @Json(name = "class_id") val classId: Int = 0,
+    @Json(name = "class_name") val className: String = "",
+    @Json(name = "section") val section: String? = null,
+    @Json(name = "subject_id") val subjectId: Int? = null,
     @Json(name = "subject_name") val subjectName: String? = null,
     @Json(name = "scheduled_teacher_id") val scheduledTeacherId: Int? = null,
     @Json(name = "scheduled_teacher_name") val scheduledTeacherName: String? = null,
-    @Json(name = "actual_teacher_id") val actualTeacherId: Int,
+    @Json(name = "actual_teacher_id") val actualTeacherId: Int = 0,
     @Json(name = "actual_teacher_name") val actualTeacherName: String? = null,
-    @Json(name = "attendance_type") val attendanceType: String,
-    @Json(name = "status") val status: String,
+    @Json(name = "attendance_type") val attendanceType: String = "NORMAL",
+    @Json(name = "status") val status: String = "PENDING",
     @Json(name = "total_students") val totalStudents: Int = 0,
     @Json(name = "present_count") val presentCount: Int = 0,
     @Json(name = "absent_count") val absentCount: Int = 0,
+    @Json(name = "late_count") val lateCount: Int = 0,
+    @Json(name = "on_duty_count") val onDutyCount: Int = 0,
+    @Json(name = "leave_count") val leaveCount: Int = 0,
+    @Json(name = "medical_count") val medicalCount: Int = 0,
     @Json(name = "can_edit") val canEdit: Boolean = false,
     @Json(name = "records") val records: List<StudentRecordDto> = emptyList()
 )
 
 @JsonClass(generateAdapter = true)
 data class StudentExceptionItemDto(
-    @Json(name = "student_id") val studentId: Int,
+    @Json(name = "student_id") val studentId: Int? = null,
+    @Json(name = "roll_suffix") val rollSuffix: String? = null,
     @Json(name = "status") val status: String
 )
 
 @JsonClass(generateAdapter = true)
 data class AttendanceSessionCreateDto(
-    @Json(name = "timetable_slot_id") val timetableSlotId: Int,
-    @Json(name = "class_id") val classId: Int,
-    @Json(name = "subject_id") val subjectId: Int,
+    @Json(name = "timetable_slot_id") val timetableSlotId: Int? = null,
+    @Json(name = "class_id") val classId: Int? = null,
+    @Json(name = "subject_id") val subjectId: Int? = null,
+    @Json(name = "period_number") val periodNumber: Int? = null,
     @Json(name = "substitution_id") val substitutionId: Int? = null,
     @Json(name = "attendance_type") val attendanceType: String = "NORMAL"
 )
@@ -651,9 +687,10 @@ data class OfflineSyncResultDto(
 
 @JsonClass(generateAdapter = true)
 data class OfflineBatchSyncResponseDto(
-    @Json(name = "processed") val processed: Int,
-    @Json(name = "success_count") val successCount: Int,
-    @Json(name = "failure_count") val failureCount: Int,
+    @Json(name = "processed") val processed: Int = 0,
+    @Json(name = "success_count") val successCount: Int = 0,
+    @Json(name = "failure_count") val failureCount: Int = 0,
     @Json(name = "results") val results: List<OfflineSyncResultDto> = emptyList()
 )
+
 

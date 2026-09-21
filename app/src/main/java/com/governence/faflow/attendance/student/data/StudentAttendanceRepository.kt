@@ -225,9 +225,9 @@ open class StudentAttendanceRepository(
      * Creates or retrieves attendance session online.
      */
     open suspend fun getOrCreateSession(
-        slotId: Int,
+        slotId: Int? = null,
         classId: Int,
-        subjectId: Int,
+        subjectId: Int? = null,
         substitutionId: Int? = null,
         isSubstitution: Boolean = false
     ): AttendanceSessionDto? = withContext(Dispatchers.IO) {

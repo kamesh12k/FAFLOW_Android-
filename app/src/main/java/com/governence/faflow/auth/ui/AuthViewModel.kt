@@ -72,6 +72,10 @@ class AuthViewModel(
         }
     }
 
+    fun updateStaff(staff: StaffMember) {
+        _uiState.value = AuthUiState.Authenticated(staff)
+    }
+
     fun logout() {
         authRepository.logout()
         _uiState.value = AuthUiState.Idle

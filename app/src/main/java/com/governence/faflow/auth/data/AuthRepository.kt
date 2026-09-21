@@ -29,7 +29,10 @@ class AuthRepository(
                     userName = userDto.name,
                     userEmail = userDto.email ?: identifier,
                     role = userDto.role,
-                    departmentId = userDto.departmentId
+                    departmentId = userDto.departmentId,
+                    policyVersionAccepted = userDto.policyVersionAccepted,
+                    policyAcceptedAt = userDto.policyAcceptedAt,
+                    onboardingCompleted = userDto.onboardingCompleted
                 )
 
                 val staffMember = StaffMember(
@@ -65,6 +68,11 @@ class AuthRepository(
             val response = apiService.getMe()
             if (response.isSuccessful && response.body() != null) {
                 val u = response.body()!!
+                if (u.policyVersionAccepted != null) {
+                    tokenManager.updatePolicyAccepted(u.policyVersionAccepted, u.policyAcceptedAt)
+                }
+                tokenManager.updateOnboardingCompleted(u.onboardingCompleted)
+
                 val staff = StaffMember(
                     id = u.id,
                     name = u.name,
@@ -105,6 +113,8 @@ class AuthRepository(
             val response = apiService.acceptPolicy(com.governence.faflow.core.network.PolicyAcceptRequestDto(version))
             if (response.isSuccessful && response.body() != null) {
                 val u = response.body()!!.user
+                tokenManager.updatePolicyAccepted(u.policyVersionAccepted ?: version, u.policyAcceptedAt)
+
                 val staff = StaffMember(
                     id = u.id,
                     name = u.name,
@@ -114,7 +124,7 @@ class AuthRepository(
                     departmentId = u.departmentId,
                     departmentName = u.department,
                     isActive = u.isActive,
-                    policyVersionAccepted = u.policyVersionAccepted,
+                    policyVersionAccepted = u.policyVersionAccepted ?: version,
                     policyAcceptedAt = u.policyAcceptedAt,
                     onboardingCompleted = u.onboardingCompleted
                 )
@@ -131,6 +141,7 @@ class AuthRepository(
         return try {
             val response = apiService.completeOnboarding()
             if (response.isSuccessful) {
+                tokenManager.updateOnboardingCompleted(true)
                 NetworkResult.Success(true)
             } else {
                 NetworkResult.Error(response.code(), "Failed to record onboarding completion")
@@ -144,6 +155,7 @@ class AuthRepository(
         return try {
             val response = apiService.resetOnboarding()
             if (response.isSuccessful) {
+                tokenManager.updateOnboardingCompleted(false)
                 NetworkResult.Success(true)
             } else {
                 NetworkResult.Error(response.code(), "Failed to reset onboarding")
@@ -164,7 +176,10 @@ class AuthRepository(
             name = tokenManager.getUserName() ?: "Faculty Member",
             email = tokenManager.getUserEmail() ?: "",
             role = tokenManager.getUserRole() ?: "teacher",
-            departmentId = tokenManager.getDepartmentId()
+            departmentId = tokenManager.getDepartmentId(),
+            policyVersionAccepted = tokenManager.getPolicyVersionAccepted(),
+            policyAcceptedAt = tokenManager.getPolicyAcceptedAt(),
+            onboardingCompleted = tokenManager.getOnboardingCompleted()
         )
     }
 }

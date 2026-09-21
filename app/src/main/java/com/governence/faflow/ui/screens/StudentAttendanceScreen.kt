@@ -447,7 +447,7 @@ fun StudentAttendanceScreen(
                                             color = if (isSelected) Color.White else Color(0xFF334155)
                                         )
                                         Text(
-                                            text = slot.subjectName,
+                                            text = slot.subjectName ?: "No Subject",
                                             fontSize = 10.sp,
                                             color = if (isSelected) Color(0xFFE2E8F0) else Color(0xFF64748B)
                                         )
@@ -512,7 +512,7 @@ fun StudentAttendanceScreen(
                                         color = Color(0xFF0F172A)
                                     )
                                     Text(
-                                        text = selectedSlot.subjectName,
+                                        text = selectedSlot.subjectName ?: "No Subject",
                                         fontSize = 12.sp,
                                         color = Color(0xFF64748B)
                                     )
