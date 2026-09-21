@@ -10,6 +10,7 @@ import com.governence.faflow.core.network.ClassRosterDto
 import com.governence.faflow.core.network.FaflowApiClient
 import com.governence.faflow.core.network.OfflineSyncOperationDto
 import com.governence.faflow.core.network.AttendanceSessionDto
+import com.governence.faflow.core.network.PublicGovernanceConfigDto
 import com.governence.faflow.core.network.TeacherTodayScheduleDto
 import com.squareup.moshi.Types
 
@@ -27,6 +28,7 @@ class StudentAttendanceLocalDb(context: Context) : SQLiteOpenHelper(context, DAT
     private val rosterAdapter = moshi.adapter(ClassRosterDto::class.java).lenient()
     private val sessionAdapter = moshi.adapter(AttendanceSessionDto::class.java).lenient()
     private val operationAdapter = moshi.adapter(OfflineSyncOperationDto::class.java).lenient()
+    private val governanceConfigAdapter = moshi.adapter(PublicGovernanceConfigDto::class.java).lenient()
 
     override fun onCreate(db: SQLiteDatabase) {
         // 1. Cached Schedule
@@ -99,6 +101,17 @@ class StudentAttendanceLocalDb(context: Context) : SQLiteOpenHelper(context, DAT
         )
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_student_sync_status ON student_attendance_sync_queue (sync_status)")
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_student_sync_op_id ON student_attendance_sync_queue (operation_id)")
+
+        // 6. Cached Governance Business Rules & Period Config
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS cached_governance_config (
+                cache_key TEXT PRIMARY KEY,
+                json_data TEXT NOT NULL,
+                updated_at INTEGER NOT NULL
+            )
+            """.trimIndent()
+        )
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
@@ -107,6 +120,7 @@ class StudentAttendanceLocalDb(context: Context) : SQLiteOpenHelper(context, DAT
         db.execSQL("DROP TABLE IF EXISTS cached_rosters")
         db.execSQL("DROP TABLE IF EXISTS cached_sessions")
         db.execSQL("DROP TABLE IF EXISTS student_attendance_sync_queue")
+        db.execSQL("DROP TABLE IF EXISTS cached_governance_config")
         onCreate(db)
     }
 
@@ -508,8 +522,39 @@ class StudentAttendanceLocalDb(context: Context) : SQLiteOpenHelper(context, DAT
         return list
     }
 
+    // ---------- Governance Public Config Cache ----------
+
+    @Synchronized
+    fun saveGovernanceConfig(config: PublicGovernanceConfigDto) {
+        val db = writableDatabase
+        val json = governanceConfigAdapter.toJson(config)
+        val values = ContentValues().apply {
+            put("cache_key", "governance_public_config")
+            put("json_data", json)
+            put("updated_at", System.currentTimeMillis())
+        }
+        db.insertWithOnConflict("cached_governance_config", null, values, SQLiteDatabase.CONFLICT_REPLACE)
+    }
+
+    @Synchronized
+    fun getCachedGovernanceConfig(): PublicGovernanceConfigDto? {
+        val db = readableDatabase
+        val cursor = db.rawQuery("SELECT json_data FROM cached_governance_config WHERE cache_key = 'governance_public_config'", null)
+        cursor.use {
+            if (it.moveToFirst()) {
+                val json = it.getString(0)
+                return try {
+                    governanceConfigAdapter.fromJson(json)
+                } catch (e: Exception) {
+                    null
+                }
+            }
+        }
+        return null
+    }
+
     companion object {
         private const val DATABASE_NAME = "faflow_student_attendance.db"
-        private const val DATABASE_VERSION = 1
+        private const val DATABASE_VERSION = 2
     }
 }

@@ -10,8 +10,10 @@ import com.governence.faflow.core.network.FaflowApiService
 import com.governence.faflow.core.network.NetworkResult
 import com.governence.faflow.core.network.OfflineBatchSyncRequestDto
 import com.governence.faflow.core.network.OfflineSyncOperationDto
+import com.governence.faflow.core.network.PublicGovernanceConfigDto
 import com.governence.faflow.core.network.StudentExceptionItemDto
 import com.governence.faflow.core.network.TeacherTodayScheduleDto
+import com.governence.faflow.domain.model.InstitutionalSchedule
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
@@ -40,6 +42,48 @@ open class StudentAttendanceRepository(
     }
 
     /**
+     * Synchronizes and applies the dynamic institutional governance configuration (periods & timing windows).
+     * Offline-first: if remote call fails, falls back to local SQLite cache, and applies to InstitutionalSchedule.
+     */
+    open suspend fun syncGovernanceConfig(): NetworkResult<PublicGovernanceConfigDto> = withContext(Dispatchers.IO) {
+        val db = localDb
+        val service = apiService
+
+        if (service != null) {
+            try {
+                val response = service.getPublicGovernanceConfig()
+                if (response.isSuccessful && response.body() != null) {
+                    val config = response.body()!!
+                    db?.saveGovernanceConfig(config)
+                    applyGovernanceConfig(config)
+                    return@withContext NetworkResult.Success(config)
+                }
+            } catch (e: Exception) {
+                // Fall through to cached config
+            }
+        }
+
+        val cached = db?.getCachedGovernanceConfig()
+        if (cached != null) {
+            applyGovernanceConfig(cached)
+            return@withContext NetworkResult.Success(cached)
+        }
+
+        NetworkResult.Error(-1, "Using default institutional schedule")
+    }
+
+    private fun applyGovernanceConfig(config: PublicGovernanceConfigDto) {
+        InstitutionalSchedule.updateFromConfig(
+            periodList = config.periodSchedule,
+            leadTime = config.suggestionLeadTimeMinutes,
+            startWindow = config.suggestionStartWindowMinutes,
+            expirationWindow = config.suggestionExpirationWindowMinutes,
+            tolerance = config.currentPeriodToleranceMinutes,
+            submissionWindow = config.studentAttendanceSubmissionWindowMinutes
+        )
+    }
+
+    /**
      * Retrieves today's schedule. Offline-first: returns cached schedule if network is unavailable.
      */
     open suspend fun getTodaySchedule(targetDate: String? = null): NetworkResult<TeacherTodayScheduleDto> = withContext(Dispatchers.IO) {
@@ -47,6 +91,11 @@ open class StudentAttendanceRepository(
         val db = localDb ?: return@withContext NetworkResult.Error(-1, "No Local DB")
 
         try {
+            // Opportunistically sync governance config
+            try {
+                syncGovernanceConfig()
+            } catch (_: Exception) {}
+
             val response = service.getStudentAttendanceToday(targetDate)
             if (response.isSuccessful && response.body() != null) {
                 val dto = response.body()!!

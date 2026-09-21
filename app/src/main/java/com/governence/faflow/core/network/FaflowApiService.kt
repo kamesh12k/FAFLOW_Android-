@@ -406,4 +406,8 @@ interface FaflowApiService {
         @Query("date") date: String? = null,
         @Query("department_id") departmentId: Int? = null
     ): Response<DutyDashboardMetricsDto>
+
+    // ---------- Governance / Public Config ----------
+    @GET("system/governance/public-config")
+    suspend fun getPublicGovernanceConfig(): Response<PublicGovernanceConfigDto>
 }

@@ -90,7 +90,7 @@ class StudentAttendanceViewModel(
                     }
                     // Contextual auto-selection: select explicitly requested slot, active period, or first slot
                     if (_uiState.value.selectedSlot == null && schedule.periods.isNotEmpty()) {
-                        val activeOrRecent = getLocalCurrentPeriod()
+                        val activeOrRecent = schedule.currentPeriod ?: getLocalCurrentPeriod()
                         val matching = if (targetPeriod != null || targetClassId != null) {
                             schedule.periods.firstOrNull { slot ->
                                 (targetPeriod == null || slot.periodNumber == targetPeriod) &&
@@ -121,7 +121,7 @@ class StudentAttendanceViewModel(
 
     fun preselectPeriod(periodNumber: Int?, classId: Int? = null) {
         val schedule = _uiState.value.schedule
-        val activeOrRecent = getLocalCurrentPeriod()
+        val activeOrRecent = schedule?.currentPeriod ?: getLocalCurrentPeriod()
         if (schedule != null && schedule.periods.isNotEmpty()) {
             val matching = schedule.periods.firstOrNull { slot ->
                 (periodNumber == null || slot.periodNumber == periodNumber) &&

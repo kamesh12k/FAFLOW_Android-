@@ -119,7 +119,9 @@ class StudentAttendanceViewModelTest {
             sessionId: Int,
             classId: Int,
             absentSuffixes: List<String>,
-            exceptions: List<StudentExceptionItemDto>
+            exceptions: List<StudentExceptionItemDto>,
+            periodNumber: Int?,
+            subjectId: Int?
         ): StudentAttendanceResult {
             submittedAbsent = absentSuffixes
             submittedExceptions = exceptions

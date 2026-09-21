@@ -1,8 +1,11 @@
 package com.governence.faflow.domain.model
 
+import com.governence.faflow.core.network.PeriodEntryDto
+
 /**
  * Institutional Schedule & Academic Timetable Configuration for FAFLOW.
  * Defines the standard institutional milestones, teaching period time ranges, and break slots.
+ * Supports dynamic runtime configuration synced from the Governance Business Rules Control Plane.
  */
 object InstitutionalSchedule {
 
@@ -22,15 +25,63 @@ object InstitutionalSchedule {
     const val AFTERNOON_BREAK_END = "14:55"
 
     /**
-     * Map of period numbers (1 to 5) to formatted time range strings.
+     * Factory default period timing mappings.
      */
-    val PERIOD_TIMES: Map<Int, String> = mapOf(
+    val DEFAULT_PERIOD_TIMES: Map<Int, String> = mapOf(
         1 to "09:20–10:20",
         2 to "10:20–11:15",
         3 to "11:40–12:35",
         4 to "13:35–14:30",
         5 to "14:55–15:50"
     )
+
+    val DEFAULT_PERIOD_MINUTE_RANGES: Map<Int, IntRange> = mapOf(
+        1 to (9 * 60 + 20)..(10 * 60 + 19),   // 09:20 – 10:19
+        2 to (10 * 60 + 20)..(11 * 60 + 14),  // 10:20 – 11:14
+        3 to (11 * 60 + 40)..(12 * 60 + 34),  // 11:40 – 12:34
+        4 to (13 * 60 + 35)..(14 * 60 + 29),  // 13:35 – 14:29
+        5 to (14 * 60 + 55)..(15 * 60 + 49)   // 14:55 – 15:49
+    )
+
+    @Volatile
+    private var dynamicPeriodTimes: Map<Int, String> = DEFAULT_PERIOD_TIMES
+
+    @Volatile
+    private var dynamicPeriodMinuteRanges: Map<Int, IntRange> = DEFAULT_PERIOD_MINUTE_RANGES
+
+    @Volatile
+    var suggestionLeadTimeMinutes: Int = 15
+        private set
+
+    @Volatile
+    var suggestionStartWindowMinutes: Int = 15
+        private set
+
+    @Volatile
+    var suggestionExpirationWindowMinutes: Int = 15
+        private set
+
+    @Volatile
+    var currentPeriodToleranceMinutes: Int = 0
+        private set
+
+    @Volatile
+    var submissionWindowMinutes: Int = 15
+        private set
+
+    /**
+     * Map of period numbers (1 to 5+) to formatted time range strings.
+     * Backwards-compatible getter that returns active (dynamic or default) period times.
+     */
+    val PERIOD_TIMES: Map<Int, String>
+        get() = dynamicPeriodTimes
+
+    /**
+     * Period timing definitions with start & end minutes from midnight for schedule calculations.
+     * Backwards-compatible getter that returns active (dynamic or default) minute ranges.
+     */
+    val PERIOD_MINUTE_RANGES: Map<Int, IntRange>
+        get() = dynamicPeriodMinuteRanges
 
     /**
      * Returns formatted time range string for a given period number (e.g., "09:20–10:20").
@@ -40,15 +91,63 @@ object InstitutionalSchedule {
     }
 
     /**
-     * Period timing definitions with start & end minutes from midnight for schedule calculations.
+     * Updates active period schedules and timing windows from backend governance configuration.
      */
-    val PERIOD_MINUTE_RANGES: Map<Int, IntRange> = mapOf(
-        1 to (9 * 60 + 20)..(10 * 60 + 19),   // 09:20 – 10:19
-        2 to (10 * 60 + 20)..(11 * 60 + 14),  // 10:20 – 11:14
-        3 to (11 * 60 + 40)..(12 * 60 + 34),  // 11:40 – 12:34
-        4 to (13 * 60 + 35)..(14 * 60 + 29),  // 13:35 – 14:29
-        5 to (14 * 60 + 55)..(15 * 60 + 49)   // 14:55 – 15:49
-    )
+    fun updateFromConfig(
+        periodList: List<PeriodEntryDto>?,
+        leadTime: Int = 15,
+        startWindow: Int = 15,
+        expirationWindow: Int = 15,
+        tolerance: Int = 0,
+        submissionWindow: Int = 15
+    ) {
+        if (!periodList.isNullOrEmpty()) {
+            val newTimes = mutableMapOf<Int, String>()
+            val newRanges = mutableMapOf<Int, IntRange>()
+
+            for (p in periodList) {
+                val startParts = p.startTime.split(":")
+                val endParts = p.endTime.split(":")
+                if (startParts.size >= 2 && endParts.size >= 2) {
+                    val startH = startParts[0].toIntOrNull() ?: 0
+                    val startM = startParts[1].toIntOrNull() ?: 0
+                    val endH = endParts[0].toIntOrNull() ?: 0
+                    val endM = endParts[1].toIntOrNull() ?: 0
+
+                    val startMin = startH * 60 + startM
+                    val endMin = endH * 60 + endM
+
+                    newTimes[p.periodNumber] = "${p.startTime}–${p.endTime}"
+                    val inclusiveEnd = if (endMin > startMin) endMin - 1 else startMin
+                    newRanges[p.periodNumber] = startMin..inclusiveEnd
+                }
+            }
+
+            if (newTimes.isNotEmpty()) {
+                dynamicPeriodTimes = newTimes
+                dynamicPeriodMinuteRanges = newRanges
+            }
+        }
+
+        suggestionLeadTimeMinutes = leadTime
+        suggestionStartWindowMinutes = startWindow
+        suggestionExpirationWindowMinutes = expirationWindow
+        currentPeriodToleranceMinutes = tolerance
+        submissionWindowMinutes = submissionWindow
+    }
+
+    /**
+     * Resets period schedules and timing windows back to institutional factory defaults.
+     */
+    fun resetToDefaults() {
+        dynamicPeriodTimes = DEFAULT_PERIOD_TIMES
+        dynamicPeriodMinuteRanges = DEFAULT_PERIOD_MINUTE_RANGES
+        suggestionLeadTimeMinutes = 15
+        suggestionStartWindowMinutes = 15
+        suggestionExpirationWindowMinutes = 15
+        currentPeriodToleranceMinutes = 0
+        submissionWindowMinutes = 15
+    }
 
     /**
      * Resolves the active period number for a given minute since midnight, or null during breaks/off-hours.
@@ -63,13 +162,17 @@ object InstitutionalSchedule {
      */
     fun resolveActiveOrRecentPeriod(minutesSinceMidnight: Int): Int {
         resolvePeriodNumber(minutesSinceMidnight)?.let { return it }
-        return when {
-            minutesSinceMidnight < (10 * 60 + 20) -> 1
-            minutesSinceMidnight < (11 * 60 + 40) -> 2
-            minutesSinceMidnight < (13 * 60 + 35) -> 3
-            minutesSinceMidnight < (14 * 60 + 55) -> 4
-            else -> 5
+
+        val sorted = PERIOD_MINUTE_RANGES.entries.sortedBy { it.value.first }
+        if (sorted.isEmpty()) return 1
+
+        for (entry in sorted) {
+            if (minutesSinceMidnight < entry.value.first) {
+                val index = sorted.indexOf(entry)
+                return if (index > 0) sorted[index - 1].key else entry.key
+            }
         }
+        return sorted.last().key
     }
 
     fun getPeriodStartMinute(periodNumber: Int): Int {
@@ -77,11 +180,11 @@ object InstitutionalSchedule {
     }
 
     /**
-     * Checks if current minutesSinceMidnight is within the official 15-minute submission window
+     * Checks if current minutesSinceMidnight is within the official submission window
      * from the period start time.
      */
     fun isWithin15MinuteWindow(periodNumber: Int, minutesSinceMidnight: Int): Boolean {
         val start = getPeriodStartMinute(periodNumber)
-        return minutesSinceMidnight in start..(start + 15)
+        return minutesSinceMidnight in start..(start + submissionWindowMinutes)
     }
 }

@@ -919,3 +919,25 @@ data class DutyAssignRequestDto(
 data class DutyLockRequestDto(
     @Json(name = "reason") val reason: String? = null
 )
+
+// ---------- Governance / Public Config DTOs ----------
+
+@JsonClass(generateAdapter = true)
+data class PeriodEntryDto(
+    @Json(name = "period_number") val periodNumber: Int,
+    @Json(name = "start_time") val startTime: String,
+    @Json(name = "end_time") val endTime: String,
+    @Json(name = "label") val label: String
+)
+
+@JsonClass(generateAdapter = true)
+data class PublicGovernanceConfigDto(
+    @Json(name = "period_schedule") val periodSchedule: List<PeriodEntryDto> = emptyList(),
+    @Json(name = "suggestion_lead_time_minutes") val suggestionLeadTimeMinutes: Int = 15,
+    @Json(name = "suggestion_start_window_minutes") val suggestionStartWindowMinutes: Int = 15,
+    @Json(name = "suggestion_expiration_window_minutes") val suggestionExpirationWindowMinutes: Int = 15,
+    @Json(name = "current_period_tolerance_minutes") val currentPeriodToleranceMinutes: Int = 0,
+    @Json(name = "student_attendance_submission_window_minutes") val studentAttendanceSubmissionWindowMinutes: Int = 15,
+    @Json(name = "periods_per_day") val periodsPerDay: Int = 5,
+    @Json(name = "day_order_max") val dayOrderMax: Int = 6
+)

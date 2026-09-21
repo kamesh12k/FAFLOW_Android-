@@ -90,8 +90,8 @@ class DashboardViewModel(
         val active = if (period != null) slots.firstOrNull { it.periodNumber == period } else null
         val nextUpcoming = if (period != null) {
             slots.filter { it.periodNumber > period }.minByOrNull { it.periodNumber }
-        } else if (minutesSinceMidnight < (9 * 60 + 20)) {
-            // Before college starts (09:20) — show first period as upcoming
+        } else if (minutesSinceMidnight < com.governence.faflow.domain.model.InstitutionalSchedule.getPeriodStartMinute(1)) {
+            // Before college starts — show first period as upcoming
             slots.minByOrNull { it.periodNumber }
         } else {
             null
@@ -116,6 +116,10 @@ class DashboardViewModel(
         )
 
         viewModelScope.launch {
+            try {
+                studentAttendanceRepository?.syncGovernanceConfig()
+            } catch (_: Exception) {}
+
             val staffId = currentStaff?.id
             if (staffId == null) {
                 _uiState.value = _uiState.value.copy(
