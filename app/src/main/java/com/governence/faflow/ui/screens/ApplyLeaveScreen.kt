@@ -57,7 +57,10 @@ import com.governence.faflow.ui.theme.FaflowSpacing
 import com.governence.faflow.ui.theme.FaflowStatusColors
 import com.governence.faflow.ui.theme.PrimaryBlue
 import com.governence.faflow.ui.theme.StatusError
+import com.governence.faflow.ui.theme.StatusSuccess
 import com.governence.faflow.ui.viewmodels.LeaveViewModel
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -96,6 +99,7 @@ fun ApplyLeaveScreen(
     var isWholeDay by remember { mutableStateOf(true) }
     var selectedPeriods by remember { mutableStateOf(setOf(1, 2, 3, 4, 5)) }
     var reason by remember { mutableStateOf("") }
+    var expandedPeriod by remember { mutableStateOf<Int?>(null) }
 
     LaunchedEffect(leaveDate) {
         if (leaveDate.length == 10) {
@@ -108,6 +112,20 @@ fun ApplyLeaveScreen(
             selectedPeriods = setOf(1, 2, 3, 4, 5)
         } else if (selectedPeriods.size == 5) {
             selectedPeriods = setOf(1)
+        }
+    }
+
+    LaunchedEffect(selectedPeriods) {
+        if (selectedPeriods.size == 1) {
+            expandedPeriod = selectedPeriods.first()
+        } else if (expandedPeriod != null && !selectedPeriods.contains(expandedPeriod)) {
+            expandedPeriod = selectedPeriods.firstOrNull()
+        }
+    }
+
+    LaunchedEffect(leaveDate, selectedPeriods, state.isFlexibleMode) {
+        if (state.isFlexibleMode && leaveDate.length == 10 && selectedPeriods.isNotEmpty()) {
+            viewModel.loadCandidatesForPeriods(leaveDate, selectedPeriods)
         }
     }
 
@@ -398,39 +416,45 @@ fun ApplyLeaveScreen(
             Spacer(modifier = Modifier.height(FaflowSpacing.lg))
 
             // ---- Flexible Mode: Proposed Substitute Selection ----
-            if (state.isFlexibleMode && !isWholeDay) {
-                // For single period: show candidates immediately
-                LaunchedEffect(leaveDate, selectedPeriods) {
-                    if (selectedPeriods.size == 1 && leaveDate.length == 10) {
-                        viewModel.loadSlotCandidates(leaveDate, selectedPeriods.first())
-                    }
-                }
+            if (state.isFlexibleMode && selectedPeriods.isNotEmpty()) {
+                val coveredCount = selectedPeriods.count { state.selectedSubstitutePerPeriod.containsKey(it) }
+                val isFullyCovered = coveredCount == selectedPeriods.size
 
                 FaflowSurface(
                     modifier = Modifier.fillMaxWidth(),
-                    backgroundColor = PrimaryBlue.copy(alpha = 0.06f),
-                    borderColor = PrimaryBlue.copy(alpha = 0.3f),
+                    backgroundColor = if (isFullyCovered) StatusSuccess.copy(alpha = 0.08f) else PrimaryBlue.copy(alpha = 0.06f),
+                    borderColor = if (isFullyCovered) StatusSuccess.copy(alpha = 0.4f) else PrimaryBlue.copy(alpha = 0.3f),
                     contentPadding = PaddingValues(FaflowSpacing.md)
                 ) {
                     Column {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = Icons.Default.Info,
-                                contentDescription = null,
-                                tint = PrimaryBlue,
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = "Flexible Mode · Propose a Substitute",
-                                style = MaterialTheme.typography.labelMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = PrimaryBlue
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = if (isFullyCovered) Icons.Default.Check else Icons.Default.Info,
+                                    contentDescription = null,
+                                    tint = if (isFullyCovered) StatusSuccess else PrimaryBlue,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "Flexible Mode · Substitute Nomination",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (isFullyCovered) StatusSuccess else PrimaryBlue
+                                )
+                            }
+                            FaflowStatusBadge(
+                                text = "$coveredCount/${selectedPeriods.size} nominated",
+                                statusColor = if (isFullyCovered) StatusSuccess else FaflowStatusColors.Pending
                             )
                         }
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = "In Flexible mode you must nominate a substitute. Your HOD will confirm the assignment.",
+                            text = "Please nominate an available faculty substitute for each period. Your HOD will officially confirm the assignments.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -438,71 +462,133 @@ fun ApplyLeaveScreen(
                 }
                 Spacer(modifier = Modifier.height(FaflowSpacing.sm))
 
-                if (state.isLoadingCandidates) {
+                if (state.isLoadingCandidates && state.candidatesPerPeriod.isEmpty()) {
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.Center
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = FaflowSpacing.md),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
                         CircularProgressIndicator(
-                            modifier = Modifier.size(24.dp),
+                            modifier = Modifier.size(20.dp),
                             strokeWidth = 2.dp,
                             color = PrimaryBlue
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = "Loading available substitutes…",
+                            text = "Finding eligible substitute candidates…",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                } else if (state.slotCandidates.isNotEmpty() && selectedPeriods.size == 1) {
-                    val period = selectedPeriods.first()
-                    val pickedId = state.selectedSubstitutePerPeriod[period]
+                } else {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        selectedPeriods.sorted().forEach { period ->
+                            val periodCandidates = state.candidatesPerPeriod[period] ?: emptyList()
+                            val pickedId = state.selectedSubstitutePerPeriod[period]
+                            val pickedCandidate = periodCandidates.firstOrNull { it.id == pickedId }
+                            val isExpanded = expandedPeriod == period || selectedPeriods.size == 1
 
-                    Text(
-                        text = "Available Substitutes (P$period)",
-                        style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(modifier = Modifier.height(FaflowSpacing.xs))
-                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        state.slotCandidates.take(5).forEach { candidate ->
-                            CandidatePickerRow(
-                                candidate = candidate,
-                                isSelected = candidate.id == pickedId,
-                                onSelect = {
-                                    if (candidate.id == pickedId) {
-                                        viewModel.clearSubstituteForPeriod(period)
-                                    } else {
-                                        viewModel.selectSubstituteForPeriod(period, candidate.id)
+                            FaflowSurface(
+                                modifier = Modifier.fillMaxWidth(),
+                                backgroundColor = Color.White,
+                                borderColor = if (pickedId != null) StatusSuccess.copy(alpha = 0.5f) else com.governence.faflow.ui.theme.FaflowBorder,
+                                contentPadding = PaddingValues(12.dp)
+                            ) {
+                                Column {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable {
+                                                expandedPeriod = if (expandedPeriod == period) null else period
+                                            },
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .clip(FaflowShapes.small)
+                                                    .background(com.governence.faflow.ui.theme.FaflowNavy)
+                                                    .padding(horizontal = 8.dp, vertical = 4.dp)
+                                            ) {
+                                                Text(
+                                                    text = "P$period",
+                                                    fontSize = 12.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = Color.White
+                                                )
+                                            }
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Text(
+                                                text = PERIOD_TIME_MAP[period] ?: "",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                fontWeight = FontWeight.SemiBold,
+                                                color = MaterialTheme.colorScheme.onSurface
+                                            )
+                                        }
+
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            if (pickedCandidate != null) {
+                                                Text(
+                                                    text = pickedCandidate.name,
+                                                    fontSize = 12.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = StatusSuccess,
+                                                    maxLines = 1
+                                                )
+                                            } else {
+                                                Text(
+                                                    text = "Select Substitute",
+                                                    fontSize = 12.sp,
+                                                    fontWeight = FontWeight.SemiBold,
+                                                    color = FaflowStatusColors.Pending
+                                                )
+                                            }
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Icon(
+                                                imageVector = if (isExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                                                contentDescription = null,
+                                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        }
+                                    }
+
+                                    if (isExpanded) {
+                                        Spacer(modifier = Modifier.height(10.dp))
+                                        if (periodCandidates.isEmpty()) {
+                                            Text(
+                                                text = if (state.isLoadingCandidates) "Loading candidates for Period $period…" else "No available substitutes found for Period $period.",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                modifier = Modifier.padding(vertical = 4.dp)
+                                            )
+                                        } else {
+                                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                                periodCandidates.take(5).forEach { candidate ->
+                                                    CandidatePickerRow(
+                                                        candidate = candidate,
+                                                        isSelected = candidate.id == pickedId,
+                                                        onSelect = {
+                                                            if (candidate.id == pickedId) {
+                                                                viewModel.clearSubstituteForPeriod(period)
+                                                            } else {
+                                                                viewModel.selectSubstituteForPeriod(period, candidate.id)
+                                                            }
+                                                        }
+                                                    )
+                                                }
+                                            }
+                                        }
                                     }
                                 }
-                            )
+                            }
                         }
                     }
-                } else if (!state.isLoadingCandidates && selectedPeriods.size == 1) {
-                    Text(
-                        text = "No available substitutes found for this slot.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
                 }
 
-                Spacer(modifier = Modifier.height(FaflowSpacing.lg))
-            } else if (state.isFlexibleMode && isWholeDay) {
-                FaflowSurface(
-                    modifier = Modifier.fillMaxWidth(),
-                    backgroundColor = FaflowStatusColors.PendingBg,
-                    borderColor = FaflowStatusColors.Pending.copy(alpha = 0.4f),
-                    contentPadding = PaddingValues(FaflowSpacing.md)
-                ) {
-                    Text(
-                        text = "Flexible Mode: For whole-day leaves, switch to 'Custom Periods' to propose substitutes per period.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                }
                 Spacer(modifier = Modifier.height(FaflowSpacing.lg))
             }
 
@@ -583,10 +669,11 @@ fun ApplyLeaveScreen(
 
             // Submit Button
             val hasConflict = state.hasExistingLeaveOnDate && (isWholeDay || selectedPeriods.any { it in state.existingLeavePeriods })
-            val isFlexibleSingleOk = !state.isFlexibleMode || isWholeDay || selectedPeriods.size != 1 ||
-                    state.selectedSubstitutePerPeriod.containsKey(selectedPeriods.firstOrNull())
+            val isFlexibleCoverageOk = !state.isFlexibleMode || selectedPeriods.all { p ->
+                state.selectedSubstitutePerPeriod.containsKey(p)
+            }
             val isSubmitEnabled = reason.isNotBlank() && selectedPeriods.isNotEmpty() &&
-                    !state.isBlockedDate && !hasConflict && isFlexibleSingleOk
+                    !state.isBlockedDate && !hasConflict && isFlexibleCoverageOk
 
             if (state.isLoading) {
                 CircularProgressIndicator(

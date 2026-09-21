@@ -579,6 +579,7 @@ fun FullScreenImageDialog(url: String, onDismiss: () -> Unit) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun InAppDocViewerSheet(url: String, fileName: String, onDismiss: () -> Unit) {
+    val context = LocalContext.current
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     // Wrap in Google Docs viewer so PDF renders without downloading
     val viewerUrl = "https://docs.google.com/gviewer?embedded=true&url=${Uri.encode(url)}"
@@ -608,8 +609,20 @@ fun InAppDocViewerSheet(url: String, fileName: String, onDismiss: () -> Unit) {
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
-                IconButton(onClick = onDismiss) {
-                    Icon(Icons.Default.Close, contentDescription = "Close", tint = FaflowText2)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = {
+                        try {
+                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                            context.startActivity(intent)
+                        } catch (_: Exception) {
+                            Toast.makeText(context, "Cannot open: $fileName", Toast.LENGTH_SHORT).show()
+                        }
+                    }) {
+                        Icon(Icons.Default.OpenInNew, contentDescription = "Open in browser", tint = PrimaryBlue)
+                    }
+                    IconButton(onClick = onDismiss) {
+                        Icon(Icons.Default.Close, contentDescription = "Close", tint = FaflowText2)
+                    }
                 }
             }
             HorizontalDivider(color = FaflowBorder)
@@ -618,6 +631,7 @@ fun InAppDocViewerSheet(url: String, fileName: String, onDismiss: () -> Unit) {
                     WebView(ctx).apply {
                         webViewClient = WebViewClient()
                         settings.javaScriptEnabled = true
+                        settings.domStorageEnabled = true
                         settings.loadWithOverviewMode = true
                         settings.useWideViewPort = true
                         loadUrl(viewerUrl)
@@ -632,8 +646,17 @@ fun InAppDocViewerSheet(url: String, fileName: String, onDismiss: () -> Unit) {
 @Composable
 fun AttachmentRow(attachment: AnnouncementAttachmentDto) {
     val context = LocalContext.current
-    val url = attachment.downloadUrl ?: ""
+    val rawUrl = attachment.downloadUrl ?: ""
     val fileName = attachment.fileName
+
+    // Normalize relative URL against base URL to prevent file:/// URI access denied errors
+    val url = remember(rawUrl) {
+        when {
+            rawUrl.isBlank() -> ""
+            rawUrl.startsWith("http://") || rawUrl.startsWith("https://") -> rawUrl
+            else -> com.governence.faflow.core.network.ApiConfig.getBaseUrl(context).trimEnd('/') + "/" + rawUrl.trimStart('/')
+        }
+    }
 
     var showImageDialog by remember { mutableStateOf(false) }
     var showDocSheet by remember { mutableStateOf(false) }

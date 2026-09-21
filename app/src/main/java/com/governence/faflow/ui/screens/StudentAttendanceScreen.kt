@@ -516,6 +516,31 @@ fun StudentAttendanceScreen(
                                         fontSize = 12.sp,
                                         color = Color(0xFF64748B)
                                     )
+                                    if (state.isEmergencyMode) {
+                                        Spacer(modifier = Modifier.height(6.dp))
+                                        Row(
+                                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            listOf(1, 2, 3, 4, 5).forEach { p ->
+                                                val isP = selectedSlot.periodNumber == p
+                                                Box(
+                                                    modifier = Modifier
+                                                        .clip(RoundedCornerShape(6.dp))
+                                                        .background(if (isP) PrimaryBlue else Color(0xFFF1F5F9))
+                                                        .clickable { viewModel.changeEmergencyPeriod(p) }
+                                                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                                                ) {
+                                                    Text(
+                                                        text = "P$p",
+                                                        fontSize = 10.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = if (isP) Color.White else Color(0xFF475569)
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
                                 }
 
                                 Column(horizontalAlignment = Alignment.End) {

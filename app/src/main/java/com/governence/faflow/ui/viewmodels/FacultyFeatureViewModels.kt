@@ -39,6 +39,7 @@ data class LeaveUiState(
     // Flexible Mode
     val isFlexibleMode: Boolean = false,
     val slotCandidates: List<com.governence.faflow.core.network.SlotCandidateOutDto> = emptyList(),
+    val candidatesPerPeriod: Map<Int, List<com.governence.faflow.core.network.SlotCandidateOutDto>> = emptyMap(),
     val isLoadingCandidates: Boolean = false,
     // Map<periodNumber, selectedSubstituteId>
     val selectedSubstitutePerPeriod: Map<Int, Int> = emptyMap()
@@ -92,7 +93,9 @@ class LeaveViewModel(
     }
 
     fun resolveDateDayOrder(date: String) {
-        val existing = _uiState.value.myLeaves.filter { it.date == date && it.status != LeaveStatus.REJECTED }
+        val existing = _uiState.value.myLeaves.filter { 
+            it.date == date && (it.status == LeaveStatus.PENDING || it.status == LeaveStatus.APPROVED)
+        }
         val hasConflict = existing.isNotEmpty()
         val conflictPeriods = existing.map { it.periodNumber }
 
@@ -177,9 +180,12 @@ class LeaveViewModel(
         viewModelScope.launch {
             when (val res = leaveRepository.getSlotCandidates(date, periodNumber)) {
                 is NetworkResult.Success -> {
+                    val currentMap = _uiState.value.candidatesPerPeriod.toMutableMap()
+                    currentMap[periodNumber] = res.data
                     _uiState.value = _uiState.value.copy(
                         isLoadingCandidates = false,
-                        slotCandidates = res.data
+                        slotCandidates = res.data,
+                        candidatesPerPeriod = currentMap
                     )
                 }
                 is NetworkResult.Error -> {
@@ -190,6 +196,29 @@ class LeaveViewModel(
                 }
                 NetworkResult.Loading -> Unit
             }
+        }
+    }
+
+    /** Load ranked slot candidates for multiple periods (Flexible Mode). */
+    fun loadCandidatesForPeriods(date: String, periods: Set<Int>) {
+        if (date.length != 10 || periods.isEmpty()) return
+        _uiState.value = _uiState.value.copy(isLoadingCandidates = true)
+        viewModelScope.launch {
+            val currentMap = _uiState.value.candidatesPerPeriod.toMutableMap()
+            for (period in periods) {
+                when (val res = leaveRepository.getSlotCandidates(date, period)) {
+                    is NetworkResult.Success -> {
+                        currentMap[period] = res.data
+                    }
+                    is NetworkResult.Error -> Unit
+                    NetworkResult.Loading -> Unit
+                }
+            }
+            _uiState.value = _uiState.value.copy(
+                isLoadingCandidates = false,
+                candidatesPerPeriod = currentMap,
+                slotCandidates = currentMap[periods.firstOrNull() ?: 1] ?: emptyList()
+            )
         }
     }
 

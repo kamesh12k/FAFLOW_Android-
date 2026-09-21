@@ -90,7 +90,7 @@ class StudentAttendanceViewModel(
                     }
                     // Contextual auto-selection: select explicitly requested slot, active period, or first slot
                     if (_uiState.value.selectedSlot == null && schedule.periods.isNotEmpty()) {
-                        val activeOrRecent = schedule.currentPeriod ?: getLocalCurrentPeriod()
+                        val activeOrRecent = getLocalCurrentPeriod()
                         val matching = if (targetPeriod != null || targetClassId != null) {
                             schedule.periods.firstOrNull { slot ->
                                 (targetPeriod == null || slot.periodNumber == targetPeriod) &&
@@ -121,7 +121,7 @@ class StudentAttendanceViewModel(
 
     fun preselectPeriod(periodNumber: Int?, classId: Int? = null) {
         val schedule = _uiState.value.schedule
-        val activeOrRecent = schedule?.currentPeriod ?: getLocalCurrentPeriod()
+        val activeOrRecent = getLocalCurrentPeriod()
         if (schedule != null && schedule.periods.isNotEmpty()) {
             val matching = schedule.periods.firstOrNull { slot ->
                 (periodNumber == null || slot.periodNumber == periodNumber) &&
@@ -199,9 +199,9 @@ class StudentAttendanceViewModel(
         _uiState.update { it.copy(isEmergencyModalOpen = false) }
     }
 
-    fun selectEmergencyClass(classDto: ClassOutDto) {
+    fun selectEmergencyClass(classDto: ClassOutDto, targetPeriod: Int? = null) {
         viewModelScope.launch {
-            val curPeriod = _uiState.value.schedule?.currentPeriod ?: getLocalCurrentPeriod()
+            val curPeriod = targetPeriod ?: getLocalCurrentPeriod()
             val periodTime = com.governence.faflow.domain.model.InstitutionalSchedule.getPeriodTime(curPeriod)
             val parts = periodTime.split("–")
             _uiState.update {
@@ -236,6 +236,22 @@ class StudentAttendanceViewModel(
                 }
                 NetworkResult.Loading -> {}
             }
+        }
+    }
+
+    fun changeEmergencyPeriod(periodNumber: Int) {
+        val curSlot = _uiState.value.selectedSlot ?: return
+        if (!_uiState.value.isEmergencyMode) return
+        val periodTime = com.governence.faflow.domain.model.InstitutionalSchedule.getPeriodTime(periodNumber)
+        val parts = periodTime.split("–")
+        _uiState.update {
+            it.copy(
+                selectedSlot = curSlot.copy(
+                    periodNumber = periodNumber,
+                    startTime = parts.firstOrNull()?.trim() ?: "Period $periodNumber",
+                    endTime = parts.lastOrNull()?.trim() ?: ""
+                )
+            )
         }
     }
 
