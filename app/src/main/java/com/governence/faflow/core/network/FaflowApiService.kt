@@ -21,6 +21,11 @@ interface FaflowApiService {
         @Body request: UserLoginRequestDto
     ): Response<TokenDto>
 
+    @POST("admin/first-login/setup")
+    suspend fun completeFirstLoginSetup(
+        @Body request: FirstLoginSetupRequestDto
+    ): Response<TokenDto>
+
     @GET("teachers/me")
     suspend fun getMe(): Response<UserOutDto>
 
@@ -172,6 +177,17 @@ interface FaflowApiService {
         @Path("leave_id") leaveId: Int
     ): Response<okhttp3.ResponseBody>
 
+    // ---------- Flexible Mode — Slot Candidates ----------
+    @GET("leaves/slot-candidates")
+    suspend fun getSlotCandidates(
+        @Query("date") date: String,
+        @Query("period_number") periodNumber: Int
+    ): Response<List<SlotCandidateOutDto>>
+
+    // ---------- Campus Operations Mode ----------
+    @GET("campus-operations/mode")
+    suspend fun getCampusOperationsMode(): Response<Map<String, String>>
+
     // ---------- Preferences ----------
     @GET("campus-operations/preferences/me")
     suspend fun getMyPreferences(): Response<SubstitutionPreferenceOutDto>
@@ -290,4 +306,104 @@ interface FaflowApiService {
     suspend fun syncOfflineAttendanceBatch(
         @Body request: OfflineBatchSyncRequestDto
     ): Response<OfflineBatchSyncResponseDto>
+
+    // ---------- Announcements ----------
+    @GET("announcements")
+    suspend fun getAnnouncements(
+        @Query("tab") tab: String = "all",
+        @Query("search") search: String? = null,
+        @Query("page") page: Int = 1,
+        @Query("limit") limit: Int = 20
+    ): Response<List<AnnouncementListItemDto>>
+
+    @GET("announcements/unread-count")
+    suspend fun getUnreadAnnouncementsCount(): Response<UnreadCountDto>
+
+    @GET("announcements/{id}")
+    suspend fun getAnnouncementDetail(
+        @Path("id") id: Int
+    ): Response<AnnouncementDetailDto>
+
+    @POST("announcements/{id}/acknowledge")
+    suspend fun acknowledgeAnnouncement(
+        @Path("id") id: Int
+    ): Response<AnnouncementDetailDto>
+
+    // ---------- Campus Duty Management ----------
+    @GET("campus-duties/my")
+    suspend fun getMyDuties(
+        @Query("date") date: String? = null
+    ): Response<List<CampusDutyDto>>
+
+    @GET("campus-duties")
+    suspend fun getCampusDuties(
+        @Query("date") date: String? = null,
+        @Query("duty_type") dutyType: String? = null,
+        @Query("department_id") departmentId: Int? = null
+    ): Response<List<CampusDutyDto>>
+
+    @GET("campus-duties/{duty_id}")
+    suspend fun getDutyDetail(
+        @Path("duty_id") dutyId: Int
+    ): Response<CampusDutyDto>
+
+    @POST("campus-duties")
+    suspend fun createDuty(
+        @Body request: DutyCreateRequestDto
+    ): Response<CampusDutyDto>
+
+    @POST("campus-duties/{duty_id}/auto-assign")
+    suspend fun autoAssignDuty(
+        @Path("duty_id") dutyId: Int
+    ): Response<CampusDutyDto>
+
+    @POST("campus-duties/generate-today-discipline")
+    suspend fun generateTodayDiscipline(
+        @Query("target_date") targetDate: String? = null,
+        @Query("department_id") departmentId: Int? = null
+    ): Response<List<CampusDutyDto>>
+
+    @GET("campus-duties/{duty_id}/candidates")
+    suspend fun getDutyCandidates(
+        @Path("duty_id") dutyId: Int
+    ): Response<DutyCandidatesResponseDto>
+
+    @POST("campus-duties/{duty_id}/assignments")
+    suspend fun assignTeacher(
+        @Path("duty_id") dutyId: Int,
+        @Body request: DutyAssignRequestDto
+    ): Response<DutyAssignmentDto>
+
+    @POST("campus-duties/{duty_id}/assignments/{assignment_id}/lock")
+    suspend fun lockAssignment(
+        @Path("duty_id") dutyId: Int,
+        @Path("assignment_id") assignmentId: Int,
+        @Body request: DutyLockRequestDto
+    ): Response<DutyAssignmentDto>
+
+    @POST("campus-duties/{duty_id}/assignments/{assignment_id}/unlock")
+    suspend fun unlockAssignment(
+        @Path("duty_id") dutyId: Int,
+        @Path("assignment_id") assignmentId: Int
+    ): Response<DutyAssignmentDto>
+
+    @POST("campus-duties/{duty_id}/assignments/{assignment_id}/override")
+    suspend fun overrideAssignment(
+        @Path("duty_id") dutyId: Int,
+        @Path("assignment_id") assignmentId: Int,
+        @Body request: DutyOverrideRequestDto
+    ): Response<DutyAssignmentDto>
+
+    @POST("campus-duties/{duty_id}/assignments/{assignment_id}/replace")
+    suspend fun replaceAssignment(
+        @Path("duty_id") dutyId: Int,
+        @Path("assignment_id") assignmentId: Int,
+        @Body request: DutyReplaceRequestDto
+    ): Response<DutyAssignmentDto>
+
+    @GET("campus-duties/metrics/summary")
+    suspend fun getDutyMetrics(
+        @Query("date") date: String? = null,
+        @Query("department_id") departmentId: Int? = null
+    ): Response<DutyDashboardMetricsDto>
 }

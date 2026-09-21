@@ -16,7 +16,8 @@ data class StaffMember(
     val creditBalance: Int = 0,
     val policyVersionAccepted: String? = null,
     val policyAcceptedAt: String? = null,
-    val onboardingCompleted: Boolean = false
+    val onboardingCompleted: Boolean = false,
+    val mustChangeCredentials: Boolean = false
 )
 
 /**
@@ -120,7 +121,8 @@ data class LeaveRequest(
     val isEmergency: Boolean = false,
     val substituteTeacherName: String? = null,
     val createdAt: String? = null,
-    val batchId: String? = null
+    val batchId: String? = null,
+    val proposedSubstituteName: String? = null
 )
 
 /**
@@ -165,6 +167,12 @@ data class LeaveHistoryDay(
 
     val hasSubstitutes: Boolean
         get() = coveredPeriodsCount > 0
+
+    val hasProposedSubstitutes: Boolean
+        get() = periods.any { !it.proposedSubstituteName.isNullOrBlank() }
+
+    val proposedSubstitutesCount: Int
+        get() = periods.count { !it.proposedSubstituteName.isNullOrBlank() && it.substituteTeacherName.isNullOrBlank() }
 
     companion object {
         val PERIOD_TIMES: Map<Int, String>

@@ -35,7 +35,13 @@ data class LeaveUiState(
     val dayType: String? = null,
     val hasExistingLeaveOnDate: Boolean = false,
     val existingLeavePeriods: List<Int> = emptyList(),
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+    // Flexible Mode
+    val isFlexibleMode: Boolean = false,
+    val slotCandidates: List<com.governence.faflow.core.network.SlotCandidateOutDto> = emptyList(),
+    val isLoadingCandidates: Boolean = false,
+    // Map<periodNumber, selectedSubstituteId>
+    val selectedSubstitutePerPeriod: Map<Int, Int> = emptyMap()
 )
 
 class LeaveViewModel(
@@ -48,6 +54,21 @@ class LeaveViewModel(
 
     init {
         loadMyLeaves()
+        loadCampusMode()
+    }
+
+    /** Detect if the campus is currently in Flexible mode. */
+    fun loadCampusMode() {
+        viewModelScope.launch {
+            when (val res = leaveRepository.getCampusOperationsMode()) {
+                is NetworkResult.Success -> {
+                    _uiState.value = _uiState.value.copy(
+                        isFlexibleMode = res.data.equals("flexible", ignoreCase = true)
+                    )
+                }
+                else -> Unit
+            }
+        }
     }
 
     fun loadMyLeaves() {
@@ -96,12 +117,22 @@ class LeaveViewModel(
         }
     }
 
-    fun submitLeave(date: String, periodNumber: Int, reason: String, onComplete: () -> Unit) {
+    fun submitLeave(
+        date: String,
+        periodNumber: Int,
+        reason: String,
+        onComplete: () -> Unit,
+        proposedSubstituteId: Int? = null
+    ) {
         _uiState.value = _uiState.value.copy(isLoading = true, errorMessage = null)
         viewModelScope.launch {
-            when (val res = leaveRepository.applyLeave(date, periodNumber, reason)) {
+            when (val res = leaveRepository.applyLeave(date, periodNumber, reason, proposedSubstituteId)) {
                 is NetworkResult.Success -> {
-                    _uiState.value = _uiState.value.copy(isLoading = false, isSubmittedSuccessfully = true)
+                    _uiState.value = _uiState.value.copy(
+                        isLoading = false,
+                        isSubmittedSuccessfully = true,
+                        selectedSubstitutePerPeriod = emptyMap()
+                    )
                     loadMyLeaves()
                     onComplete()
                 }
@@ -113,12 +144,22 @@ class LeaveViewModel(
         }
     }
 
-    fun submitLeaveBatch(date: String, periodNumbers: List<Int>, reason: String, onComplete: () -> Unit) {
+    fun submitLeaveBatch(
+        date: String,
+        periodNumbers: List<Int>,
+        reason: String,
+        onComplete: () -> Unit,
+        periodSubstitutes: Map<String, Int>? = null
+    ) {
         _uiState.value = _uiState.value.copy(isLoading = true, errorMessage = null)
         viewModelScope.launch {
-            when (val res = leaveRepository.applyLeaveBatch(date, periodNumbers, reason)) {
+            when (val res = leaveRepository.applyLeaveBatch(date, periodNumbers, reason, periodSubstitutes)) {
                 is NetworkResult.Success -> {
-                    _uiState.value = _uiState.value.copy(isLoading = false, isSubmittedSuccessfully = true)
+                    _uiState.value = _uiState.value.copy(
+                        isLoading = false,
+                        isSubmittedSuccessfully = true,
+                        selectedSubstitutePerPeriod = emptyMap()
+                    )
                     loadMyLeaves()
                     onComplete()
                 }
@@ -128,6 +169,40 @@ class LeaveViewModel(
                 NetworkResult.Loading -> Unit
             }
         }
+    }
+
+    /** Load ranked slot candidates for a specific date + period (Flexible Mode only). */
+    fun loadSlotCandidates(date: String, periodNumber: Int) {
+        _uiState.value = _uiState.value.copy(isLoadingCandidates = true, slotCandidates = emptyList())
+        viewModelScope.launch {
+            when (val res = leaveRepository.getSlotCandidates(date, periodNumber)) {
+                is NetworkResult.Success -> {
+                    _uiState.value = _uiState.value.copy(
+                        isLoadingCandidates = false,
+                        slotCandidates = res.data
+                    )
+                }
+                is NetworkResult.Error -> {
+                    _uiState.value = _uiState.value.copy(
+                        isLoadingCandidates = false,
+                        errorMessage = res.message
+                    )
+                }
+                NetworkResult.Loading -> Unit
+            }
+        }
+    }
+
+    fun selectSubstituteForPeriod(periodNumber: Int, substituteId: Int) {
+        val updated = _uiState.value.selectedSubstitutePerPeriod.toMutableMap()
+        updated[periodNumber] = substituteId
+        _uiState.value = _uiState.value.copy(selectedSubstitutePerPeriod = updated)
+    }
+
+    fun clearSubstituteForPeriod(periodNumber: Int) {
+        val updated = _uiState.value.selectedSubstitutePerPeriod.toMutableMap()
+        updated.remove(periodNumber)
+        _uiState.value = _uiState.value.copy(selectedSubstitutePerPeriod = updated)
     }
 
     fun cancelLeave(leaveId: Int) {

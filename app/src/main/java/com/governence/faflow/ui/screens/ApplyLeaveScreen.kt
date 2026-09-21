@@ -24,6 +24,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -47,6 +48,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.governence.faflow.core.network.SlotCandidateOutDto
 import com.governence.faflow.ui.components.FaflowPillButton
 import com.governence.faflow.ui.components.FaflowStatusBadge
 import com.governence.faflow.ui.components.FaflowSurface
@@ -345,7 +347,7 @@ fun ApplyLeaveScreen(
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold,
                             color = com.governence.faflow.ui.theme.StatusError,
-                            modifier = Modifier.clickable { selectedPeriods = setOf(1) }
+                            modifier = Modifier.clickable { selectedPeriods = emptySet() }
                         )
                     }
                 }
@@ -369,7 +371,7 @@ fun ApplyLeaveScreen(
                             .border(width = 1.dp, color = border, shape = FaflowShapes.medium)
                             .clickable(enabled = !isWholeDay) {
                                 selectedPeriods = if (selectedPeriods.contains(period)) {
-                                    if (selectedPeriods.size > 1) selectedPeriods - period else selectedPeriods
+                                    selectedPeriods - period
                                 } else {
                                     selectedPeriods + period
                                 }
@@ -394,6 +396,115 @@ fun ApplyLeaveScreen(
             }
 
             Spacer(modifier = Modifier.height(FaflowSpacing.lg))
+
+            // ---- Flexible Mode: Proposed Substitute Selection ----
+            if (state.isFlexibleMode && !isWholeDay) {
+                // For single period: show candidates immediately
+                LaunchedEffect(leaveDate, selectedPeriods) {
+                    if (selectedPeriods.size == 1 && leaveDate.length == 10) {
+                        viewModel.loadSlotCandidates(leaveDate, selectedPeriods.first())
+                    }
+                }
+
+                FaflowSurface(
+                    modifier = Modifier.fillMaxWidth(),
+                    backgroundColor = PrimaryBlue.copy(alpha = 0.06f),
+                    borderColor = PrimaryBlue.copy(alpha = 0.3f),
+                    contentPadding = PaddingValues(FaflowSpacing.md)
+                ) {
+                    Column {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.Info,
+                                contentDescription = null,
+                                tint = PrimaryBlue,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "Flexible Mode · Propose a Substitute",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = PrimaryBlue
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "In Flexible mode you must nominate a substitute. Your HOD will confirm the assignment.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(FaflowSpacing.sm))
+
+                if (state.isLoadingCandidates) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(24.dp),
+                            strokeWidth = 2.dp,
+                            color = PrimaryBlue
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Loading available substitutes…",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                } else if (state.slotCandidates.isNotEmpty() && selectedPeriods.size == 1) {
+                    val period = selectedPeriods.first()
+                    val pickedId = state.selectedSubstitutePerPeriod[period]
+
+                    Text(
+                        text = "Available Substitutes (P$period)",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(FaflowSpacing.xs))
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        state.slotCandidates.take(5).forEach { candidate ->
+                            CandidatePickerRow(
+                                candidate = candidate,
+                                isSelected = candidate.id == pickedId,
+                                onSelect = {
+                                    if (candidate.id == pickedId) {
+                                        viewModel.clearSubstituteForPeriod(period)
+                                    } else {
+                                        viewModel.selectSubstituteForPeriod(period, candidate.id)
+                                    }
+                                }
+                            )
+                        }
+                    }
+                } else if (!state.isLoadingCandidates && selectedPeriods.size == 1) {
+                    Text(
+                        text = "No available substitutes found for this slot.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(FaflowSpacing.lg))
+            } else if (state.isFlexibleMode && isWholeDay) {
+                FaflowSurface(
+                    modifier = Modifier.fillMaxWidth(),
+                    backgroundColor = FaflowStatusColors.PendingBg,
+                    borderColor = FaflowStatusColors.Pending.copy(alpha = 0.4f),
+                    contentPadding = PaddingValues(FaflowSpacing.md)
+                ) {
+                    Text(
+                        text = "Flexible Mode: For whole-day leaves, switch to 'Custom Periods' to propose substitutes per period.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+                Spacer(modifier = Modifier.height(FaflowSpacing.lg))
+            }
 
             // Reason Presets
             Text(
@@ -472,7 +583,10 @@ fun ApplyLeaveScreen(
 
             // Submit Button
             val hasConflict = state.hasExistingLeaveOnDate && (isWholeDay || selectedPeriods.any { it in state.existingLeavePeriods })
-            val isSubmitEnabled = reason.isNotBlank() && selectedPeriods.isNotEmpty() && !state.isBlockedDate && !hasConflict
+            val isFlexibleSingleOk = !state.isFlexibleMode || isWholeDay || selectedPeriods.size != 1 ||
+                    state.selectedSubstitutePerPeriod.containsKey(selectedPeriods.firstOrNull())
+            val isSubmitEnabled = reason.isNotBlank() && selectedPeriods.isNotEmpty() &&
+                    !state.isBlockedDate && !hasConflict && isFlexibleSingleOk
 
             if (state.isLoading) {
                 CircularProgressIndicator(
@@ -486,10 +600,25 @@ fun ApplyLeaveScreen(
                     onClick = {
                         if (isSubmitEnabled) {
                             val periodsList = selectedPeriods.toList().sorted()
-                            if (periodsList.size > 1) {
-                                viewModel.submitLeaveBatch(leaveDate, periodsList, reason, onLeaveSubmitted)
+                            if (periodsList.size > 1 || isWholeDay) {
+                                // Flexible batch: build period->substituteId map if available
+                                val periodSubstitutes = if (state.isFlexibleMode) {
+                                    state.selectedSubstitutePerPeriod
+                                        .mapKeys { it.key.toString() }
+                                        .ifEmpty { null }
+                                } else null
+                                viewModel.submitLeaveBatch(
+                                    leaveDate, periodsList, reason, onLeaveSubmitted,
+                                    periodSubstitutes = periodSubstitutes
+                                )
                             } else {
-                                viewModel.submitLeave(leaveDate, periodsList.first(), reason, onLeaveSubmitted)
+                                val proposedId = if (state.isFlexibleMode)
+                                    state.selectedSubstitutePerPeriod[periodsList.first()]
+                                else null
+                                viewModel.submitLeave(
+                                    leaveDate, periodsList.first(), reason, onLeaveSubmitted,
+                                    proposedSubstituteId = proposedId
+                                )
                             }
                         }
                     },
@@ -500,6 +629,80 @@ fun ApplyLeaveScreen(
             }
 
             Spacer(modifier = Modifier.height(FaflowSpacing.xxxl))
+        }
+    }
+}
+
+/**
+ * A single row showing a substitute candidate with workload badges.
+ * Used in Flexible Mode during leave application.
+ */
+@Composable
+private fun CandidatePickerRow(
+    candidate: SlotCandidateOutDto,
+    isSelected: Boolean,
+    onSelect: () -> Unit
+) {
+    val bg = if (isSelected) PrimaryBlue.copy(alpha = 0.10f) else Color.White
+    val border = if (isSelected) PrimaryBlue else com.governence.faflow.ui.theme.FaflowBorder
+    val borderWidth = if (isSelected) 2.dp else 1.dp
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(FaflowShapes.medium)
+            .background(bg)
+            .border(width = borderWidth, color = border, shape = FaflowShapes.medium)
+            .clickable { onSelect() }
+            .padding(horizontal = FaflowSpacing.md, vertical = FaflowSpacing.sm),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            imageVector = Icons.Default.Person,
+            contentDescription = null,
+            tint = if (isSelected) PrimaryBlue else MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(20.dp)
+        )
+        Spacer(modifier = Modifier.width(FaflowSpacing.sm))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = candidate.name,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                color = if (isSelected) PrimaryBlue else MaterialTheme.colorScheme.onSurface
+            )
+            if (!candidate.departmentName.isNullOrBlank()) {
+                Text(
+                    text = candidate.departmentName,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+        Spacer(modifier = Modifier.width(FaflowSpacing.sm))
+        // Workload badges
+        Column(horizontalAlignment = Alignment.End) {
+            Text(
+                text = "W:${candidate.weeklyAssignmentCount}",
+                fontSize = 10.sp,
+                color = if (candidate.weeklyAssignmentCount >= 4)
+                    StatusError else MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+                text = "D:${candidate.todayAssignmentCount}",
+                fontSize = 10.sp,
+                color = if (candidate.todayAssignmentCount >= 2)
+                    StatusError else MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        if (isSelected) {
+            Spacer(modifier = Modifier.width(6.dp))
+            Icon(
+                imageVector = Icons.Default.Check,
+                contentDescription = "Selected",
+                tint = PrimaryBlue,
+                modifier = Modifier.size(18.dp)
+            )
         }
     }
 }

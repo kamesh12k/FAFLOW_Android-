@@ -48,10 +48,14 @@ import com.governence.faflow.ui.theme.FaflowRoleColors
 import com.governence.faflow.ui.theme.FaflowShapes
 import com.governence.faflow.ui.theme.FaflowSpacing
 import androidx.compose.material.icons.filled.AssignmentTurnedIn
+import androidx.compose.material.icons.filled.Campaign
 import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.LocationOn
+import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.SupervisorAccount
+import androidx.compose.material.icons.filled.Sync
 import com.governence.faflow.ui.theme.FaflowStatusColors
+import com.governence.faflow.ui.theme.PrimaryBlue
 
 @Composable
 fun MoreScreen(
@@ -71,6 +75,10 @@ fun MoreScreen(
     onNavigateToLiveAttendance: () -> Unit = {},
     onNavigateToFacultyDirectory: () -> Unit = {},
     onNavigateToStudentAttendance: () -> Unit = {},
+    onNavigateToAnnouncements: () -> Unit = {},
+    onNavigateToCampusDuties: () -> Unit = {},
+    onNavigateToSettings: () -> Unit = {},
+    onNavigateToSyncStatus: () -> Unit = {},
     onReplayTour: () -> Unit = {}
 ) {
     val roleLower = userRole?.lowercase() ?: "teacher"
@@ -168,6 +176,29 @@ fun MoreScreen(
                 }
             }
 
+            // Group: CAMPUS OPERATIONS & DUTIES
+            item {
+                Text(
+                    text = "CAMPUS OPERATIONS & DUTIES",
+                    fontSize = 10.5.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 0.08.sp,
+                    color = com.governence.faflow.ui.theme.FaflowText3,
+                    modifier = Modifier.padding(start = 2.dp, top = 20.dp, bottom = 8.dp)
+                )
+                com.governence.faflow.ui.components.FaflowListCard {
+                    com.governence.faflow.ui.components.FaflowListRow(
+                        icon = Icons.Default.Security,
+                        iconBg = Color(0xFFEFF6FF),
+                        iconTint = PrimaryBlue,
+                        title = "Campus duties & supervision",
+                        subtitle = "Discipline, corridor surveillance & exam duties",
+                        showDivider = false,
+                        onClick = onNavigateToCampusDuties
+                    )
+                }
+            }
+
             // Group 1: LEAVES & CREDITS
             item {
                 Text(
@@ -241,10 +272,33 @@ fun MoreScreen(
                 }
             }
 
-            // Group 3: ACCOUNT
+            // Group 3: COMMUNICATIONS
             item {
                 Text(
-                    text = "ACCOUNT",
+                    text = "COMMUNICATIONS",
+                    fontSize = 10.5.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 0.08.sp,
+                    color = com.governence.faflow.ui.theme.FaflowText3,
+                    modifier = Modifier.padding(start = 2.dp, top = 20.dp, bottom = 8.dp)
+                )
+                com.governence.faflow.ui.components.FaflowListCard {
+                    com.governence.faflow.ui.components.FaflowListRow(
+                        icon = Icons.Default.Campaign,
+                        iconBg = Color(0xFFEFF6FF),
+                        iconTint = PrimaryBlue,
+                        title = "Announcements & circulars",
+                        subtitle = "Official institutional notices & broadcasts",
+                        showDivider = false,
+                        onClick = onNavigateToAnnouncements
+                    )
+                }
+            }
+
+            // Group 4: ACCOUNT & SYSTEM
+            item {
+                Text(
+                    text = "ACCOUNT & SYSTEM",
                     fontSize = 10.5.sp,
                     fontWeight = FontWeight.Bold,
                     letterSpacing = 0.08.sp,
@@ -260,6 +314,24 @@ fun MoreScreen(
                         subtitle = "Personal, institutional and role details",
                         showDivider = true,
                         onClick = onNavigateToProfile
+                    )
+                    com.governence.faflow.ui.components.FaflowListRow(
+                        icon = Icons.Default.Settings,
+                        iconBg = com.governence.faflow.ui.theme.FaflowNavyTint,
+                        iconTint = com.governence.faflow.ui.theme.FaflowNavy,
+                        title = "Application settings",
+                        subtitle = "Preferences, server endpoint & theme",
+                        showDivider = true,
+                        onClick = onNavigateToSettings
+                    )
+                    com.governence.faflow.ui.components.FaflowListRow(
+                        icon = Icons.Default.Sync,
+                        iconBg = com.governence.faflow.ui.theme.FaflowTealTint,
+                        iconTint = com.governence.faflow.ui.theme.FaflowTeal,
+                        title = "Offline sync status",
+                        subtitle = "View pending offline queue & sync logs",
+                        showDivider = true,
+                        onClick = onNavigateToSyncStatus
                     )
                     com.governence.faflow.ui.components.FaflowListRow(
                         icon = Icons.Default.Tune,

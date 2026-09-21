@@ -90,6 +90,14 @@ class AppContainer(private val context: Context) {
         com.governence.faflow.faflow.data.SystemPolicyRepositoryImpl(apiService)
     }
 
+    val announcementRepository: com.governence.faflow.faflow.data.AnnouncementRepositoryImpl by lazy {
+        com.governence.faflow.faflow.data.AnnouncementRepositoryImpl(apiService)
+    }
+
+    val campusDutyRepository: com.governence.faflow.faflow.data.CampusDutyRepositoryImpl by lazy {
+        com.governence.faflow.faflow.data.CampusDutyRepositoryImpl(apiService)
+    }
+
     // Milestone 4: Geofence & Location Subsystem (Lazy)
     val staffLocationProvider: StaffLocationProvider by lazy {
         StaffLocationProvider(context.applicationContext)
@@ -122,7 +130,7 @@ class AppContainer(private val context: Context) {
     }
 
     val studentAttendanceRepository: com.governence.faflow.attendance.student.data.StudentAttendanceRepository by lazy {
-        com.governence.faflow.attendance.student.data.StudentAttendanceRepository(apiService, studentAttendanceLocalDb)
+        com.governence.faflow.attendance.student.data.StudentAttendanceRepository(apiService, studentAttendanceLocalDb, context.applicationContext)
     }
 
     val deviceIntegrityVerifier: com.governence.faflow.core.security.DeviceIntegrityVerifier by lazy {

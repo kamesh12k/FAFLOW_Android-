@@ -249,11 +249,12 @@ class StudentAttendanceLocalDb(context: Context) : SQLiteOpenHelper(context, DAT
         val values = ContentValues().apply {
             put("operation_id", op.operationId)
             put("operation_type", op.operationType)
-            put("session_id", op.sessionId)
-            put("class_id", op.classId)
+            put("session_id", op.payload.sessionId)
+            put("class_id", op.payload.classId)
             put("payload_json", payloadJson)
             put("created_at", System.currentTimeMillis())
             put("sync_status", "PENDING")
+            put("attempt_count", 0)
         }
         return db.insertWithOnConflict("student_attendance_sync_queue", null, values, SQLiteDatabase.CONFLICT_IGNORE)
     }
@@ -263,27 +264,134 @@ class StudentAttendanceLocalDb(context: Context) : SQLiteOpenHelper(context, DAT
         val db = readableDatabase
         val list = mutableListOf<OfflineSyncOperationDto>()
         val cursor = db.rawQuery(
-            "SELECT payload_json FROM student_attendance_sync_queue WHERE sync_status IN ('PENDING', 'FAILED') ORDER BY created_at ASC",
+            "SELECT payload_json FROM student_attendance_sync_queue WHERE sync_status IN ('PENDING', 'FAILED', 'SYNCING') ORDER BY created_at ASC",
             null
         )
         cursor.use {
             while (it.moveToNext()) {
                 val json = it.getString(0)
-                try {
-                    operationAdapter.fromJson(json)?.let { op -> list.add(op) }
-                } catch (e: Exception) {
-                    // ignore malformed
+                val op = parseOperationJson(json)
+                if (op != null) {
+                    list.add(op)
                 }
             }
         }
         return list
     }
 
+    /**
+     * Parses operation JSON with full backward compatibility:
+     * 1. Attempts standard Moshi parsing with nested payload and idempotency_key.
+     * 2. Falls back to parsing legacy flat JSON, synthesizing the required nested payload
+     *    and idempotency_key, and auto-upgrading the SQLite row to the normalized schema.
+     */
+    private fun parseOperationJson(json: String): OfflineSyncOperationDto? {
+        // Try pure Moshi first
+        try {
+            operationAdapter.fromJson(json)?.let { return it }
+        } catch (_: Exception) {}
+
+        // Fallback for legacy flat outbox JSON
+        return try {
+            val obj = org.json.JSONObject(json)
+            val opId = obj.optString("operation_id", java.util.UUID.randomUUID().toString())
+            val idemKey = if (obj.has("idempotency_key") && !obj.isNull("idempotency_key")) {
+                obj.getString("idempotency_key")
+            } else {
+                opId
+            }
+            val opType = obj.optString("operation_type", "EMERGENCY")
+            val devId = if (obj.has("device_id") && !obj.isNull("device_id")) obj.getString("device_id") else null
+            val clientTs = if (obj.has("client_timestamp") && !obj.isNull("client_timestamp")) obj.getString("client_timestamp") else null
+
+            val payloadDto: com.governence.faflow.core.network.StudentAttendanceSyncPayloadDto =
+                if (obj.has("payload") && obj.get("payload") is org.json.JSONObject) {
+                    parsePayloadObj(obj.getJSONObject("payload"))
+                } else {
+                    parsePayloadObj(obj)
+                }
+
+            val normalized = OfflineSyncOperationDto(
+                operationId = opId,
+                idempotencyKey = idemKey,
+                operationType = opType,
+                payload = payloadDto,
+                deviceId = devId,
+                clientTimestamp = clientTs
+            )
+
+            // Auto-heal the database record with the new normalized schema
+            try {
+                val newJson = operationAdapter.toJson(normalized)
+                val values = ContentValues().apply {
+                    put("payload_json", newJson)
+                }
+                writableDatabase.update(
+                    "student_attendance_sync_queue",
+                    values,
+                    "operation_id = ?",
+                    arrayOf(opId)
+                )
+            } catch (_: Exception) {}
+
+            normalized
+        } catch (e: Exception) {
+            android.util.Log.e("StudentLocalDb", "Failed to deserialize operation JSON: $json", e)
+            null
+        }
+    }
+
+    private fun parsePayloadObj(obj: org.json.JSONObject): com.governence.faflow.core.network.StudentAttendanceSyncPayloadDto {
+        val sessId = if (obj.has("session_id") && !obj.isNull("session_id")) obj.optInt("session_id") else null
+        val clsId = if (obj.has("class_id") && !obj.isNull("class_id")) obj.optInt("class_id") else null
+        val perNum = if (obj.has("period_number") && !obj.isNull("period_number")) obj.optInt("period_number") else null
+        val subId = if (obj.has("subject_id") && !obj.isNull("subject_id")) obj.optInt("subject_id") else null
+        val clientTs = if (obj.has("client_timestamp") && !obj.isNull("client_timestamp")) obj.getString("client_timestamp") else null
+
+        val absentList = mutableListOf<String>()
+        if (obj.has("absent_roll_suffixes")) {
+            val arr = obj.getJSONArray("absent_roll_suffixes")
+            for (i in 0 until arr.length()) {
+                absentList.add(arr.getString(i))
+            }
+        }
+
+        val exceptionsList = mutableListOf<com.governence.faflow.core.network.StudentExceptionItemDto>()
+        if (obj.has("student_exceptions")) {
+            val arr = obj.getJSONArray("student_exceptions")
+            for (i in 0 until arr.length()) {
+                val item = arr.getJSONObject(i)
+                val sId = if (item.has("student_id") && !item.isNull("student_id")) item.optInt("student_id") else null
+                val rSuf = if (item.has("roll_suffix") && !item.isNull("roll_suffix")) item.getString("roll_suffix") else null
+                val st = item.optString("status", "present")
+                exceptionsList.add(
+                    com.governence.faflow.core.network.StudentExceptionItemDto(
+                        studentId = sId,
+                        rollSuffix = rSuf,
+                        status = st
+                    )
+                )
+            }
+        }
+
+        return com.governence.faflow.core.network.StudentAttendanceSyncPayloadDto(
+            sessionId = sessId,
+            classId = clsId,
+            periodNumber = perNum,
+            subjectId = subId,
+            absentRollSuffixes = absentList,
+            studentExceptions = exceptionsList,
+            clientTimestamp = clientTs
+        )
+    }
+
     @Synchronized
     fun getPendingCount(): Int {
         val db = readableDatabase
+        // Only count PENDING and FAILED — not SYNCING (in-flight) to avoid false positives
+        // when a sync run is currently active.
         val cursor = db.rawQuery(
-            "SELECT COUNT(*) FROM student_attendance_sync_queue WHERE sync_status IN ('PENDING', 'SYNCING')",
+            "SELECT COUNT(*) FROM student_attendance_sync_queue WHERE sync_status IN ('PENDING', 'FAILED')",
             null
         )
         cursor.use {
@@ -292,6 +400,40 @@ class StudentAttendanceLocalDb(context: Context) : SQLiteOpenHelper(context, DAT
             }
         }
         return 0
+    }
+
+    /**
+     * Resets any records permanently stuck in SYNCING state (e.g. left over from a
+     * killed process or a crashed sync run) back to PENDING so they are retried.
+     * Call this at the START of every sync run, before fetching pending records.
+     */
+    @Synchronized
+    fun resetStuckSyncingRecords() {
+        val db = writableDatabase
+        // Records that have been in SYNCING for more than 2 minutes are considered stuck
+        val stuckThreshold = System.currentTimeMillis() - (2 * 60 * 1000L)
+        val values = ContentValues().apply {
+            put("sync_status", "PENDING")
+        }
+        val updated = db.update(
+            "student_attendance_sync_queue",
+            values,
+            "sync_status = 'SYNCING' AND last_attempt_at < ?",
+            arrayOf(stuckThreshold.toString())
+        )
+        if (updated > 0) {
+            android.util.Log.w("StudentLocalDb", "[SyncRecovery] Reset $updated stuck SYNCING record(s) back to PENDING.")
+        }
+    }
+
+    @Synchronized
+    fun markOperationSyncing(operationId: String) {
+        val db = writableDatabase
+        val values = ContentValues().apply {
+            put("sync_status", "SYNCING")
+            put("last_attempt_at", System.currentTimeMillis())
+        }
+        db.update("student_attendance_sync_queue", values, "operation_id = ?", arrayOf(operationId))
     }
 
     @Synchronized
@@ -314,6 +456,56 @@ class StudentAttendanceLocalDb(context: Context) : SQLiteOpenHelper(context, DAT
         }
         db.execSQL("UPDATE student_attendance_sync_queue SET attempt_count = attempt_count + 1 WHERE operation_id = ?", arrayOf(operationId))
         db.update("student_attendance_sync_queue", values, "operation_id = ?", arrayOf(operationId))
+    }
+
+    @Synchronized
+    fun deleteOperation(operationId: String): Int {
+        val db = writableDatabase
+        return db.delete("student_attendance_sync_queue", "operation_id = ?", arrayOf(operationId))
+    }
+
+    @Synchronized
+    fun clearSyncQueue(): Int {
+        val db = writableDatabase
+        return db.delete("student_attendance_sync_queue", null, null)
+    }
+
+    data class QueueItemSummary(
+        val operationId: String,
+        val operationType: String,
+        val classId: Int?,
+        val sessionId: Int?,
+        val createdAt: Long,
+        val syncStatus: String,
+        val attemptCount: Int,
+        val lastError: String?
+    )
+
+    @Synchronized
+    fun getPendingItemSummaries(): List<QueueItemSummary> {
+        val db = readableDatabase
+        val list = mutableListOf<QueueItemSummary>()
+        val cursor = db.rawQuery(
+            "SELECT operation_id, operation_type, class_id, session_id, created_at, sync_status, attempt_count, last_error FROM student_attendance_sync_queue WHERE sync_status IN ('PENDING', 'FAILED', 'SYNCING') ORDER BY created_at DESC",
+            null
+        )
+        cursor.use {
+            while (it.moveToNext()) {
+                list.add(
+                    QueueItemSummary(
+                        operationId = it.getString(0),
+                        operationType = it.getString(1) ?: "UNKNOWN",
+                        classId = if (!it.isNull(2)) it.getInt(2) else null,
+                        sessionId = if (!it.isNull(3)) it.getInt(3) else null,
+                        createdAt = it.getLong(4),
+                        syncStatus = it.getString(5) ?: "PENDING",
+                        attemptCount = it.getInt(6),
+                        lastError = if (!it.isNull(7)) it.getString(7) else null
+                    )
+                )
+            }
+        }
+        return list
     }
 
     companion object {

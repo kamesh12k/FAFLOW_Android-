@@ -68,7 +68,8 @@ class TokenManager(context: Context) {
         departmentId: Int?,
         policyVersionAccepted: String? = null,
         policyAcceptedAt: String? = null,
-        onboardingCompleted: Boolean = false
+        onboardingCompleted: Boolean = false,
+        mustChangeCredentials: Boolean = false
     ) {
         sharedPreferences.edit()
             .putString(KEY_ACCESS_TOKEN, token)
@@ -80,6 +81,7 @@ class TokenManager(context: Context) {
             .putString(KEY_POLICY_VERSION, policyVersionAccepted)
             .putString(KEY_POLICY_ACCEPTED_AT, policyAcceptedAt)
             .putBoolean(KEY_ONBOARDING_COMPLETED, onboardingCompleted)
+            .putBoolean(KEY_MUST_CHANGE_CREDENTIALS, mustChangeCredentials)
             .apply()
         _isLoggedIn.value = true
     }
@@ -96,6 +98,13 @@ class TokenManager(context: Context) {
     fun getPolicyVersionAccepted(): String? = sharedPreferences.getString(KEY_POLICY_VERSION, null)
     fun getPolicyAcceptedAt(): String? = sharedPreferences.getString(KEY_POLICY_ACCEPTED_AT, null)
     fun getOnboardingCompleted(): Boolean = sharedPreferences.getBoolean(KEY_ONBOARDING_COMPLETED, false)
+    fun getMustChangeCredentials(): Boolean = sharedPreferences.getBoolean(KEY_MUST_CHANGE_CREDENTIALS, false)
+
+    fun updateMustChangeCredentials(mustChange: Boolean) {
+        sharedPreferences.edit()
+            .putBoolean(KEY_MUST_CHANGE_CREDENTIALS, mustChange)
+            .apply()
+    }
 
     fun updatePolicyAccepted(version: String, acceptedAt: String? = null) {
         sharedPreferences.edit()
@@ -131,6 +140,7 @@ class TokenManager(context: Context) {
         private const val KEY_POLICY_VERSION = "policy_version_accepted"
         private const val KEY_POLICY_ACCEPTED_AT = "policy_accepted_at"
         private const val KEY_ONBOARDING_COMPLETED = "onboarding_completed"
+        private const val KEY_MUST_CHANGE_CREDENTIALS = "must_change_credentials"
     }
 }
 

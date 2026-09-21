@@ -32,7 +32,8 @@ class AuthRepository(
                     departmentId = userDto.departmentId,
                     policyVersionAccepted = userDto.policyVersionAccepted,
                     policyAcceptedAt = userDto.policyAcceptedAt,
-                    onboardingCompleted = userDto.onboardingCompleted
+                    onboardingCompleted = userDto.onboardingCompleted,
+                    mustChangeCredentials = userDto.mustChangeCredentials
                 )
 
                 val staffMember = StaffMember(
@@ -46,7 +47,8 @@ class AuthRepository(
                     isActive = userDto.isActive,
                     policyVersionAccepted = userDto.policyVersionAccepted,
                     policyAcceptedAt = userDto.policyAcceptedAt,
-                    onboardingCompleted = userDto.onboardingCompleted
+                    onboardingCompleted = userDto.onboardingCompleted,
+                    mustChangeCredentials = userDto.mustChangeCredentials
                 )
 
                 NetworkResult.Success(staffMember)
@@ -165,6 +167,67 @@ class AuthRepository(
         }
     }
 
+    suspend fun completeFirstLoginSetup(
+        newUsername: String?,
+        newEmail: String?,
+        newPassword: String,
+        confirmPassword: String
+    ): NetworkResult<StaffMember> {
+        return try {
+            val request = com.governence.faflow.core.network.FirstLoginSetupRequestDto(
+                newUsername = newUsername?.trim()?.ifBlank { null },
+                newEmail = newEmail?.trim()?.ifBlank { null },
+                newPassword = newPassword,
+                confirmPassword = confirmPassword
+            )
+            val response = apiService.completeFirstLoginSetup(request)
+            if (response.isSuccessful && response.body() != null) {
+                val tokenDto = response.body()!!
+                val userDto = tokenDto.user
+
+                tokenManager.saveToken(
+                    token = tokenDto.accessToken,
+                    userId = userDto.id,
+                    userName = userDto.name,
+                    userEmail = userDto.email ?: "",
+                    role = userDto.role,
+                    departmentId = userDto.departmentId,
+                    policyVersionAccepted = userDto.policyVersionAccepted,
+                    policyAcceptedAt = userDto.policyAcceptedAt,
+                    onboardingCompleted = userDto.onboardingCompleted,
+                    mustChangeCredentials = false
+                )
+
+                val staffMember = StaffMember(
+                    id = userDto.id,
+                    name = userDto.name,
+                    email = userDto.email ?: "",
+                    username = userDto.username,
+                    role = userDto.role,
+                    departmentId = userDto.departmentId,
+                    departmentName = userDto.department,
+                    isActive = userDto.isActive,
+                    policyVersionAccepted = userDto.policyVersionAccepted,
+                    policyAcceptedAt = userDto.policyAcceptedAt,
+                    onboardingCompleted = userDto.onboardingCompleted,
+                    mustChangeCredentials = false
+                )
+                NetworkResult.Success(staffMember)
+            } else {
+                val errorBody = response.errorBody()?.string() ?: ""
+                val msg = if (errorBody.contains("detail")) {
+                    Regex("\"\"\"detail\"\"\"\\s*:\\s*\"\"\"([^\"\"\"]+)\"\"\"").find(errorBody)?.groupValues?.get(1)
+                        ?: "Setup failed (${response.code()})"
+                } else {
+                    "Setup failed with status ${response.code()}"
+                }
+                NetworkResult.Error(response.code(), msg)
+            }
+        } catch (e: Exception) {
+            NetworkResult.Error(-1, e.localizedMessage ?: "Failed to complete credential setup", e)
+        }
+    }
+
     fun logout() {
         tokenManager.clearSession()
     }
@@ -179,7 +242,8 @@ class AuthRepository(
             departmentId = tokenManager.getDepartmentId(),
             policyVersionAccepted = tokenManager.getPolicyVersionAccepted(),
             policyAcceptedAt = tokenManager.getPolicyAcceptedAt(),
-            onboardingCompleted = tokenManager.getOnboardingCompleted()
+            onboardingCompleted = tokenManager.getOnboardingCompleted(),
+            mustChangeCredentials = tokenManager.getMustChangeCredentials()
         )
     }
 }

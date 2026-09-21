@@ -18,8 +18,10 @@ import com.governence.faflow.auth.ui.AuthUiState
 import com.governence.faflow.auth.ui.AuthViewModel
 import com.governence.faflow.core.di.AppContainer
 import com.governence.faflow.ui.components.MainBottomNavigation
+import com.governence.faflow.ui.screens.AnnouncementsScreen
 import com.governence.faflow.ui.screens.ApplyLeaveScreen
 import com.governence.faflow.ui.screens.AttendanceCheckInOutScreen
+import com.governence.faflow.ui.screens.FirstLoginSetupScreen
 import com.governence.faflow.ui.screens.AttendanceHistoryScreen
 import com.governence.faflow.ui.viewmodels.AttendanceViewModel
 import com.governence.faflow.ui.screens.ClasswiseTimetableScreen
@@ -57,7 +59,8 @@ import com.governence.faflow.ui.viewmodels.TimetableViewModel
 @Composable
 fun NavGraph(
     navController: NavHostController,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    deepLinkRoute: String? = null
 ) {
     val context = LocalContext.current
     val appContainer = remember { AppContainer.getInstance(context) }
@@ -107,6 +110,9 @@ fun NavGraph(
     var showTourReplay by remember { androidx.compose.runtime.mutableStateOf(false) }
     var userAcceptedPolicyLocally by remember { androidx.compose.runtime.mutableStateOf<Boolean?>(null) }
     var userCompletedTourLocally by remember { androidx.compose.runtime.mutableStateOf<Boolean?>(null) }
+
+    // Track whether we've delivered the notification deep-link to avoid double-firing
+    var deepLinkConsumed by remember { androidx.compose.runtime.mutableStateOf(false) }
 
     val currentStaff = (authState as? AuthUiState.Authenticated)?.staff
     val needsPolicyConsent = currentStaff != null && (userAcceptedPolicyLocally == false || (userAcceptedPolicyLocally == null && currentStaff.policyVersionAccepted.isNullOrBlank()))
@@ -161,12 +167,18 @@ fun NavGraph(
                         }
                     },
                     onNavigateToDashboard = {
-                        // Derive role from settled authState to ensure HOD users go to HodDashboard.
-                        val settledRole = (authViewModel.uiState.value as? AuthUiState.Authenticated)?.staff?.role ?: "teacher"
-                        val settledIsHod = settledRole.lowercase() == "admin" || settledRole.lowercase() == "hod"
-                        val destination = if (settledIsHod) Screen.HodDashboard.route else Screen.Home.route
-                        navController.navigate(destination) {
-                            popUpTo(Screen.Splash.route) { inclusive = true }
+                        val currentStaff = (authViewModel.uiState.value as? AuthUiState.Authenticated)?.staff
+                        if (currentStaff?.mustChangeCredentials == true) {
+                            navController.navigate(Screen.FirstLoginSetup.route) {
+                                popUpTo(Screen.Splash.route) { inclusive = true }
+                            }
+                        } else {
+                            val settledRole = currentStaff?.role ?: "teacher"
+                            val settledIsHod = settledRole.lowercase() == "admin" || settledRole.lowercase() == "hod"
+                            val destination = if (settledIsHod) Screen.HodDashboard.route else Screen.Home.route
+                            navController.navigate(destination) {
+                                popUpTo(Screen.Splash.route) { inclusive = true }
+                            }
                         }
                     }
                 )
@@ -176,11 +188,32 @@ fun NavGraph(
                 LoginScreen(
                     authViewModel = authViewModel,
                     onLoginSuccess = {
+                        val storedStaff = appContainer.authRepository.getStoredStaffInfo()
+                        if (storedStaff?.mustChangeCredentials == true) {
+                            navController.navigate(Screen.FirstLoginSetup.route) {
+                                popUpTo(Screen.Login.route) { inclusive = true }
+                            }
+                        } else {
+                            val loggedInRole = storedStaff?.role ?: "teacher"
+                            val loggedInIsHod = loggedInRole.lowercase() == "admin" || loggedInRole.lowercase() == "hod"
+                            val targetDest = if (loggedInIsHod) Screen.HodDashboard.route else Screen.Home.route
+                            navController.navigate(targetDest) {
+                                popUpTo(Screen.Login.route) { inclusive = true }
+                            }
+                        }
+                    }
+                )
+            }
+
+            composable(Screen.FirstLoginSetup.route) {
+                FirstLoginSetupScreen(
+                    authViewModel = authViewModel,
+                    onSetupSuccess = {
                         val loggedInRole = appContainer.authRepository.getStoredStaffInfo()?.role ?: "teacher"
                         val loggedInIsHod = loggedInRole.lowercase() == "admin" || loggedInRole.lowercase() == "hod"
                         val targetDest = if (loggedInIsHod) Screen.HodDashboard.route else Screen.Home.route
                         navController.navigate(targetDest) {
-                            popUpTo(Screen.Login.route) { inclusive = true }
+                            popUpTo(Screen.FirstLoginSetup.route) { inclusive = true }
                         }
                     }
                 )
@@ -188,6 +221,14 @@ fun NavGraph(
 
             // Primary Bottom Nav Tab 1: Home (Teacher Dashboard)
             composable(Screen.Home.route) { backStackEntry ->
+                // Consume any pending notification deep-link now that we are on a stable
+                // authenticated screen. This avoids the route being swallowed during splash.
+                androidx.compose.runtime.LaunchedEffect(deepLinkRoute, deepLinkConsumed) {
+                    if (!deepLinkRoute.isNullOrBlank() && !deepLinkConsumed) {
+                        deepLinkConsumed = true
+                        try { navController.navigate(deepLinkRoute) } catch (_: Exception) {}
+                    }
+                }
                 val dashboardViewModel = remember(backStackEntry) {
                     DashboardViewModel(
                         authRepository = appContainer.authRepository,
@@ -196,7 +237,9 @@ fun NavGraph(
                         creditRepository = appContainer.creditRepository,
                         substitutionRepository = appContainer.substitutionRepository,
                         attendanceRepository = appContainer.attendanceRepository,
-                        studentAttendanceRepository = appContainer.studentAttendanceRepository
+                        studentAttendanceRepository = appContainer.studentAttendanceRepository,
+                        campusDutyRepository = appContainer.campusDutyRepository,
+                        announcementRepository = appContainer.announcementRepository
                     )
                 }
                 DashboardScreen(
@@ -212,6 +255,8 @@ fun NavGraph(
                     onNavigateToAttendanceHistory = { navController.navigate(Screen.AttendanceHistory.route) },
                     onNavigateToNotifications = { navController.navigate(Screen.Notifications.route) },
                     onNavigateToProfile = { navController.navigate(Screen.Profile.route) },
+                    onNavigateToCampusDuties = { navController.navigate(Screen.MyDuties.route) },
+                    onNavigateToAnnouncements = { navController.navigate(Screen.Announcements.route) },
                     onNavigateToStudentAttendance = { periodNumber, classId ->
                         navController.navigate(Screen.StudentAttendance.createRoute(periodNumber, classId))
                     }
@@ -261,12 +306,23 @@ fun NavGraph(
                     onNavigateToLiveAttendance = { navController.navigate(Screen.HodAttendance.route) },
                     onNavigateToFacultyDirectory = { navController.navigate(Screen.HodFacultyDirectory.route) },
                     onNavigateToStudentAttendance = { navController.navigate(Screen.StudentAttendance.route) },
+                    onNavigateToAnnouncements = { navController.navigate(Screen.Announcements.route) },
+                    onNavigateToCampusDuties = { navController.navigate(Screen.MyDuties.route) },
+                    onNavigateToSettings = { navController.navigate(Screen.Settings.route) },
+                    onNavigateToSyncStatus = { navController.navigate(Screen.SyncStatus.route) },
                     onReplayTour = { showTourReplay = true }
                 )
             }
 
             // HOD Dedicated Screens — all use the single shared hodViewModel on-demand.
             composable(Screen.HodDashboard.route) {
+                // Consume pending notification deep-link on HOD's first authenticated screen too
+                androidx.compose.runtime.LaunchedEffect(deepLinkRoute, deepLinkConsumed) {
+                    if (!deepLinkRoute.isNullOrBlank() && !deepLinkConsumed) {
+                        deepLinkConsumed = true
+                        try { navController.navigate(deepLinkRoute) } catch (_: Exception) {}
+                    }
+                }
                 HodDashboardScreen(
                     hodViewModel = getHodViewModel(),
                     onNavigateToLeaveApprovals = { navController.navigate(Screen.HodLeaveApprovals.route) },
@@ -472,6 +528,16 @@ fun NavGraph(
                 )
             }
 
+            composable(Screen.Announcements.route) { backStackEntry ->
+                val announcementsViewModel = remember(backStackEntry) {
+                    com.governence.faflow.ui.viewmodels.AnnouncementsViewModel(appContainer.announcementRepository)
+                }
+                AnnouncementsScreen(
+                    viewModel = announcementsViewModel,
+                    onNavigateBack = { navController.popBackStack() }
+                )
+            }
+
             composable(Screen.SyncStatus.route) {
                 SyncStatusScreen(
                     onNavigateBack = { navController.popBackStack() }
@@ -514,6 +580,38 @@ fun NavGraph(
 
                 com.governence.faflow.ui.screens.StudentAttendanceScreen(
                     viewModel = studentAttendanceViewModel,
+                    onNavigateBack = { navController.popBackStack() }
+                )
+            }
+
+            composable(Screen.MyDuties.route) { backStackEntry ->
+                val dutyViewModel = remember(backStackEntry) {
+                    com.governence.faflow.ui.viewmodels.DutyViewModel(appContainer.campusDutyRepository)
+                }
+                com.governence.faflow.ui.screens.MyDutiesScreen(
+                    viewModel = dutyViewModel,
+                    onNavigateBack = { navController.popBackStack() },
+                    onDutyClick = { dutyId ->
+                        navController.navigate(Screen.DutyDetail.createRoute(dutyId))
+                    }
+                )
+            }
+
+            composable(
+                route = Screen.DutyDetail.route,
+                arguments = listOf(
+                    androidx.navigation.navArgument("dutyId") {
+                        type = androidx.navigation.NavType.IntType
+                    }
+                )
+            ) { backStackEntry ->
+                val dutyId = backStackEntry.arguments?.getInt("dutyId") ?: 0
+                val dutyViewModel = remember(backStackEntry) {
+                    com.governence.faflow.ui.viewmodels.DutyViewModel(appContainer.campusDutyRepository)
+                }
+                com.governence.faflow.ui.screens.DutyDetailScreen(
+                    dutyId = dutyId,
+                    viewModel = dutyViewModel,
                     onNavigateBack = { navController.popBackStack() }
                 )
             }

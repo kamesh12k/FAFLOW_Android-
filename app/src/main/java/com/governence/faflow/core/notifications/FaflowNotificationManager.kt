@@ -110,7 +110,17 @@ object FaflowNotificationManager {
         val channelId = if (isAnnouncement) CHANNEL_ID_ANNOUNCEMENTS else CHANNEL_ID_ALERTS
 
         // Deep-link intent targeting MainActivity
-        val targetRoute = if (isAnnouncement) "announcements" else "notifications"
+        val targetRoute = when {
+            isAnnouncement -> "announcements"
+            eventType?.contains("duty", ignoreCase = true) == true ||
+                eventType?.contains("discipline", ignoreCase = true) == true ||
+                eventType?.contains("exam", ignoreCase = true) == true ||
+                eventType?.contains("wing", ignoreCase = true) == true -> "my_duties"
+            eventType?.contains("substitut", ignoreCase = true) == true -> "substitution"
+            eventType?.contains("leave", ignoreCase = true) == true -> "leave_history"
+            eventType?.contains("attendance", ignoreCase = true) == true -> "attendance_check_in_out"
+            else -> "notifications"
+        }
         val intent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
             putExtra("EXTRA_NOTIFICATION_ID", id)
@@ -126,7 +136,7 @@ object FaflowNotificationManager {
         )
 
         val notification = NotificationCompat.Builder(context, channelId)
-            .setSmallIcon(R.mipmap.ic_launcher)
+            .setSmallIcon(R.drawable.ic_notification_small)
             .setContentTitle(title)
             .setContentText(body)
             .setStyle(NotificationCompat.BigTextStyle().bigText(body))

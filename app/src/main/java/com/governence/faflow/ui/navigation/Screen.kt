@@ -44,7 +44,18 @@ sealed class Screen(val route: String) {
             return "student_attendance?period=$p&classId=$c"
         }
     }
+    data object FirstLoginSetup : Screen("first_login_setup")
+    data object Announcements : Screen("announcements")
+    data object AnnouncementDetail : Screen("announcement_detail/{announcementId}") {
+        fun createRoute(announcementId: Int): String = "announcement_detail/$announcementId"
+    }
     data object HodStudentAttendance : Screen("hod_student_attendance")
+
+    // Campus Duties
+    data object MyDuties : Screen("my_duties")
+    data object DutyDetail : Screen("duty_detail/{dutyId}") {
+        fun createRoute(dutyId: Int): String = "duty_detail/$dutyId"
+    }
 
     // HOD Dedicated Screens
     data object HodDashboard : Screen("hod_dashboard")

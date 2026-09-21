@@ -200,6 +200,12 @@ fun AttendanceCheckInOutScreen(
         }
     }
 
+    LaunchedEffect(uiState.shiftState) {
+        if (uiState.shiftState == ShiftState.COMPLETED) {
+            cameraController.stopCamera()
+        }
+    }
+
     BackHandler {
         viewModel.cancelVerification()
         cameraController.stopCamera()

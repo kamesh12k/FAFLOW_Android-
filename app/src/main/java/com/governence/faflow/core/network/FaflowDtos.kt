@@ -125,14 +125,17 @@ data class TimetableSlotOutDto(
 data class LeaveCreateDto(
     @Json(name = "date") val date: String,
     @Json(name = "period_number") val periodNumber: Int,
-    @Json(name = "reason") val reason: String
+    @Json(name = "reason") val reason: String,
+    @Json(name = "proposed_substitute_id") val proposedSubstituteId: Int? = null
 )
 
 @JsonClass(generateAdapter = true)
 data class LeaveBatchCreateDto(
     @Json(name = "date") val date: String,
-    @Json(name = "period_numbers") val periodNumbers: List<Int>,
-    @Json(name = "reason") val reason: String
+    @Json(name = "period_numbers") val periodNumbers: List<Int>? = null,
+    @Json(name = "whole_day") val wholeDay: Boolean? = null,
+    @Json(name = "reason") val reason: String,
+    @Json(name = "period_substitutes") val periodSubstitutes: Map<String, Int>? = null
 )
 
 @JsonClass(generateAdapter = true)
@@ -148,7 +151,26 @@ data class LeaveOutDto(
     @Json(name = "teacher_name") val teacherName: String? = null,
     @Json(name = "created_at") val createdAt: String? = null,
     @Json(name = "batch_id") val batchId: String? = null,
-    @Json(name = "alter_assignment") val alterAssignment: AlterAssignmentOutDto? = null
+    @Json(name = "alter_assignment") val alterAssignment: AlterAssignmentOutDto? = null,
+    @Json(name = "proposed_substitute_id") val proposedSubstituteId: Int? = null,
+    @Json(name = "proposed_substitute") val proposedSubstitute: ProposedSubstituteDto? = null
+)
+
+@JsonClass(generateAdapter = true)
+data class ProposedSubstituteDto(
+    @Json(name = "id") val id: Int,
+    @Json(name = "name") val name: String? = null,
+    @Json(name = "department") val department: String? = null
+)
+
+@JsonClass(generateAdapter = true)
+data class SlotCandidateOutDto(
+    @Json(name = "id") val id: Int,
+    @Json(name = "name") val name: String,
+    @Json(name = "department_name") val departmentName: String? = null,
+    @Json(name = "compatibility_score") val compatibilityScore: Float = 100f,
+    @Json(name = "weekly_assignment_count") val weeklyAssignmentCount: Int = 0,
+    @Json(name = "today_assignment_count") val todayAssignmentCount: Int = 0
 )
 
 @JsonClass(generateAdapter = true)
@@ -658,39 +680,234 @@ data class EmergencyAttendanceRequestDto(
 )
 
 @JsonClass(generateAdapter = true)
-data class OfflineSyncOperationDto(
-    @Json(name = "operation_id") val operationId: String,
-    @Json(name = "operation_type") val operationType: String,
+data class StudentAttendanceSyncPayloadDto(
     @Json(name = "session_id") val sessionId: Int? = null,
     @Json(name = "class_id") val classId: Int? = null,
     @Json(name = "period_number") val periodNumber: Int? = null,
     @Json(name = "subject_id") val subjectId: Int? = null,
     @Json(name = "absent_roll_suffixes") val absentRollSuffixes: List<String> = emptyList(),
     @Json(name = "student_exceptions") val studentExceptions: List<StudentExceptionItemDto> = emptyList(),
-    @Json(name = "client_timestamp") val clientTimestamp: String
+    @Json(name = "client_timestamp") val clientTimestamp: String? = null
+)
+
+@JsonClass(generateAdapter = true)
+data class OfflineSyncOperationDto(
+    @Json(name = "operation_id") val operationId: String,
+    @Json(name = "idempotency_key") val idempotencyKey: String,
+    @Json(name = "operation_type") val operationType: String,
+    @Json(name = "payload") val payload: StudentAttendanceSyncPayloadDto,
+    @Json(name = "device_id") val deviceId: String? = null,
+    @Json(name = "client_timestamp") val clientTimestamp: String? = null
 )
 
 @JsonClass(generateAdapter = true)
 data class OfflineBatchSyncRequestDto(
-    @Json(name = "device_id") val deviceId: String,
+    @Json(name = "device_id") val deviceId: String? = null,
     @Json(name = "operations") val operations: List<OfflineSyncOperationDto>
 )
 
 @JsonClass(generateAdapter = true)
 data class OfflineSyncResultDto(
     @Json(name = "operation_id") val operationId: String,
+    @Json(name = "idempotency_key") val idempotencyKey: String? = null,
     @Json(name = "success") val success: Boolean,
-    @Json(name = "status") val status: String,
+    @Json(name = "status") val status: String? = null,
+    @Json(name = "message") val message: String? = null,
     @Json(name = "error") val error: String? = null,
     @Json(name = "session_id") val sessionId: Int? = null
-)
+) {
+    val errorOrMessage: String? get() = error ?: message
+}
 
 @JsonClass(generateAdapter = true)
 data class OfflineBatchSyncResponseDto(
-    @Json(name = "processed") val processed: Int = 0,
+    @Json(name = "synced_count") val syncedCount: Int = 0,
+    @Json(name = "failed_count") val failedCount: Int = 0,
     @Json(name = "success_count") val successCount: Int = 0,
     @Json(name = "failure_count") val failureCount: Int = 0,
+    @Json(name = "processed") val processed: Int = 0,
     @Json(name = "results") val results: List<OfflineSyncResultDto> = emptyList()
+) {
+    val effectiveSuccessCount: Int get() = if (syncedCount > 0) syncedCount else successCount
+    val effectiveFailureCount: Int get() = if (failedCount > 0) failedCount else failureCount
+}
+
+// ---------- First Login Setup DTO ----------
+
+@JsonClass(generateAdapter = true)
+data class FirstLoginSetupRequestDto(
+    @Json(name = "new_username") val newUsername: String? = null,
+    @Json(name = "new_email") val newEmail: String? = null,
+    @Json(name = "new_password") val newPassword: String,
+    @Json(name = "confirm_password") val confirmPassword: String
 )
 
+// ---------- Announcements DTOs ----------
 
+@JsonClass(generateAdapter = true)
+data class AnnouncementAttachmentDto(
+    @Json(name = "id") val id: Int,
+    @Json(name = "announcement_id") val announcementId: Int,
+    @Json(name = "file_name") val fileName: String,
+    @Json(name = "file_type") val fileType: String,
+    @Json(name = "file_size") val fileSize: Int,
+    @Json(name = "storage_key") val storageKey: String,
+    @Json(name = "download_url") val downloadUrl: String? = null,
+    @Json(name = "created_at") val createdAt: String
+)
+
+@JsonClass(generateAdapter = true)
+data class AnnouncementListItemDto(
+    @Json(name = "id") val id: Int,
+    @Json(name = "title") val title: String,
+    @Json(name = "body_snippet") val bodySnippet: String,
+    @Json(name = "type") val type: String = "GENERAL",
+    @Json(name = "priority") val priority: String = "NORMAL",
+    @Json(name = "status") val status: String = "PUBLISHED",
+    @Json(name = "target_summary") val targetSummary: String = "All College",
+    @Json(name = "is_pinned") val isPinned: Boolean = false,
+    @Json(name = "requires_acknowledgement") val requiresAcknowledgement: Boolean = false,
+    @Json(name = "allow_replies") val allowReplies: Boolean = true,
+    @Json(name = "published_at") val publishedAt: String? = null,
+    @Json(name = "created_at") val createdAt: String,
+    @Json(name = "author_name") val authorName: String,
+    @Json(name = "author_role") val authorRole: String,
+    @Json(name = "department_name") val departmentName: String? = null,
+    @Json(name = "attachment_count") val attachmentCount: Int = 0,
+    @Json(name = "attachments") val attachments: List<AnnouncementAttachmentDto> = emptyList(),
+    @Json(name = "is_read") val isRead: Boolean = false,
+    @Json(name = "is_acknowledged") val isAcknowledged: Boolean = false
+)
+
+@JsonClass(generateAdapter = true)
+data class AnnouncementDetailDto(
+    @Json(name = "id") val id: Int,
+    @Json(name = "title") val title: String,
+    @Json(name = "body") val body: String,
+    @Json(name = "type") val type: String = "GENERAL",
+    @Json(name = "priority") val priority: String = "NORMAL",
+    @Json(name = "status") val status: String = "PUBLISHED",
+    @Json(name = "target_summary") val targetSummary: String = "All College",
+    @Json(name = "is_pinned") val isPinned: Boolean = false,
+    @Json(name = "requires_acknowledgement") val requiresAcknowledgement: Boolean = false,
+    @Json(name = "allow_replies") val allowReplies: Boolean = true,
+    @Json(name = "published_at") val publishedAt: String? = null,
+    @Json(name = "created_at") val createdAt: String,
+    @Json(name = "author_name") val authorName: String,
+    @Json(name = "author_role") val authorRole: String,
+    @Json(name = "department_name") val departmentName: String? = null,
+    @Json(name = "attachments") val attachments: List<AnnouncementAttachmentDto> = emptyList(),
+    @Json(name = "is_read") val isRead: Boolean = false,
+    @Json(name = "is_acknowledged") val isAcknowledged: Boolean = false
+)
+
+// ---------- Campus Duty DTOs ----------
+
+@JsonClass(generateAdapter = true)
+data class DutyAssignmentDto(
+    @Json(name = "id") val id: Int,
+    @Json(name = "duty_id") val dutyId: Int,
+    @Json(name = "teacher_id") val teacherId: Int,
+    @Json(name = "teacher_name") val teacherName: String,
+    @Json(name = "department") val department: String? = null,
+    @Json(name = "assignment_state") val assignmentState: String = "ASSIGNED",
+    @Json(name = "is_locked") val isLocked: Boolean = false,
+    @Json(name = "locked_at") val lockedAt: String? = null,
+    @Json(name = "locked_by") val lockedBy: String? = null,
+    @Json(name = "selection_reason") val selectionReason: String? = null,
+    @Json(name = "selection_score") val selectionScore: Double? = null,
+    @Json(name = "is_overridden") val isOverridden: Boolean = false,
+    @Json(name = "overridden_by") val overriddenBy: String? = null,
+    @Json(name = "override_reason") val overrideReason: String? = null,
+    @Json(name = "is_replaced") val isReplaced: Boolean = false,
+    @Json(name = "replacement_reason") val replacementReason: String? = null
+)
+
+@JsonClass(generateAdapter = true)
+data class CampusDutyDto(
+    @Json(name = "id") val id: Int,
+    @Json(name = "title") val title: String,
+    @Json(name = "duty_type") val dutyType: String,
+    @Json(name = "duty_date") val dutyDate: String,
+    @Json(name = "start_time") val startTime: String,
+    @Json(name = "end_time") val endTime: String,
+    @Json(name = "area_name") val areaName: String? = null,
+    @Json(name = "break_name") val breakName: String? = null,
+    @Json(name = "required_teachers") val requiredTeachers: Int = 1,
+    @Json(name = "assigned_teachers") val assignedTeachers: Int = 0,
+    @Json(name = "status") val status: String = "DRAFT",
+    @Json(name = "is_locked") val isLocked: Boolean = false,
+    @Json(name = "department_id") val departmentId: Int? = null,
+    @Json(name = "instructions") val instructions: String? = null,
+    @Json(name = "assignments") val assignments: List<DutyAssignmentDto> = emptyList()
+)
+
+@JsonClass(generateAdapter = true)
+data class DutyCandidateDto(
+    @Json(name = "teacher_id") val teacherId: Int,
+    @Json(name = "teacher_name") val teacherName: String,
+    @Json(name = "department") val department: String? = null,
+    @Json(name = "is_eligible") val isEligible: Boolean = true,
+    @Json(name = "total_score") val totalScore: Double = 0.0,
+    @Json(name = "free_before_break") val freeBeforeBreak: Boolean = false,
+    @Json(name = "duties_today") val dutiesToday: Int = 0,
+    @Json(name = "duties_this_week") val dutiesThisWeek: Int = 0,
+    @Json(name = "selection_reasons") val selectionReasons: List<String> = emptyList(),
+    @Json(name = "ineligibility_reasons") val ineligibilityReasons: List<String> = emptyList()
+)
+
+@JsonClass(generateAdapter = true)
+data class DutyCandidatesResponseDto(
+    @Json(name = "duty_id") val dutyId: Int,
+    @Json(name = "required_count") val requiredCount: Int = 1,
+    @Json(name = "candidates") val candidates: List<DutyCandidateDto> = emptyList()
+)
+
+@JsonClass(generateAdapter = true)
+data class DutyDashboardMetricsDto(
+    @Json(name = "total_duties") val totalDuties: Int = 0,
+    @Json(name = "filled_duties") val filledDuties: Int = 0,
+    @Json(name = "unfilled_duties") val unfilledDuties: Int = 0,
+    @Json(name = "teachers_assigned") val teachersAssigned: Int = 0,
+    @Json(name = "replacements_needed") val replacementsNeeded: Int = 0,
+    @Json(name = "locked_duties") val lockedDuties: Int = 0,
+    @Json(name = "discipline_duties") val disciplineDuties: Int = 0,
+    @Json(name = "wing_duties") val wingDuties: Int = 0,
+    @Json(name = "exam_duties") val examDuties: Int = 0
+)
+
+@JsonClass(generateAdapter = true)
+data class DutyCreateRequestDto(
+    @Json(name = "title") val title: String,
+    @Json(name = "duty_type") val dutyType: String = "DISCIPLINE_DUTY",
+    @Json(name = "duty_date") val dutyDate: String,
+    @Json(name = "start_time") val startTime: String,
+    @Json(name = "end_time") val endTime: String,
+    @Json(name = "area_name") val areaName: String? = null,
+    @Json(name = "break_name") val breakName: String? = null,
+    @Json(name = "required_teachers") val requiredTeachers: Int = 1,
+    @Json(name = "instructions") val instructions: String? = null,
+    @Json(name = "department_id") val departmentId: Int? = null
+)
+
+@JsonClass(generateAdapter = true)
+data class DutyOverrideRequestDto(
+    @Json(name = "new_teacher_id") val newTeacherId: Int,
+    @Json(name = "reason") val reason: String
+)
+
+@JsonClass(generateAdapter = true)
+data class DutyReplaceRequestDto(
+    @Json(name = "reason") val reason: String? = null
+)
+
+@JsonClass(generateAdapter = true)
+data class DutyAssignRequestDto(
+    @Json(name = "teacher_id") val teacherId: Int,
+    @Json(name = "reason") val reason: String? = null
+)
+
+@JsonClass(generateAdapter = true)
+data class DutyLockRequestDto(
+    @Json(name = "reason") val reason: String? = null
+)

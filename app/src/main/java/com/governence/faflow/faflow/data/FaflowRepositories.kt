@@ -91,7 +91,8 @@ class LeaveRepositoryImpl(
                         isEmergency = dto.isEmergency,
                         substituteTeacherName = dto.alterAssignment?.substituteName,
                         createdAt = dto.createdAt,
-                        batchId = dto.batchId
+                        batchId = dto.batchId,
+                        proposedSubstituteName = dto.proposedSubstitute?.name
                     )
                 }
                 NetworkResult.Success(leaves)
@@ -149,10 +150,20 @@ class LeaveRepositoryImpl(
         }
     }
 
-    override suspend fun applyLeave(date: String, periodNumber: Int, reason: String): NetworkResult<LeaveRequest> {
+    override suspend fun applyLeave(
+        date: String,
+        periodNumber: Int,
+        reason: String,
+        proposedSubstituteId: Int?
+    ): NetworkResult<LeaveRequest> {
         return try {
             val response = apiService.applyLeave(
-                LeaveCreateDto(date = date, periodNumber = periodNumber, reason = reason)
+                LeaveCreateDto(
+                    date = date,
+                    periodNumber = periodNumber,
+                    reason = reason,
+                    proposedSubstituteId = proposedSubstituteId
+                )
             )
             if (response.isSuccessful && response.body() != null) {
                 val dto = response.body()!!
@@ -166,7 +177,8 @@ class LeaveRepositoryImpl(
                     status = LeaveStatus.PENDING,
                     isEmergency = dto.isEmergency,
                     createdAt = dto.createdAt,
-                    batchId = dto.batchId
+                    batchId = dto.batchId,
+                    proposedSubstituteName = dto.proposedSubstitute?.name
                 )
                 NetworkResult.Success(req)
             } else {
@@ -177,10 +189,20 @@ class LeaveRepositoryImpl(
         }
     }
 
-    suspend fun applyLeaveBatch(date: String, periodNumbers: List<Int>, reason: String): NetworkResult<List<LeaveRequest>> {
+    suspend fun applyLeaveBatch(
+        date: String,
+        periodNumbers: List<Int>,
+        reason: String,
+        periodSubstitutes: Map<String, Int>? = null
+    ): NetworkResult<List<LeaveRequest>> {
         return try {
             val response = apiService.applyLeaveBatch(
-                LeaveBatchCreateDto(date = date, periodNumbers = periodNumbers, reason = reason)
+                LeaveBatchCreateDto(
+                    date = date,
+                    periodNumbers = periodNumbers,
+                    reason = reason,
+                    periodSubstitutes = periodSubstitutes
+                )
             )
             if (response.isSuccessful && response.body() != null) {
                 val list = response.body()!!.map { dto ->
@@ -194,7 +216,8 @@ class LeaveRepositoryImpl(
                         status = LeaveStatus.PENDING,
                         isEmergency = dto.isEmergency,
                         createdAt = dto.createdAt,
-                        batchId = dto.batchId
+                        batchId = dto.batchId,
+                        proposedSubstituteName = dto.proposedSubstitute?.name
                     )
                 }
                 NetworkResult.Success(list)
@@ -203,6 +226,32 @@ class LeaveRepositoryImpl(
             }
         } catch (e: Exception) {
             NetworkResult.Error(-1, e.localizedMessage ?: "Failed to submit batch leave", e)
+        }
+    }
+
+    suspend fun getSlotCandidates(date: String, periodNumber: Int): NetworkResult<List<com.governence.faflow.core.network.SlotCandidateOutDto>> {
+        return try {
+            val response = apiService.getSlotCandidates(date, periodNumber)
+            if (response.isSuccessful && response.body() != null) {
+                NetworkResult.Success(response.body()!!)
+            } else {
+                NetworkResult.Error(response.code(), "Failed to fetch slot candidates (${response.code()})")
+            }
+        } catch (e: Exception) {
+            NetworkResult.Error(-1, e.localizedMessage ?: "Error fetching slot candidates", e)
+        }
+    }
+
+    suspend fun getCampusOperationsMode(): NetworkResult<String> {
+        return try {
+            val response = apiService.getCampusOperationsMode()
+            if (response.isSuccessful && response.body() != null) {
+                NetworkResult.Success(response.body()!!["campus_operations_mode"] ?: "standard")
+            } else {
+                NetworkResult.Success("standard")
+            }
+        } catch (e: Exception) {
+            NetworkResult.Success("standard") // Fail open — non-Flexible behaviour
         }
     }
 
@@ -300,7 +349,8 @@ class SubstitutionRepositoryImpl(
                         reason = dto.reason,
                         status = LeaveStatus.APPROVED,
                         isEmergency = dto.isEmergency,
-                        substituteTeacherName = dto.alterAssignment?.substituteName
+                        substituteTeacherName = dto.alterAssignment?.substituteName,
+                        proposedSubstituteName = dto.proposedSubstitute?.name
                     )
                 }
                 NetworkResult.Success(duties)

@@ -402,9 +402,16 @@ fun LeaveHistoryScreen(
                                 )
                                 if (!period.substituteTeacherName.isNullOrBlank()) {
                                     Text(
-                                        text = "Cover: ${period.substituteTeacherName}",
+                                        text = "Official Cover: ${period.substituteTeacherName}",
                                         fontSize = 11.sp,
                                         color = StatusSuccess,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                } else if (!period.proposedSubstituteName.isNullOrBlank()) {
+                                    Text(
+                                        text = "Proposed: ${period.proposedSubstituteName} (Awaiting HOD)",
+                                        fontSize = 11.sp,
+                                        color = Color(0xFF4F46E5),
                                         fontWeight = FontWeight.Medium
                                     )
                                 } else if (group.status == LeaveStatus.APPROVED) {
@@ -782,6 +789,22 @@ fun LeaveHistoryDayCard(
                                 fontWeight = FontWeight.SemiBold
                             )
                         }
+                    } else if (dayGroup.hasProposedSubstitutes) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.Person,
+                                contentDescription = null,
+                                tint = Color(0xFF4F46E5),
+                                modifier = Modifier.size(13.dp)
+                            )
+                            Spacer(Modifier.width(3.dp))
+                            Text(
+                                text = "${dayGroup.proposedSubstitutesCount}/${dayGroup.periods.size} Proposed",
+                                fontSize = 11.sp,
+                                color = Color(0xFF4F46E5),
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
                     }
                 }
 
@@ -863,6 +886,18 @@ fun LeaveHistoryCard(
                         text = leave.substituteTeacherName,
                         fontSize = 11.sp,
                         color = StatusSuccess,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+            } else if (leave.proposedSubstituteName != null) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Person, contentDescription = null,
+                        tint = Color(0xFF4F46E5), modifier = Modifier.size(12.dp))
+                    Spacer(Modifier.width(3.dp))
+                    Text(
+                        text = "Proposed: ${leave.proposedSubstituteName}",
+                        fontSize = 11.sp,
+                        color = Color(0xFF4F46E5),
                         fontWeight = FontWeight.SemiBold
                     )
                 }

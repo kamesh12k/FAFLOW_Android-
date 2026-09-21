@@ -56,4 +56,19 @@ object InstitutionalSchedule {
     fun resolvePeriodNumber(minutesSinceMidnight: Int): Int? {
         return PERIOD_MINUTE_RANGES.entries.firstOrNull { minutesSinceMidnight in it.value }?.key
     }
+
+    /**
+     * Resolves the active or most recent academic period. During breaks/lunch/afternoon tea,
+     * it maps to the period that just occurred or is occurring (e.g. 14:30 -> Period 4).
+     */
+    fun resolveActiveOrRecentPeriod(minutesSinceMidnight: Int): Int {
+        resolvePeriodNumber(minutesSinceMidnight)?.let { return it }
+        return when {
+            minutesSinceMidnight < (10 * 60 + 20) -> 1
+            minutesSinceMidnight < (11 * 60 + 40) -> 2
+            minutesSinceMidnight < (13 * 60 + 35) -> 3
+            minutesSinceMidnight < (14 * 60 + 55) -> 4
+            else -> 5
+        }
+    }
 }

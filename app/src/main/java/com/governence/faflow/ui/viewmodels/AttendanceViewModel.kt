@@ -238,6 +238,12 @@ class AttendanceViewModel(
         livenessState,
         _submissionState
     ) { loc, face, identity, liveness, submission ->
+        if (_uiState.value.shiftState == ShiftState.COMPLETED) {
+            return@combine AttendancePipelineStatus.CheckedOut(
+                _uiState.value.checkOutTime ?: "",
+                _uiState.value.workingDuration
+            )
+        }
         when (submission) {
             is AttendanceEligibilityState.Submitting -> {
                 if (_uiState.value.isCheckingIn) AttendancePipelineStatus.CheckingIn else AttendancePipelineStatus.CheckingOut
@@ -399,6 +405,13 @@ class AttendanceViewModel(
             when (val res = attendanceRepository.getTodaySummary()) {
                 is NetworkResult.Success -> {
                     val summary = res.data
+                    // Stale async response protection: If client already verified CHECKED_OUT for today,
+                    // do not let a stale cached or in-flight summary regress the state to NOT_STARTED or ON_DUTY.
+                    if (_uiState.value.shiftState == ShiftState.COMPLETED && !summary.isCheckedOut) {
+                        android.util.Log.w("AttendanceVM", "Ignoring stale server summary: client already holds authoritative COMPLETED state for today.")
+                        return@launch
+                    }
+
                     val shiftState = when {
                         summary.isCheckedOut -> ShiftState.COMPLETED
                         summary.isCheckedIn -> ShiftState.ON_DUTY
@@ -408,6 +421,22 @@ class AttendanceViewModel(
                         calculateLiveWorkingDuration(summary.checkInTime)
                     } else summary.workingDuration
 
+                    if (summary.isCheckedOut) {
+                        val recordOut = summary.record ?: AttendanceRecordOutDto(
+                            id = 0,
+                            userId = 0,
+                            attendanceDate = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date()),
+                            checkInTime = summary.checkInTime,
+                            checkOutTime = summary.checkOutTime,
+                            status = "COMPLETED",
+                            checkInGeofenceName = _uiState.value.checkInGeofenceName,
+                            checkOutGeofenceName = _uiState.value.checkOutGeofenceName,
+                            livenessVerified = true,
+                            workingHours = summary.workingDuration
+                        )
+                        _submissionState.value = AttendanceEligibilityState.ServerAccepted(recordOut)
+                    }
+
                     _uiState.value = _uiState.value.copy(
                         isCheckingIn = !summary.isCheckedIn,
                         isShiftActive = summary.isCheckedIn && !summary.isCheckedOut,
@@ -416,8 +445,8 @@ class AttendanceViewModel(
                         checkOutTime = summary.checkOutTime ?: _uiState.value.checkOutTime,
                         workingDuration = summary.workingDuration ?: _uiState.value.workingDuration,
                         liveWorkingDuration = liveDur,
-                        checkInGeofenceName = summary.record?.checkInGeofenceName,
-                        checkOutGeofenceName = summary.record?.checkOutGeofenceName
+                        checkInGeofenceName = summary.record?.checkInGeofenceName ?: _uiState.value.checkInGeofenceName,
+                        checkOutGeofenceName = summary.record?.checkOutGeofenceName ?: _uiState.value.checkOutGeofenceName
                     )
                 }
                 else -> {}
@@ -1047,6 +1076,10 @@ class AttendanceViewModel(
     }
 
     fun prepareSessionForCheckIn() {
+        if (_uiState.value.shiftState == ShiftState.COMPLETED) {
+            android.util.Log.w("AttendanceVM", "Ignoring prepareSessionForCheckIn: Today's shift is already COMPLETED.")
+            return
+        }
         activeSession.cancel()
         activeSession = VerificationSession(operationType = AttendanceOperationType.CHECK_IN)
         logBiometric("SESSION_CREATED - CHECK_IN (id=${activeSession.sessionId})")
@@ -1064,7 +1097,7 @@ class AttendanceViewModel(
 
     companion object {
         var BYPASS_GEOLOCATION_FOR_TESTING = false
-        var BYPASS_LIVENESS_FOR_TESTING = true  // Liveness detection disabled per request: face match only
+        var BYPASS_LIVENESS_FOR_TESTING = false  // Active blink & anti-spoof liveness enabled for production security
 
         fun calculateLiveWorkingDuration(checkInStr: String?): String? {
             if (checkInStr.isNullOrBlank()) return null
@@ -1306,6 +1339,9 @@ class AttendanceViewModel(
                         isSubmitting = false,
                         errorMessage = friendlyMsg
                     )
+                    if (result.message.contains("already", ignoreCase = true)) {
+                        loadTodaySummary()
+                    }
                     onFailure(friendlyMsg)
                 }
             }
@@ -1451,6 +1487,9 @@ class AttendanceViewModel(
                             isSubmitting = false,
                             errorMessage = friendlyMsg
                         )
+                        if (result.message.contains("already", ignoreCase = true)) {
+                            loadTodaySummary()
+                        }
                         onFailure(friendlyMsg)
                     }
                 }
