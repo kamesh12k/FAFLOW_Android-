@@ -199,9 +199,9 @@ class StudentAttendanceViewModel(
         _uiState.update { it.copy(isEmergencyModalOpen = false) }
     }
 
-    fun selectEmergencyClass(classDto: ClassOutDto, targetPeriod: Int? = null) {
+    fun selectEmergencyClass(classDto: ClassOutDto) {
         viewModelScope.launch {
-            val curPeriod = targetPeriod ?: getLocalCurrentPeriod()
+            val curPeriod = getLocalCurrentPeriod()
             val periodTime = com.governence.faflow.domain.model.InstitutionalSchedule.getPeriodTime(curPeriod)
             val parts = periodTime.split("–")
             _uiState.update {
@@ -236,22 +236,6 @@ class StudentAttendanceViewModel(
                 }
                 NetworkResult.Loading -> {}
             }
-        }
-    }
-
-    fun changeEmergencyPeriod(periodNumber: Int) {
-        val curSlot = _uiState.value.selectedSlot ?: return
-        if (!_uiState.value.isEmergencyMode) return
-        val periodTime = com.governence.faflow.domain.model.InstitutionalSchedule.getPeriodTime(periodNumber)
-        val parts = periodTime.split("–")
-        _uiState.update {
-            it.copy(
-                selectedSlot = curSlot.copy(
-                    periodNumber = periodNumber,
-                    startTime = parts.firstOrNull()?.trim() ?: "Period $periodNumber",
-                    endTime = parts.lastOrNull()?.trim() ?: ""
-                )
-            )
         }
     }
 

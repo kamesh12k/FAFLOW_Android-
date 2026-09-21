@@ -71,4 +71,17 @@ object InstitutionalSchedule {
             else -> 5
         }
     }
+
+    fun getPeriodStartMinute(periodNumber: Int): Int {
+        return PERIOD_MINUTE_RANGES[periodNumber]?.first ?: (9 * 60 + 20)
+    }
+
+    /**
+     * Checks if current minutesSinceMidnight is within the official 15-minute submission window
+     * from the period start time.
+     */
+    fun isWithin15MinuteWindow(periodNumber: Int, minutesSinceMidnight: Int): Boolean {
+        val start = getPeriodStartMinute(periodNumber)
+        return minutesSinceMidnight in start..(start + 15)
+    }
 }
