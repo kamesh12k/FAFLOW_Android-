@@ -650,6 +650,8 @@ data class AttendanceSessionDto(
     @Json(name = "on_duty_count") val onDutyCount: Int = 0,
     @Json(name = "leave_count") val leaveCount: Int = 0,
     @Json(name = "medical_count") val medicalCount: Int = 0,
+    @Json(name = "correction_deadline") val correctionDeadline: String? = null,
+    @Json(name = "correction_allowed") val correctionAllowed: Boolean? = null,
     @Json(name = "can_edit") val canEdit: Boolean = false,
     @Json(name = "records") val records: List<StudentRecordDto> = emptyList()
 )

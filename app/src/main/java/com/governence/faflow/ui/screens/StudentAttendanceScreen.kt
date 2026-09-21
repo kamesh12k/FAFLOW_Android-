@@ -96,6 +96,13 @@ fun StudentAttendanceScreen(
     val allRoster = state.roster?.students ?: emptyList()
     val totalStudents = allRoster.size
 
+    val isSubmitted = state.activeSession?.status in listOf("SUBMITTED", "SUBMITTED_LATE", "LOCKED")
+    val canEdit = if (isSubmitted) {
+        state.activeSession?.canEdit == true && state.activeSession?.correctionAllowed != false
+    } else {
+        true
+    }
+
     val absentTokens = remember(state.absentInput) {
         state.absentInput.split(Regex("[\\s,]+")).filter { it.isNotBlank() }
     }
@@ -260,8 +267,11 @@ fun StudentAttendanceScreen(
                     ) {
                         Button(
                             onClick = { viewModel.openReviewSheet() },
-                            enabled = !state.isSubmitting,
-                            colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue),
+                            enabled = !state.isSubmitting && (!isSubmitted || canEdit),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (!isSubmitted || canEdit) PrimaryBlue else Color(0xFF94A3B8),
+                                disabledContainerColor = Color(0xFFE2E8F0)
+                            ),
                             shape = RoundedCornerShape(12.dp),
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -271,11 +281,21 @@ fun StudentAttendanceScreen(
                                 CircularProgressIndicator(color = Color.White, modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text("Submitting...", fontWeight = FontWeight.Bold)
+                            } else if (isSubmitted && !canEdit) {
+                                Icon(imageVector = Icons.Default.Clear, contentDescription = null, tint = Color(0xFF64748B), modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "CORRECTION CLOSED (PERIOD ENDED)",
+                                    fontWeight = FontWeight.Black,
+                                    fontSize = 13.sp,
+                                    color = Color(0xFF64748B),
+                                    letterSpacing = 0.5.sp
+                                )
                             } else {
                                 Icon(imageVector = Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp))
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text(
-                                    text = "REVIEW & SUBMIT (${presentCount}P · ${absentCount}A)",
+                                    text = if (isSubmitted) "REVIEW & UPDATE (${presentCount}P · ${absentCount}A)" else "REVIEW & SUBMIT (${presentCount}P · ${absentCount}A)",
                                     fontWeight = FontWeight.Black,
                                     fontSize = 13.sp,
                                     letterSpacing = 0.5.sp
@@ -520,25 +540,45 @@ fun StudentAttendanceScreen(
                                     val nowMins = calNow.get(java.util.Calendar.HOUR_OF_DAY) * 60 + calNow.get(java.util.Calendar.MINUTE)
                                     val isWithinWindow = com.governence.faflow.domain.model.InstitutionalSchedule.isWithin15MinuteWindow(selectedSlot.periodNumber, nowMins)
 
+                                    val periodEndStr = selectedSlot.endTime?.ifBlank { "Period End" } ?: "Period End"
+
                                     Row(
                                         modifier = Modifier.padding(top = 4.dp),
                                         verticalAlignment = Alignment.CenterVertically,
                                         horizontalArrangement = Arrangement.spacedBy(4.dp)
                                     ) {
-                                        Box(
-                                            modifier = Modifier
-                                                .background(
-                                                    if (isWithinWindow) Color(0xFFECFDF5) else Color(0xFFFEF3C7),
-                                                    RoundedCornerShape(4.dp)
+                                        if (isSubmitted) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .background(
+                                                        if (canEdit) Color(0xFFECFDF5) else Color(0xFFF1F5F9),
+                                                        RoundedCornerShape(4.dp)
+                                                    )
+                                                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                                            ) {
+                                                Text(
+                                                    text = if (canEdit) "⏱ Corrections open until $periodEndStr" else "🔒 Correction closed (Ended $periodEndStr)",
+                                                    fontSize = 10.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = if (canEdit) Color(0xFF059669) else Color(0xFF64748B)
                                                 )
-                                                .padding(horizontal = 6.dp, vertical = 2.dp)
-                                        ) {
-                                            Text(
-                                                text = if (isWithinWindow) "⏱ 15m Window (On-Time)" else "⏱ Late Submission (>15m)",
-                                                fontSize = 10.sp,
-                                                fontWeight = FontWeight.Bold,
-                                                color = if (isWithinWindow) Color(0xFF059669) else Color(0xFFD97706)
-                                            )
+                                            }
+                                        } else {
+                                            Box(
+                                                modifier = Modifier
+                                                    .background(
+                                                        if (isWithinWindow) Color(0xFFECFDF5) else Color(0xFFFEF3C7),
+                                                        RoundedCornerShape(4.dp)
+                                                    )
+                                                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                                            ) {
+                                                Text(
+                                                    text = if (isWithinWindow) "⏱ 15m Window (On-Time)" else "⏱ Late Submission (>15m)",
+                                                    fontSize = 10.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = if (isWithinWindow) Color(0xFF059669) else Color(0xFFD97706)
+                                                )
+                                            }
                                         }
                                     }
                                 }
@@ -617,8 +657,15 @@ fun StudentAttendanceScreen(
                             Spacer(modifier = Modifier.height(4.dp))
                             OutlinedTextField(
                                 value = state.absentInput,
-                                onValueChange = { viewModel.updateAbsentInput(it) },
-                                placeholder = { Text("Type suffixes or tap student rows below (e.g. 044 051)", color = Color(0xFF94A3B8), fontSize = 12.sp) },
+                                onValueChange = { if (canEdit) viewModel.updateAbsentInput(it) },
+                                enabled = canEdit,
+                                placeholder = {
+                                    Text(
+                                        if (isSubmitted && !canEdit) "Correction window closed for this period" else "Type suffixes or tap student rows below (e.g. 044 051)",
+                                        color = Color(0xFF94A3B8),
+                                        fontSize = 12.sp
+                                    )
+                                },
                                 modifier = Modifier.fillMaxWidth(),
                                 shape = RoundedCornerShape(12.dp),
                                 textStyle = MaterialTheme.typography.bodyMedium.copy(
@@ -629,7 +676,9 @@ fun StudentAttendanceScreen(
                                     focusedBorderColor = PrimaryBlue,
                                     unfocusedBorderColor = Color(0xFFCBD5E1),
                                     focusedContainerColor = Color.White,
-                                    unfocusedContainerColor = Color(0xFFF8FAFC)
+                                    unfocusedContainerColor = Color(0xFFF8FAFC),
+                                    disabledContainerColor = Color(0xFFF1F5F9),
+                                    disabledBorderColor = Color(0xFFE2E8F0)
                                 ),
                                 singleLine = true
                             )
@@ -648,7 +697,7 @@ fun StudentAttendanceScreen(
                                             modifier = Modifier
                                                 .clip(RoundedCornerShape(6.dp))
                                                 .background(if (isValid) Color(0xFFFECDD3) else Color(0xFFEF4444))
-                                                .clickable {
+                                                .clickable(enabled = canEdit) {
                                                     if (studentMatch != null) {
                                                         viewModel.toggleStudentAttendance(studentMatch)
                                                     }
@@ -684,29 +733,32 @@ fun StudentAttendanceScreen(
                             ) {
                                 TextButton(
                                     onClick = { viewModel.markAllPresent() },
+                                    enabled = canEdit,
                                     contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
                                 ) {
-                                    Icon(Icons.Default.DoneAll, contentDescription = null, modifier = Modifier.size(16.dp), tint = Color(0xFF059669))
+                                    Icon(Icons.Default.DoneAll, contentDescription = null, modifier = Modifier.size(16.dp), tint = if (canEdit) Color(0xFF059669) else Color(0xFF94A3B8))
                                     Spacer(modifier = Modifier.width(4.dp))
-                                    Text("All Present", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFF059669))
+                                    Text("All Present", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = if (canEdit) Color(0xFF059669) else Color(0xFF94A3B8))
                                 }
 
                                 TextButton(
                                     onClick = { showMarkAllAbsentDialog = true },
+                                    enabled = canEdit,
                                     contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
                                 ) {
-                                    Icon(Icons.Default.PersonOff, contentDescription = null, modifier = Modifier.size(16.dp), tint = Color(0xFFDC2626))
+                                    Icon(Icons.Default.PersonOff, contentDescription = null, modifier = Modifier.size(16.dp), tint = if (canEdit) Color(0xFFDC2626) else Color(0xFF94A3B8))
                                     Spacer(modifier = Modifier.width(4.dp))
-                                    Text("All Absent", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFFDC2626))
+                                    Text("All Absent", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = if (canEdit) Color(0xFFDC2626) else Color(0xFF94A3B8))
                                 }
 
                                 TextButton(
                                     onClick = { viewModel.clearAttendance() },
+                                    enabled = canEdit,
                                     contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
                                 ) {
-                                    Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(14.dp), tint = Color(0xFFE11D48))
+                                    Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(14.dp), tint = if (canEdit) Color(0xFFE11D48) else Color(0xFF94A3B8))
                                     Spacer(modifier = Modifier.width(4.dp))
-                                    Text("Clear All", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFFE11D48))
+                                    Text("Clear All", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = if (canEdit) Color(0xFFE11D48) else Color(0xFF94A3B8))
                                 }
                             }
                         }
@@ -826,7 +878,7 @@ fun StudentAttendanceScreen(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clip(RoundedCornerShape(12.dp))
-                                .clickable { viewModel.toggleStudentAttendance(student) }
+                                .clickable(enabled = canEdit) { viewModel.toggleStudentAttendance(student) }
                                 .semantics {
                                     contentDescription = if (isAbsent) {
                                         "${student.name}, roll ${student.rollNumber}. Currently marked absent. Tap to mark present."
@@ -918,13 +970,14 @@ fun StudentAttendanceScreen(
                                     // Quick Special toggle
                                     IconButton(
                                         onClick = { viewModel.toggleSpecialStatus(student.id, "ON_DUTY") },
+                                        enabled = canEdit,
                                         modifier = Modifier.size(32.dp)
                                     ) {
                                         Text(
                                             text = if (special == "ON_DUTY") "✕OD" else "+OD",
                                             fontSize = 10.sp,
                                             fontWeight = FontWeight.Bold,
-                                            color = PrimaryBlue
+                                            color = if (canEdit) PrimaryBlue else Color(0xFF94A3B8)
                                         )
                                     }
                                 }
@@ -1069,7 +1122,11 @@ fun StudentAttendanceScreen(
                         .fillMaxWidth()
                         .height(48.dp)
                 ) {
-                    Text("CONFIRM & SUBMIT ATTENDANCE", fontWeight = FontWeight.Black, fontSize = 13.sp)
+                    Text(
+                        text = if (isSubmitted) "CONFIRM & UPDATE ATTENDANCE" else "CONFIRM & SUBMIT ATTENDANCE",
+                        fontWeight = FontWeight.Black,
+                        fontSize = 13.sp
+                    )
                 }
 
                 Spacer(modifier = Modifier.height(6.dp))
