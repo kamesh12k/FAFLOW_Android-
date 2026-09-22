@@ -788,4 +788,16 @@ class NotificationsViewModel(
             loadNotifications()
         }
     }
+
+    fun clearAll(context: android.content.Context? = null) {
+        val currentIds = _uiState.value.notifications.map { it.id }
+        _uiState.value = _uiState.value.copy(
+            isLoading = false,
+            notifications = emptyList(),
+            unreadCount = 0
+        )
+        viewModelScope.launch {
+            notificationRepository.clearAllNotifications(context, currentIds)
+        }
+    }
 }

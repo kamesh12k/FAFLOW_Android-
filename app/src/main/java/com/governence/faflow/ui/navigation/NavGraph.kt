@@ -76,9 +76,11 @@ fun NavGraph(
     val userRole = (authState as? AuthUiState.Authenticated)?.staff?.role ?: "teacher"
     val isHod = userRole.lowercase() == "admin" || userRole.lowercase() == "hod"
 
-    // Lazy HodViewModel provider: only instantiated on-demand when an HOD screen or timetable/coverage is visited.
+    val currentUserId = (authState as? AuthUiState.Authenticated)?.staff?.id ?: -1
+
+    // Lazy HodViewModel provider: keyed to currentUserId so switching users discards stale state.
     // This prevents firing 5 parallel HTTP requests during splash/teacher startup.
-    val getHodViewModel = remember {
+    val getHodViewModel = remember(currentUserId) {
         var vm: HodViewModel? = null
         {
             vm ?: HodViewModel(
@@ -89,9 +91,9 @@ fun NavGraph(
         }
     }
 
-    // P1 FIX: Create ONE shared AttendanceViewModel at NavGraph level.
-    // Previously, 3 attendance destinations each created their own instance.
-    val attendanceViewModel = remember {
+    // P1 FIX: Create ONE shared AttendanceViewModel at NavGraph level, keyed to currentUserId.
+    // Recreated fresh whenever user logs in, logs out, or switches accounts.
+    val attendanceViewModel = remember(currentUserId) {
         AttendanceViewModel(
             geofenceRepository = appContainer.geofenceRepository,
             attendanceRepository = appContainer.attendanceRepository,
@@ -101,7 +103,7 @@ fun NavGraph(
         )
     }
 
-    val studentAttendanceViewModel = remember {
+    val studentAttendanceViewModel = remember(currentUserId) {
         com.governence.faflow.attendance.student.ui.StudentAttendanceViewModel(
             repository = appContainer.studentAttendanceRepository
         )
@@ -117,6 +119,8 @@ fun NavGraph(
     val isLoggedIn by appContainer.tokenManager.isLoggedIn.collectAsState()
     androidx.compose.runtime.LaunchedEffect(isLoggedIn) {
         if (!isLoggedIn) {
+            attendanceViewModel.resetSession()
+            studentAttendanceViewModel.resetSession()
             val currentRoute = navController.currentBackStackEntry?.destination?.route
             if (currentRoute != null && currentRoute != Screen.Splash.route && currentRoute != Screen.Login.route) {
                 navController.navigate(Screen.Login.route) {
@@ -320,6 +324,7 @@ fun NavGraph(
                     onNavigateToStudentAttendance = { navController.navigate(Screen.StudentAttendance.route) },
                     onNavigateToAnnouncements = { navController.navigate(Screen.Announcements.route) },
                     onNavigateToCampusDuties = { navController.navigate(Screen.MyDuties.route) },
+                    onNavigateToCampusStructure = { navController.navigate(Screen.CampusStructure.route) },
                     onNavigateToSettings = { navController.navigate(Screen.Settings.route) },
                     onNavigateToSyncStatus = { navController.navigate(Screen.SyncStatus.route) },
                     onReplayTour = { showTourReplay = true }
@@ -485,6 +490,8 @@ fun NavGraph(
                     onNavigateBack = { navController.popBackStack() },
                     onNavigateToFaceEnrollment = { navController.navigate(Screen.FaceEnrollment.route) },
                     onLogout = {
+                        attendanceViewModel.resetSession()
+                        studentAttendanceViewModel.resetSession()
                         navController.navigate(Screen.Login.route) {
                             popUpTo(0) { inclusive = true }
                         }
@@ -628,6 +635,16 @@ fun NavGraph(
                 com.governence.faflow.ui.screens.DutyDetailScreen(
                     dutyId = dutyId,
                     viewModel = dutyViewModel,
+                    onNavigateBack = { navController.popBackStack() }
+                )
+            }
+
+            composable(Screen.CampusStructure.route) { backStackEntry ->
+                val structureViewModel = remember(backStackEntry) {
+                    com.governence.faflow.ui.viewmodels.CampusStructureViewModel(appContainer.campusStructureRepository)
+                }
+                com.governence.faflow.ui.screens.CampusStructureScreen(
+                    viewModel = structureViewModel,
                     onNavigateBack = { navController.popBackStack() }
                 )
             }

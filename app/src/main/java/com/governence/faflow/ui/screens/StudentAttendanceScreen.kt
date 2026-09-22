@@ -32,6 +32,7 @@ import androidx.compose.material.icons.filled.CloudDone
 import androidx.compose.material.icons.filled.CloudSync
 import androidx.compose.material.icons.filled.CrisisAlert
 import androidx.compose.material.icons.filled.DoneAll
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.PersonOff
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
@@ -97,10 +98,15 @@ fun StudentAttendanceScreen(
     val totalStudents = allRoster.size
 
     val isSubmitted = state.activeSession?.status in listOf("SUBMITTED", "SUBMITTED_LATE", "LOCKED")
+    val hasStarted = remember(state.selectedSlot, state.schedule?.date) {
+        state.selectedSlot?.let {
+            com.governence.faflow.domain.model.InstitutionalSchedule.hasPeriodStarted(it.periodNumber, state.schedule?.date)
+        } ?: true
+    }
     val canEdit = if (isSubmitted) {
         state.activeSession?.canEdit == true && state.activeSession?.correctionAllowed != false
     } else {
-        true
+        hasStarted
     }
 
     val absentTokens = remember(state.absentInput) {
@@ -253,6 +259,7 @@ fun StudentAttendanceScreen(
         bottomBar = {
             val selectedSlot = state.selectedSlot
             if (selectedSlot != null && totalStudents > 0) {
+                val startTimeStr = selectedSlot.startTime?.ifBlank { com.governence.faflow.domain.model.InstitutionalSchedule.getPeriodStartTimeFormatted(selectedSlot.periodNumber) } ?: com.governence.faflow.domain.model.InstitutionalSchedule.getPeriodStartTimeFormatted(selectedSlot.periodNumber)
                 Surface(
                     color = Color.White,
                     shadowElevation = 8.dp,
@@ -267,9 +274,9 @@ fun StudentAttendanceScreen(
                     ) {
                         Button(
                             onClick = { viewModel.openReviewSheet() },
-                            enabled = !state.isSubmitting && (!isSubmitted || canEdit),
+                            enabled = !state.isSubmitting && (!isSubmitted || canEdit) && (isSubmitted || hasStarted),
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = if (!isSubmitted || canEdit) PrimaryBlue else Color(0xFF94A3B8),
+                                containerColor = if ((!isSubmitted || canEdit) && (isSubmitted || hasStarted)) PrimaryBlue else Color(0xFF94A3B8),
                                 disabledContainerColor = Color(0xFFE2E8F0)
                             ),
                             shape = RoundedCornerShape(12.dp),
@@ -281,6 +288,16 @@ fun StudentAttendanceScreen(
                                 CircularProgressIndicator(color = Color.White, modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text("Submitting...", fontWeight = FontWeight.Bold)
+                            } else if (!isSubmitted && !hasStarted) {
+                                Icon(imageVector = Icons.Default.Lock, contentDescription = null, tint = Color(0xFF64748B), modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "CLASS NOT STARTED (OPENS AT $startTimeStr)",
+                                    fontWeight = FontWeight.Black,
+                                    fontSize = 12.sp,
+                                    color = Color(0xFF64748B),
+                                    letterSpacing = 0.5.sp
+                                )
                             } else if (isSubmitted && !canEdit) {
                                 Icon(imageVector = Icons.Default.Clear, contentDescription = null, tint = Color(0xFF64748B), modifier = Modifier.size(18.dp))
                                 Spacer(modifier = Modifier.width(8.dp))
@@ -478,6 +495,17 @@ fun StudentAttendanceScreen(
                                                 fontWeight = FontWeight.Bold,
                                                 color = if (isSelected) Color(0xFFA7F3D0) else Color(0xFF059669)
                                             )
+                                        } else {
+                                            val slotStarted = com.governence.faflow.domain.model.InstitutionalSchedule.hasPeriodStarted(slot.periodNumber, state.schedule?.date)
+                                            if (!slotStarted) {
+                                                val startStr = slot.startTime?.ifBlank { com.governence.faflow.domain.model.InstitutionalSchedule.getPeriodStartTimeFormatted(slot.periodNumber) } ?: com.governence.faflow.domain.model.InstitutionalSchedule.getPeriodStartTimeFormatted(slot.periodNumber)
+                                                Text(
+                                                    text = "Starts $startStr",
+                                                    fontSize = 9.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = if (isSelected) Color(0xFFE2E8F0) else Color(0xFF94A3B8)
+                                                )
+                                            }
                                         }
                                     }
                                 }
@@ -490,6 +518,8 @@ fun StudentAttendanceScreen(
             // 2. Active Class Overview & Fast Input Card
             val selectedSlot = state.selectedSlot
             if (selectedSlot != null) {
+                val periodStartStr = selectedSlot.startTime?.ifBlank { com.governence.faflow.domain.model.InstitutionalSchedule.getPeriodStartTimeFormatted(selectedSlot.periodNumber) } ?: com.governence.faflow.domain.model.InstitutionalSchedule.getPeriodStartTimeFormatted(selectedSlot.periodNumber)
+                val periodEndStr = selectedSlot.endTime?.ifBlank { "Period End" } ?: "Period End"
                 item {
                     FaflowSurface(
                         modifier = Modifier.fillMaxWidth(),
@@ -540,8 +570,6 @@ fun StudentAttendanceScreen(
                                     val nowMins = calNow.get(java.util.Calendar.HOUR_OF_DAY) * 60 + calNow.get(java.util.Calendar.MINUTE)
                                     val isWithinWindow = com.governence.faflow.domain.model.InstitutionalSchedule.isWithin15MinuteWindow(selectedSlot.periodNumber, nowMins)
 
-                                    val periodEndStr = selectedSlot.endTime?.ifBlank { "Period End" } ?: "Period End"
-
                                     Row(
                                         modifier = Modifier.padding(top = 4.dp),
                                         verticalAlignment = Alignment.CenterVertically,
@@ -561,6 +589,19 @@ fun StudentAttendanceScreen(
                                                     fontSize = 10.sp,
                                                     fontWeight = FontWeight.Bold,
                                                     color = if (canEdit) Color(0xFF059669) else Color(0xFF64748B)
+                                                )
+                                            }
+                                        } else if (!hasStarted) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .background(Color(0xFFF1F5F9), RoundedCornerShape(4.dp))
+                                                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                                            ) {
+                                                Text(
+                                                    text = "🔒 Class not started (Opens $periodStartStr)",
+                                                    fontSize = 10.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = Color(0xFF64748B)
                                                 )
                                             }
                                         } else {
@@ -661,7 +702,9 @@ fun StudentAttendanceScreen(
                                 enabled = canEdit,
                                 placeholder = {
                                     Text(
-                                        if (isSubmitted && !canEdit) "Correction window closed for this period" else "Type suffixes or tap student rows below (e.g. 044 051)",
+                                        if (!isSubmitted && !hasStarted) "Class opens at $periodStartStr. Attendance cannot be taken yet."
+                                        else if (isSubmitted && !canEdit) "Correction window closed for this period"
+                                        else "Type suffixes or tap student rows below (e.g. 044 051)",
                                         color = Color(0xFF94A3B8),
                                         fontSize = 12.sp
                                     )

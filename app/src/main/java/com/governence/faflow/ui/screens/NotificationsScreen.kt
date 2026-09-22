@@ -21,6 +21,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.DoneAll
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.NotificationsNone
@@ -66,6 +67,7 @@ fun NotificationsScreen(
     onNavigateToAttendance: () -> Unit = {}
 ) {
     val state by viewModel.uiState.collectAsState()
+    val context = androidx.compose.ui.platform.LocalContext.current
     var selectedFilter by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf("ALL") }
 
     val needsAttention = state.notifications.filter { notif ->
@@ -93,17 +95,17 @@ fun NotificationsScreen(
                 onNavigateBack = onNavigateBack,
                 actions = {
                     if (state.notifications.isNotEmpty()) {
-                        TextButton(onClick = { viewModel.markAllRead() }) {
+                        TextButton(onClick = { viewModel.clearAll(context) }) {
                             Icon(
-                                Icons.Default.DoneAll,
+                                Icons.Default.Clear,
                                 contentDescription = "Clear All Notifications",
-                                tint = FaflowNavy,
+                                tint = Color(0xFFE11D48),
                                 modifier = Modifier.size(18.dp)
                             )
                             Spacer(Modifier.width(4.dp))
                             Text(
                                 "Clear All",
-                                color = FaflowNavy,
+                                color = Color(0xFFE11D48),
                                 fontSize = 13.sp,
                                 fontWeight = FontWeight.Bold
                             )

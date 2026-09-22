@@ -860,6 +860,10 @@ data class CampusDutyDto(
     @Json(name = "status") val status: String = "DRAFT",
     @Json(name = "is_locked") val isLocked: Boolean = false,
     @Json(name = "department_id") val departmentId: Int? = null,
+    @Json(name = "room_id") val roomId: Int? = null,
+    @Json(name = "room_number") val roomNumber: String? = null,
+    @Json(name = "room_name") val roomName: String? = null,
+    @Json(name = "location_hierarchy") val locationHierarchy: String? = null,
     @Json(name = "instructions") val instructions: String? = null,
     @Json(name = "assignments") val assignments: List<DutyAssignmentDto> = emptyList()
 )

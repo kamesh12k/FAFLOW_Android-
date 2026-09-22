@@ -553,6 +553,20 @@ class StudentAttendanceLocalDb(context: Context) : SQLiteOpenHelper(context, DAT
         return null
     }
 
+    /**
+     * Clears all user-specific data (schedule, classes, rosters, sessions, sync queue)
+     * upon user logout or account switch, ensuring no data bleed across accounts.
+     */
+    @Synchronized
+    fun clearAllUserData() {
+        val db = writableDatabase
+        db.delete("cached_schedule", null, null)
+        db.delete("cached_classes", null, null)
+        db.delete("cached_rosters", null, null)
+        db.delete("cached_sessions", null, null)
+        db.delete("student_attendance_sync_queue", null, null)
+    }
+
     companion object {
         private const val DATABASE_NAME = "faflow_student_attendance.db"
         private const val DATABASE_VERSION = 2

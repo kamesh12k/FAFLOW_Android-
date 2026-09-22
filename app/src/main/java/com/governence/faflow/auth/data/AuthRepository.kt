@@ -12,7 +12,8 @@ import kotlinx.coroutines.flow.StateFlow
  */
 class AuthRepository(
     private val apiService: FaflowApiService,
-    private val tokenManager: TokenManager
+    val tokenManager: TokenManager,
+    private val onLogoutCleanup: (() -> Unit)? = null
 ) {
     val isLoggedIn: StateFlow<Boolean> = tokenManager.isLoggedIn
 
@@ -230,6 +231,9 @@ class AuthRepository(
 
     fun logout() {
         tokenManager.clearSession()
+        try {
+            onLogoutCleanup?.invoke()
+        } catch (_: Exception) {}
     }
 
     fun getStoredStaffInfo(): StaffMember? {

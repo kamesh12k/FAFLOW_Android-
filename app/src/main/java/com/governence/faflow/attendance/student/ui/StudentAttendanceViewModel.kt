@@ -59,6 +59,16 @@ class StudentAttendanceViewModel(
         updatePendingCount()
     }
 
+    /**
+     * Resets student attendance UI state and reloads fresh for the authenticated user.
+     */
+    fun resetSession() {
+        _uiState.value = StudentAttendanceUiState()
+        loadSchedule()
+        loadClasses()
+        updatePendingCount()
+    }
+
     fun updatePendingCount() {
         val count = repository.getPendingCount()
         _uiState.update {
@@ -312,6 +322,16 @@ class StudentAttendanceViewModel(
 
     fun openReviewSheet() {
         val state = _uiState.value
+        val slot = state.selectedSlot
+        val isSubmitted = state.activeSession?.status in listOf("SUBMITTED", "SUBMITTED_LATE", "LOCKED")
+        if (!isSubmitted && slot != null && !com.governence.faflow.domain.model.InstitutionalSchedule.hasPeriodStarted(slot.periodNumber, state.schedule?.date)) {
+            val startStr = slot.startTime?.ifBlank { com.governence.faflow.domain.model.InstitutionalSchedule.getPeriodStartTimeFormatted(slot.periodNumber) } ?: com.governence.faflow.domain.model.InstitutionalSchedule.getPeriodStartTimeFormatted(slot.periodNumber)
+            _uiState.update {
+                it.copy(errorMessage = "Attendance can only be taken after class starts (scheduled start time: $startStr)")
+            }
+            return
+        }
+
         val rawTokens = state.absentInput.split(Regex("[\\s,]+")).filter { it.isNotBlank() }
         val suffixes = rawTokens.map { it.padStart(3, '0').takeLast(3) }.distinct()
 
@@ -348,6 +368,15 @@ class StudentAttendanceViewModel(
     fun submitAttendance() {
         val state = _uiState.value
         val slot = state.selectedSlot ?: return
+
+        val isSubmitted = state.activeSession?.status in listOf("SUBMITTED", "SUBMITTED_LATE", "LOCKED")
+        if (!isSubmitted && !com.governence.faflow.domain.model.InstitutionalSchedule.hasPeriodStarted(slot.periodNumber, state.schedule?.date)) {
+            val startStr = slot.startTime?.ifBlank { com.governence.faflow.domain.model.InstitutionalSchedule.getPeriodStartTimeFormatted(slot.periodNumber) } ?: com.governence.faflow.domain.model.InstitutionalSchedule.getPeriodStartTimeFormatted(slot.periodNumber)
+            _uiState.update {
+                it.copy(errorMessage = "Attendance can only be taken after class starts (scheduled start time: $startStr)")
+            }
+            return
+        }
 
         // 1. Parse absent suffixes (last 3 digits, deduplicated)
         val rawTokens = state.absentInput.split(Regex("[\\s,]+")).filter { it.isNotBlank() }

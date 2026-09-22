@@ -187,4 +187,41 @@ object InstitutionalSchedule {
         val start = getPeriodStartMinute(periodNumber)
         return minutesSinceMidnight in start..(start + submissionWindowMinutes)
     }
+
+    /**
+     * Checks if a scheduled class period has started.
+     * If targetDateString is for a past date, it has already started.
+     * If targetDateString is in the future, it has not started yet.
+     * For today's date (or null), verifies whether nowMinutes >= startMinute of the period.
+     */
+    fun hasPeriodStarted(periodNumber: Int, targetDateString: String? = null): Boolean {
+        val todayStr = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date())
+        if (targetDateString != null && targetDateString < todayStr) {
+            return true
+        }
+        if (targetDateString != null && targetDateString > todayStr) {
+            return false
+        }
+        val cal = java.util.Calendar.getInstance()
+        val nowMinutes = cal.get(java.util.Calendar.HOUR_OF_DAY) * 60 + cal.get(java.util.Calendar.MINUTE)
+        val startMin = getPeriodStartMinute(periodNumber)
+        return nowMinutes >= startMin
+    }
+
+    /**
+     * Returns formatted start time for a period, e.g. "09:20".
+     */
+    fun getPeriodStartTimeFormatted(periodNumber: Int): String {
+        val range = PERIOD_TIMES[periodNumber]
+        if (range != null && range.contains("–")) {
+            return range.split("–")[0].trim()
+        }
+        if (range != null && range.contains("-")) {
+            return range.split("-")[0].trim()
+        }
+        val startMin = getPeriodStartMinute(periodNumber)
+        val h = startMin / 60
+        val m = startMin % 60
+        return String.format(java.util.Locale.US, "%02d:%02d", h, m)
+    }
 }

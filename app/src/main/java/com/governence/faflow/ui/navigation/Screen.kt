@@ -51,11 +51,12 @@ sealed class Screen(val route: String) {
     }
     data object HodStudentAttendance : Screen("hod_student_attendance")
 
-    // Campus Duties
+    // Campus Duties & Operations
     data object MyDuties : Screen("my_duties")
     data object DutyDetail : Screen("duty_detail/{dutyId}") {
         fun createRoute(dutyId: Int): String = "duty_detail/$dutyId"
     }
+    data object CampusStructure : Screen("campus_structure")
 
     // HOD Dedicated Screens
     data object HodDashboard : Screen("hod_dashboard")

@@ -55,9 +55,14 @@ class FaflowApplication : Application() {
             }
         }
 
-        // 2. Automatic Foreground Sync: Auto-sync outboxes whenever the app is brought to foreground
+        // 2. Automatic Foreground Sync & Live Notification Polling
+        var activeActivityCount = 0
         registerActivityLifecycleCallbacks(object : android.app.Application.ActivityLifecycleCallbacks {
             override fun onActivityResumed(activity: android.app.Activity) {
+                activeActivityCount++
+                com.governence.faflow.core.notifications.LiveNotificationSyncManager.start(applicationContext)
+                com.governence.faflow.core.notifications.LiveNotificationSyncManager.triggerImmediateCheck(applicationContext)
+
                 applicationScope.launch(Dispatchers.IO) {
                     try {
                         val container = AppContainer.getInstance(applicationContext)
@@ -69,9 +74,14 @@ class FaflowApplication : Application() {
                     } catch (_: Exception) {}
                 }
             }
+            override fun onActivityPaused(activity: android.app.Activity) {
+                activeActivityCount = maxOf(0, activeActivityCount - 1)
+                if (activeActivityCount == 0) {
+                    com.governence.faflow.core.notifications.LiveNotificationSyncManager.stop()
+                }
+            }
             override fun onActivityCreated(activity: android.app.Activity, savedInstanceState: android.os.Bundle?) {}
             override fun onActivityStarted(activity: android.app.Activity) {}
-            override fun onActivityPaused(activity: android.app.Activity) {}
             override fun onActivityStopped(activity: android.app.Activity) {}
             override fun onActivitySaveInstanceState(activity: android.app.Activity, outState: android.os.Bundle) {}
             override fun onActivityDestroyed(activity: android.app.Activity) {}

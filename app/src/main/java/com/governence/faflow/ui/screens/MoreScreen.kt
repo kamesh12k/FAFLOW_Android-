@@ -19,6 +19,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForwardIos
 import androidx.compose.material.icons.automirrored.filled.EventNote
 import androidx.compose.material.icons.filled.AccountBalanceWallet
+import androidx.compose.material.icons.filled.Apartment
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Face
 import androidx.compose.material.icons.filled.Fingerprint
@@ -77,6 +78,7 @@ fun MoreScreen(
     onNavigateToStudentAttendance: () -> Unit = {},
     onNavigateToAnnouncements: () -> Unit = {},
     onNavigateToCampusDuties: () -> Unit = {},
+    onNavigateToCampusStructure: () -> Unit = {},
     onNavigateToSettings: () -> Unit = {},
     onNavigateToSyncStatus: () -> Unit = {},
     onReplayTour: () -> Unit = {}
@@ -187,10 +189,21 @@ fun MoreScreen(
                     modifier = Modifier.padding(start = 2.dp, top = 20.dp, bottom = 8.dp)
                 )
                 com.governence.faflow.ui.components.FaflowListCard {
+                    if (isManagement) {
+                        com.governence.faflow.ui.components.FaflowListRow(
+                            icon = Icons.Default.Apartment,
+                            iconBg = Color(0xFFF3E8FF),
+                            iconTint = Color(0xFF7E22CE),
+                            title = "Campus structure builder",
+                            subtitle = "Map blocks, floors, rooms & exam halls",
+                            showDivider = true,
+                            onClick = onNavigateToCampusStructure
+                        )
+                    }
                     com.governence.faflow.ui.components.FaflowListRow(
                         icon = Icons.Default.Security,
                         iconBg = Color(0xFFEFF6FF),
-                        iconTint = PrimaryBlue,
+                        iconTint = com.governence.faflow.ui.theme.PrimaryBlue,
                         title = "Campus duties & supervision",
                         subtitle = "Discipline, corridor surveillance & exam duties",
                         showDivider = false,

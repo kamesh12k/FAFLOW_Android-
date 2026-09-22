@@ -393,6 +393,29 @@ class AttendanceViewModel(
         loadAttendanceHistory()
     }
 
+    /**
+     * Resets biometric session, camera settling state, and UI state when logging out
+     * or switching accounts.
+     */
+    fun resetSession() {
+        _uiState.value = AttendanceUiState()
+        _submissionState.value = null
+        _autoCaptureState.value = AutoCaptureState.SEARCHING
+        _autoCapturePrompt.value = "Positioning..."
+        _capturedFrameBitmap.value = null
+        _isCaptureLocked.value = false
+        isCaptureLockedFlag.set(false)
+        isOneShotRunning.set(false)
+        stableGoodFrameCount = 0
+        candidateFrames.clear()
+        _faceDetectionState.value = FaceDetectionUiState.NoFace
+        _identityVerificationState.value = StaffBiometricVerificationState.NoFace
+        _livenessState.value = LivenessState.WaitingForFace
+        _verificationStep.value = VerificationStep.IDLE
+        _blinkCount.value = 0
+        activeSession = VerificationSession(operationType = AttendanceOperationType.CHECK_IN)
+    }
+
     fun toggleDebugOverlay() {
         _uiState.value = _uiState.value.copy(isDebugOverlayVisible = !_uiState.value.isDebugOverlayVisible)
     }
@@ -405,6 +428,17 @@ class AttendanceViewModel(
             when (val res = attendanceRepository.getTodaySummary()) {
                 is NetworkResult.Success -> {
                     val summary = res.data
+                    val currentUserId = appContext?.let { ctx ->
+                        com.governence.faflow.core.di.AppContainer.getInstance(ctx).tokenManager.getUserId()
+                    } ?: -1
+
+                    // Cross-user safety: Discard record if server payload belongs to a different user
+                    if (summary.record != null && currentUserId > 0 && summary.record.userId != currentUserId) {
+                        android.util.Log.w("AttendanceVM", "Summary record user ${summary.record.userId} does not match active session user $currentUserId. Resetting state.")
+                        _uiState.value = AttendanceUiState()
+                        return@launch
+                    }
+
                     // Stale async response protection: If client already verified CHECKED_OUT for today,
                     // do not let a stale cached or in-flight summary regress the state to NOT_STARTED or ON_DUTY.
                     if (_uiState.value.shiftState == ShiftState.COMPLETED && !summary.isCheckedOut) {

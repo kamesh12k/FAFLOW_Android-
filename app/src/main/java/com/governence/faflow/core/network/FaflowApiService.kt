@@ -216,6 +216,9 @@ interface FaflowApiService {
     @PATCH("notifications/read-all")
     suspend fun markAllNotificationsRead(): Response<StatusOkDto>
 
+    @DELETE("notifications/")
+    suspend fun clearAllNotifications(): Response<StatusOkDto>
+
     // ---------- Attendance ----------
     @POST("attendance/check-in")
     suspend fun checkIn(
@@ -408,6 +411,39 @@ interface FaflowApiService {
         @Query("date") date: String? = null,
         @Query("department_id") departmentId: Int? = null
     ): Response<DutyDashboardMetricsDto>
+
+    // ---------- Campus Structure Builder ----------
+    @GET("campus-structure/tree")
+    suspend fun getCampusStructureTree(): Response<CampusStructureTreeResponse>
+
+    @GET("campus-structure/metrics")
+    suspend fun getCampusStructureMetrics(): Response<CampusStructureMetricsDto>
+
+    @POST("campus-structure/blocks/smart-autofill")
+    suspend fun smartAutofillBlock(
+        @Body request: SmartBlockAutoFillRequestDto
+    ): Response<SmartBlockAutoFillResponseDto>
+
+    @POST("campus-structure/rooms/preview")
+    suspend fun previewRoomPattern(
+        @Body request: RoomPatternPreviewRequestDto
+    ): Response<PatternPreviewResponseDto>
+
+    @POST("campus-structure/rooms/bulk-assign")
+    suspend fun bulkAssignRooms(
+        @Body request: BulkRoomAssignRequestDto
+    ): Response<BulkAssignResponseDto>
+
+    @POST("campus-structure/blocks/{block_id}/duplicate")
+    suspend fun duplicateBlock(
+        @Path("block_id") blockId: Int,
+        @Body request: DuplicateBlockRequestDto
+    ): Response<DuplicateBlockResponseDto>
+
+    @GET("campus-structure/search")
+    suspend fun searchCampus(
+        @Query("q") query: String
+    ): Response<CampusSearchResponseDto>
 
     // ---------- Governance / Public Config ----------
     @GET("system/governance/public-config")

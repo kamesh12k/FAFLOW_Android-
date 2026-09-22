@@ -477,10 +477,13 @@ class PreferencesRepositoryImpl(
 class NotificationRepositoryImpl(
     private val apiService: FaflowApiService
 ) {
-    suspend fun getNotifications(unreadOnly: Boolean = false) = try {
+    private val clearedNotificationIds = java.util.Collections.synchronizedSet(mutableSetOf<Int>())
+
+    suspend fun getNotifications(unreadOnly: Boolean = false): NetworkResult<List<com.governence.faflow.core.network.NotificationOutDto>> = try {
         val res = apiService.listNotifications(unreadOnly)
         if (res.isSuccessful && res.body() != null) {
-            NetworkResult.Success(res.body()!!)
+            val list = res.body()!!.filter { !clearedNotificationIds.contains(it.id) }
+            NetworkResult.Success(list)
         } else {
             NetworkResult.Error(res.code(), "Failed to fetch notifications")
         }
@@ -488,12 +491,23 @@ class NotificationRepositoryImpl(
         NetworkResult.Error(-1, e.localizedMessage ?: "Notification fetch error", e)
     }
 
-    suspend fun getUnreadCount() = try {
-        val res = apiService.getUnreadCount()
-        if (res.isSuccessful && res.body() != null) {
-            NetworkResult.Success(res.body()!!.count)
+    suspend fun getUnreadCount(): NetworkResult<Int> = try {
+        if (clearedNotificationIds.isNotEmpty()) {
+            when (val notifs = getNotifications(unreadOnly = true)) {
+                is NetworkResult.Success -> NetworkResult.Success(notifs.data.size)
+                else -> {
+                    val res = apiService.getUnreadCount()
+                    if (res.isSuccessful && res.body() != null) NetworkResult.Success(res.body()!!.count)
+                    else NetworkResult.Error(res.code(), "Failed to fetch unread count")
+                }
+            }
         } else {
-            NetworkResult.Error(res.code(), "Failed to fetch unread count")
+            val res = apiService.getUnreadCount()
+            if (res.isSuccessful && res.body() != null) {
+                NetworkResult.Success(res.body()!!.count)
+            } else {
+                NetworkResult.Error(res.code(), "Failed to fetch unread count")
+            }
         }
     } catch (e: Exception) {
         NetworkResult.Error(-1, e.localizedMessage ?: "Notification count error", e)
@@ -511,6 +525,31 @@ class NotificationRepositoryImpl(
         if (res.isSuccessful) NetworkResult.Success(true) else NetworkResult.Error(res.code(), "Mark all read failed")
     } catch (e: Exception) {
         NetworkResult.Error(-1, e.localizedMessage ?: "Error marking all notifications as read", e)
+    }
+
+    suspend fun clearAllNotifications(
+        context: android.content.Context? = null,
+        idsToClear: List<Int> = emptyList()
+    ): NetworkResult<Boolean> = try {
+        // 1. Cancel system notification shade alerts
+        context?.let { com.governence.faflow.core.notifications.FaflowNotificationManager.cancelAll(it) }
+
+        // 2. Track cleared IDs locally so re-fetches don't bring them back
+        clearedNotificationIds.addAll(idsToClear)
+
+        // 3. Mark all as read on backend
+        try {
+            apiService.markAllNotificationsRead()
+        } catch (_: Exception) {}
+
+        // 4. Delete on backend
+        try {
+            apiService.clearAllNotifications()
+        } catch (_: Exception) {}
+
+        NetworkResult.Success(true)
+    } catch (e: Exception) {
+        NetworkResult.Error(-1, e.localizedMessage ?: "Error clearing all notifications", e)
     }
 }
 
