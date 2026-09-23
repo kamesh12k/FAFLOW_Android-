@@ -225,12 +225,32 @@ data class RecommendationTeacherDto(
 )
 
 @JsonClass(generateAdapter = true)
+data class CandidateMetricsDto(
+    @Json(name = "daily_periods") val dailyPeriods: Int = 0,
+    @Json(name = "projected_daily_periods") val projectedDailyPeriods: Int = 0,
+    @Json(name = "weekly_periods") val weeklyPeriods: Int = 0,
+    @Json(name = "projected_weekly_periods") val projectedWeeklyPeriods: Int = 0,
+    @Json(name = "substitutions_last_7_days") val substitutionsLast7Days: Int = 0,
+    @Json(name = "longest_continuous_before") val longestContinuousBefore: Int = 0,
+    @Json(name = "longest_continuous_after") val longestContinuousAfter: Int = 0
+)
+
+@JsonClass(generateAdapter = true)
+data class CandidateSignalsDto(
+    @Json(name = "same_department") val sameDepartment: Boolean = false,
+    @Json(name = "same_subject") val sameSubject: Boolean = false,
+    @Json(name = "cross_department") val crossDepartment: Boolean = false
+)
+
+@JsonClass(generateAdapter = true)
 data class RecommendationOutDto(
     @Json(name = "rank") val rank: Int? = null,
     @Json(name = "tier") val tier: String? = null,
     @Json(name = "eligible") val eligible: Boolean = true,
     @Json(name = "teacher") val teacher: RecommendationTeacherDto? = null,
     @Json(name = "score") val score: Float? = null,
+    @Json(name = "metrics") val metrics: CandidateMetricsDto? = null,
+    @Json(name = "signals") val signals: CandidateSignalsDto? = null,
     @Json(name = "reasons") val reasons: List<String> = emptyList(),
     @Json(name = "today_workload") val todayWorkload: Int? = null,
     @Json(name = "projected_today_workload") val projectedTodayWorkload: Int? = null,
@@ -286,14 +306,15 @@ data class RecommendationOutDto(
     }
     val reason: String? get() = reasons.firstOrNull() ?: flatReason
 
-    // Simulation helpers matching web ApplyLeave.jsx
-    val resolvedTodayLoad: Int get() = todayWorkload ?: 0
-    val resolvedProjToday: Int get() = projectedTodayWorkload ?: (resolvedTodayLoad + 1)
-    val resolvedWeekLoad: Int get() = weekWorkload ?: 0
-    val resolvedProjWeek: Int get() = projectedWeekWorkload ?: (resolvedWeekLoad + 1)
-    val resolvedContLoad: Int get() = longestContinuousPeriods ?: 0
-    val resolvedProjCont: Int get() = projectedLongestContinuousPeriods ?: (resolvedContLoad + 1)
+    // Simulation helpers matching backend CandidateMetrics and web ApplyLeave.jsx
+    val resolvedTodayLoad: Int get() = metrics?.dailyPeriods ?: todayWorkload ?: 0
+    val resolvedProjToday: Int get() = metrics?.projectedDailyPeriods ?: projectedTodayWorkload ?: (resolvedTodayLoad + 1)
+    val resolvedWeekLoad: Int get() = metrics?.weeklyPeriods ?: weekWorkload ?: 0
+    val resolvedProjWeek: Int get() = metrics?.projectedWeeklyPeriods ?: projectedWeekWorkload ?: (resolvedWeekLoad + 1)
+    val resolvedContLoad: Int get() = metrics?.longestContinuousBefore ?: longestContinuousPeriods ?: 0
+    val resolvedProjCont: Int get() = metrics?.longestContinuousAfter ?: projectedLongestContinuousPeriods ?: (resolvedContLoad + 1)
     val hasContinuousWarning: Boolean get() = resolvedProjCont >= 4
+    val resolvedSubsWeek: Int get() = substitutionsWeek ?: metrics?.substitutionsLast7Days ?: 0
 }
 
 @JsonClass(generateAdapter = true)
@@ -838,6 +859,7 @@ data class DutyAssignmentDto(
     @Json(name = "locked_at") val lockedAt: String? = null,
     @Json(name = "locked_by") val lockedBy: String? = null,
     @Json(name = "selection_reason") val selectionReason: String? = null,
+    @Json(name = "selection_reasons") val selectionReasons: List<String> = emptyList(),
     @Json(name = "selection_score") val selectionScore: Double? = null,
     @Json(name = "is_overridden") val isOverridden: Boolean = false,
     @Json(name = "overridden_by") val overriddenBy: String? = null,
@@ -958,5 +980,6 @@ data class PublicGovernanceConfigDto(
     @Json(name = "current_period_tolerance_minutes") val currentPeriodToleranceMinutes: Int = 0,
     @Json(name = "student_attendance_submission_window_minutes") val studentAttendanceSubmissionWindowMinutes: Int = 15,
     @Json(name = "periods_per_day") val periodsPerDay: Int = 5,
-    @Json(name = "day_order_max") val dayOrderMax: Int = 6
+    @Json(name = "day_order_max") val dayOrderMax: Int = 6,
+    @Json(name = "leave_same_day_apply_cutoff_time") val leaveSameDayApplyCutoffTime: String = "09:00"
 )
