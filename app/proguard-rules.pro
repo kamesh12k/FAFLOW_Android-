@@ -29,3 +29,30 @@
 # Network Stack Warnings Suppressions (Retrofit & OkHttp provide their own consumer keep rules)
 -dontwarn retrofit2.**
 -dontwarn okhttp3.**
+
+# AndroidX Room (Reflection-instantiated database implementations)
+-keep class * extends androidx.room.RoomDatabase {
+    <init>();
+}
+-keepclassmembers class * extends androidx.room.RoomDatabase {
+    *;
+}
+-dontwarn androidx.room.paging.**
+
+# AndroidX WorkManager & Custom CoroutineWorkers
+-keep class androidx.work.impl.** { *; }
+-keep class * extends androidx.work.ListenableWorker {
+    public <init>(android.content.Context, androidx.work.WorkerParameters);
+}
+-keep class * extends androidx.work.Worker {
+    public <init>(android.content.Context, androidx.work.WorkerParameters);
+}
+-keep class * extends androidx.work.CoroutineWorker {
+    public <init>(android.content.Context, androidx.work.WorkerParameters);
+}
+-dontwarn androidx.work.impl.**
+
+# AndroidX Startup
+-keep class * extends androidx.startup.Initializer {
+    <init>();
+}
