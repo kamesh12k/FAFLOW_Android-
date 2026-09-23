@@ -70,6 +70,7 @@ import com.governence.faflow.ui.theme.StatusError
 import com.governence.faflow.ui.theme.StatusSuccess
 import com.governence.faflow.ui.viewmodels.LeaveViewModel
 import java.text.SimpleDateFormat
+import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 
@@ -103,20 +104,55 @@ fun ApplyLeaveScreen(
     val state by viewModel.uiState.collectAsState()
 
     val todayStr = remember { SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date()) }
-    var leaveDate by remember { mutableStateOf(todayStr) }
+    var startDate by remember { mutableStateOf(todayStr) }
+    var endDate by remember { mutableStateOf(todayStr) }
+    var leaveType by remember { mutableStateOf("Casual Leave") }
     var isWholeDay by remember { mutableStateOf(true) }
     var selectedPeriods by remember { mutableStateOf(emptySet<Int>()) }
     var reason by remember { mutableStateOf("") }
+    var attemptedSubmit by remember { mutableStateOf(false) }
     var expandedPeriod by remember { mutableStateOf<Int?>(null) }
+
+    val isDateRangeInvalid = remember(startDate, endDate) {
+        if (startDate.length == 10 && endDate.length == 10) {
+            endDate < startDate
+        } else false
+    }
+
+    val durationDays = remember(startDate, endDate) {
+        try {
+            if (startDate.length == 10 && endDate.length == 10 && startDate <= endDate) {
+                val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.US)
+                val s = sdf.parse(startDate)
+                val e = sdf.parse(endDate)
+                if (s != null && e != null) {
+                    val cal = Calendar.getInstance()
+                    cal.time = s
+                    var workingDays = 0
+                    while (!cal.time.after(e)) {
+                        val dayOfWeek = cal.get(Calendar.DAY_OF_WEEK)
+                        if (dayOfWeek != Calendar.SUNDAY) {
+                            workingDays++
+                        }
+                        cal.add(Calendar.DAY_OF_MONTH, 1)
+                    }
+                    if (workingDays > 0) workingDays else 1
+                } else 1
+            } else 1
+        } catch (_: Exception) {
+            1
+        }
+    }
+    val isMultiDay = durationDays > 1
 
     LaunchedEffect(Unit) {
         viewModel.loadCampusMode()
         viewModel.loadTeacherTimetable()
     }
 
-    LaunchedEffect(leaveDate) {
-        if (leaveDate.length == 10) {
-            viewModel.resolveDateDayOrder(leaveDate)
+    LaunchedEffect(startDate) {
+        if (startDate.length == 10) {
+            viewModel.resolveDateDayOrder(startDate)
         }
     }
 
@@ -136,9 +172,9 @@ fun ApplyLeaveScreen(
         }
     }
 
-    LaunchedEffect(leaveDate, selectedPeriods, state.isFlexibleMode) {
-        if (state.isFlexibleMode && leaveDate.length == 10 && selectedPeriods.isNotEmpty()) {
-            viewModel.loadCandidatesForPeriods(leaveDate, selectedPeriods)
+    LaunchedEffect(startDate, selectedPeriods, state.isFlexibleMode) {
+        if (state.isFlexibleMode && startDate.length == 10 && selectedPeriods.isNotEmpty()) {
+            viewModel.loadCandidatesForPeriods(startDate, selectedPeriods)
         }
     }
 
@@ -180,7 +216,7 @@ fun ApplyLeaveScreen(
                         )
                         Spacer(modifier = Modifier.width(FaflowSpacing.sm))
                         Text(
-                            text = "${leaveDate} is marked as a ${state.dayType ?: "Non-Working Day"}. Classes are not scheduled, so leave cannot be submitted.",
+                            text = "${startDate} is marked as a ${state.dayType ?: "Non-Working Day"}. Classes are not scheduled, so leave cannot be submitted.",
                             style = MaterialTheme.typography.bodySmall,
                             fontWeight = FontWeight.SemiBold,
                             color = StatusError
@@ -205,7 +241,7 @@ fun ApplyLeaveScreen(
                         )
                         Spacer(modifier = Modifier.width(FaflowSpacing.sm))
                         Text(
-                            text = "A leave request is already recorded for $leaveDate${if (state.existingLeavePeriods.isNotEmpty()) " (Periods: ${state.existingLeavePeriods.sorted().joinToString()})" else ""}. Please review your leave history before submitting again.",
+                            text = "A leave request is already recorded for $startDate${if (state.existingLeavePeriods.isNotEmpty()) " (Periods: ${state.existingLeavePeriods.sorted().joinToString()})" else ""}. Please review your leave history before submitting again.",
                             style = MaterialTheme.typography.bodySmall,
                             fontWeight = FontWeight.SemiBold,
                             color = MaterialTheme.colorScheme.onSurface
@@ -315,27 +351,124 @@ fun ApplyLeaveScreen(
 
             Spacer(modifier = Modifier.height(FaflowSpacing.md))
 
-            // Leave Date Field
+            // Leave Type Selector
             Text(
-                text = "Leave Date (YYYY-MM-DD)",
+                text = "Leave Type",
                 style = MaterialTheme.typography.labelMedium,
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.onSurface
             )
             Spacer(modifier = Modifier.height(FaflowSpacing.xs))
-            OutlinedTextField(
-                value = leaveDate,
-                onValueChange = { leaveDate = it },
-                singleLine = true,
-                shape = FaflowShapes.medium,
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = PrimaryBlue,
-                    unfocusedBorderColor = com.governence.faflow.ui.theme.FaflowBorder,
-                    focusedContainerColor = Color.White,
-                    unfocusedContainerColor = Color.White
-                ),
-                modifier = Modifier.fillMaxWidth()
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                listOf("Casual Leave", "On Duty", "Medical Leave").forEach { type ->
+                    val isSelected = leaveType == type
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(FaflowShapes.pill)
+                            .background(if (isSelected) com.governence.faflow.ui.theme.FaflowNavy else Color.White)
+                            .border(
+                                width = 1.dp,
+                                color = if (isSelected) Color.Transparent else com.governence.faflow.ui.theme.FaflowBorder,
+                                shape = FaflowShapes.pill
+                            )
+                            .clickable { leaveType = type }
+                            .padding(vertical = 8.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = type,
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                            color = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurface,
+                            maxLines = 1
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(FaflowSpacing.md))
+
+            // Start Date and End Date Fields
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Start Date (YYYY-MM-DD)",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Spacer(modifier = Modifier.height(FaflowSpacing.xs))
+                    OutlinedTextField(
+                        value = startDate,
+                        onValueChange = {
+                            startDate = it
+                            if (endDate < it) {
+                                endDate = it
+                            }
+                        },
+                        singleLine = true,
+                        shape = FaflowShapes.medium,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = PrimaryBlue,
+                            unfocusedBorderColor = com.governence.faflow.ui.theme.FaflowBorder,
+                            focusedContainerColor = Color.White,
+                            unfocusedContainerColor = Color.White
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "End Date (YYYY-MM-DD)",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Spacer(modifier = Modifier.height(FaflowSpacing.xs))
+                    OutlinedTextField(
+                        value = endDate,
+                        onValueChange = { endDate = it },
+                        singleLine = true,
+                        isError = isDateRangeInvalid,
+                        shape = FaflowShapes.medium,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = PrimaryBlue,
+                            unfocusedBorderColor = if (isDateRangeInvalid) StatusError else com.governence.faflow.ui.theme.FaflowBorder,
+                            errorBorderColor = StatusError,
+                            focusedContainerColor = Color.White,
+                            unfocusedContainerColor = Color.White
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            }
+
+            if (isDateRangeInvalid) {
+                Spacer(modifier = Modifier.height(FaflowSpacing.xs))
+                Text(
+                    text = "End date cannot be earlier than start date",
+                    style = MaterialTheme.typography.bodySmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = StatusError
+                )
+            } else if (durationDays > 1) {
+                Spacer(modifier = Modifier.height(FaflowSpacing.xs))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    FaflowStatusBadge(
+                        text = "$durationDays Days Duration",
+                        statusColor = PrimaryBlue,
+                        showDot = true
+                    )
+                }
+            }
 
             Spacer(modifier = Modifier.height(FaflowSpacing.sm))
 
@@ -556,7 +689,7 @@ fun ApplyLeaveScreen(
                                     if (isCross) com.governence.faflow.ui.theme.FaflowNavy else Color(0xFFCBD5E1),
                                     FaflowShapes.pill
                                 )
-                                .clickable { viewModel.toggleCrossDepartment(leaveDate, selectedPeriods) }
+                                .clickable { viewModel.toggleCrossDepartment(startDate, selectedPeriods) }
                                 .padding(horizontal = 10.dp, vertical = 7.dp),
                             contentAlignment = Alignment.Center
                         ) {
@@ -589,7 +722,7 @@ fun ApplyLeaveScreen(
                                     if (isClassOnly) com.governence.faflow.ui.theme.FaflowNavy else Color(0xFFCBD5E1),
                                     FaflowShapes.pill
                                 )
-                                .clickable { viewModel.toggleOnlyHandlesClass(leaveDate, selectedPeriods) }
+                                .clickable { viewModel.toggleOnlyHandlesClass(startDate, selectedPeriods) }
                                 .padding(horizontal = 10.dp, vertical = 7.dp),
                             contentAlignment = Alignment.Center
                         ) {
@@ -925,19 +1058,34 @@ fun ApplyLeaveScreen(
             Spacer(modifier = Modifier.height(FaflowSpacing.xs))
             OutlinedTextField(
                 value = reason,
-                onValueChange = { reason = it },
+                onValueChange = {
+                    reason = it
+                    if (it.isNotBlank()) attemptedSubmit = false
+                },
                 placeholder = { Text("Specify additional details for absence…", style = MaterialTheme.typography.bodySmall) },
                 minLines = 3,
                 maxLines = 5,
+                isError = attemptedSubmit && reason.trim().isEmpty(),
                 shape = FaflowShapes.medium,
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedBorderColor = PrimaryBlue,
-                    unfocusedBorderColor = com.governence.faflow.ui.theme.FaflowBorder,
+                    unfocusedBorderColor = if (attemptedSubmit && reason.trim().isEmpty()) StatusError else com.governence.faflow.ui.theme.FaflowBorder,
+                    errorBorderColor = StatusError,
                     focusedContainerColor = Color.White,
                     unfocusedContainerColor = Color.White
                 ),
                 modifier = Modifier.fillMaxWidth()
             )
+
+            if (attemptedSubmit && reason.trim().isEmpty()) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "Reason is required",
+                    style = MaterialTheme.typography.bodySmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = StatusError
+                )
+            }
 
             Spacer(modifier = Modifier.height(FaflowSpacing.xxl))
 
@@ -946,8 +1094,8 @@ fun ApplyLeaveScreen(
             val isFlexibleCoverageOk = !state.isFlexibleMode || selectedPeriods.all { p ->
                 state.selectedSubstitutePerPeriod.containsKey(p)
             }
-            val isSubmitEnabled = reason.isNotBlank() && selectedPeriods.isNotEmpty() &&
-                    !state.isBlockedDate && !hasConflict && isFlexibleCoverageOk
+            val isSubmitEnabled = !isDateRangeInvalid && selectedPeriods.isNotEmpty() &&
+                    !state.isBlockedDate && !hasConflict && isFlexibleCoverageOk && (!attemptedSubmit || reason.isNotBlank())
 
             if (state.isLoading) {
                 CircularProgressIndicator(
@@ -957,47 +1105,51 @@ fun ApplyLeaveScreen(
                 )
             } else {
                 val buttonText = when {
-                    state.isTimetableLoaded && state.teacherSlots.isNotEmpty() && state.scheduledPeriodsForDate.isEmpty() && isWholeDay ->
+                    isDateRangeInvalid ->
+                        "Invalid Date Range"
+                    state.isTimetableLoaded && state.teacherSlots.isNotEmpty() && state.scheduledPeriodsForDate.isEmpty() && isWholeDay && !isMultiDay ->
                         "No Scheduled Classes to Cover"
                     selectedPeriods.isEmpty() ->
                         "Select Absence Period"
+                    isMultiDay ->
+                        "Submit $leaveType ($durationDays Days)"
                     isWholeDay && selectedPeriods.size == 1 ->
-                        "Submit Leave (1 Period Covered)"
+                        "Submit $leaveType (1 Period Covered)"
                     isWholeDay ->
-                        "Submit Whole Day Leave (${selectedPeriods.size} Periods)"
+                        "Submit Whole Day $leaveType (${selectedPeriods.size} Periods)"
                     selectedPeriods.size == 1 ->
-                        "Submit Leave (Period ${selectedPeriods.first()})"
+                        "Submit $leaveType (Period ${selectedPeriods.first()})"
                     else ->
-                        "Submit Leave (${selectedPeriods.size} Periods)"
+                        "Submit $leaveType (${selectedPeriods.size} Periods)"
                 }
 
                 FaflowPillButton(
                     text = buttonText,
                     onClick = {
-                        if (isSubmitEnabled) {
-                            val periodsList = selectedPeriods.toList().sorted()
-                            val periodSubstitutes = if (state.isFlexibleMode) {
-                                state.selectedSubstitutePerPeriod
-                                    .mapKeys { it.key.toString() }
-                                    .ifEmpty { null }
-                            } else null
-
-                            if (periodsList.size > 1 || isWholeDay) {
-                                viewModel.submitLeaveBatch(
-                                    leaveDate, periodsList, reason, onLeaveSubmitted,
-                                    periodSubstitutes = periodSubstitutes,
-                                    wholeDay = isWholeDay
-                                )
-                            } else {
-                                val proposedId = if (state.isFlexibleMode)
-                                    state.selectedSubstitutePerPeriod[periodsList.first()]
-                                else null
-                                viewModel.submitLeave(
-                                    leaveDate, periodsList.first(), reason, onLeaveSubmitted,
-                                    proposedSubstituteId = proposedId
-                                )
-                            }
+                        if (reason.trim().isEmpty()) {
+                            attemptedSubmit = true
+                            return@FaflowPillButton
                         }
+                        if (isDateRangeInvalid) {
+                            return@FaflowPillButton
+                        }
+                        val periodsList = selectedPeriods.toList().sorted()
+                        val periodSubstitutes = if (state.isFlexibleMode) {
+                            state.selectedSubstitutePerPeriod
+                                .mapKeys { it.key.toString() }
+                                .ifEmpty { null }
+                        } else null
+
+                        viewModel.submitLeaveRange(
+                            startDate = startDate,
+                            endDate = endDate,
+                            leaveType = leaveType,
+                            reason = reason,
+                            selectedPeriods = periodsList,
+                            isWholeDay = isWholeDay || isMultiDay,
+                            onComplete = onLeaveSubmitted,
+                            periodSubstitutes = periodSubstitutes
+                        )
                     },
                     enabled = isSubmitEnabled,
                     isPrimary = true,

@@ -65,7 +65,6 @@ sealed class Screen(val route: String) {
     data object HodFacultyDirectory : Screen("hod_faculty_directory")
     data object HodDepartmentTimetable : Screen("hod_department_timetable")
     data object HodAttendance : Screen("hod_attendance")
-    data object GeofenceAdmin : Screen("geofence_admin")
 }
 
 sealed class BottomNavItem(

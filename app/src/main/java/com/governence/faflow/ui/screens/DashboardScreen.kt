@@ -81,6 +81,7 @@ import java.util.Locale
  * Clean, calm, minimal UI inspired by benchmark task management design.
  * Avoids card-overload by using generous whitespace, subtle surfaces, and hairline dividers.
  */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 fun DashboardScreen(
     viewModel: DashboardViewModel,
@@ -126,13 +127,18 @@ fun DashboardScreen(
                     )
                 }
             } else {
-                LazyColumn(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(horizontal = 18.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp),
-                    contentPadding = PaddingValues(top = 4.dp, bottom = 24.dp)
+                androidx.compose.material3.pulltorefresh.PullToRefreshBox(
+                    isRefreshing = state.isLoading,
+                    onRefresh = { viewModel.refresh() },
+                    modifier = Modifier.fillMaxSize()
                 ) {
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(horizontal = 18.dp),
+                        verticalArrangement = Arrangement.spacedBy(16.dp),
+                        contentPadding = PaddingValues(top = 4.dp, bottom = 24.dp)
+                    ) {
                     // Non-blocking Network Alert
                     if (state.isOfflineOrUnreachable || state.errorMessage != null) {
                         item {
@@ -710,37 +716,56 @@ fun DashboardScreen(
                             ) {
                                 Column {
                                     state.todaySlots.forEachIndexed { index, slot ->
+                                        val isCurrent = slot.periodNumber == state.currentPeriodNumber || state.activeSlot?.periodNumber == slot.periodNumber
+                                        val periodTimeRange = com.governence.faflow.domain.model.InstitutionalSchedule.PERIOD_TIMES[slot.periodNumber] ?: ""
+
                                         Row(
                                             modifier = Modifier
                                                 .fillMaxWidth()
+                                                .then(
+                                                    if (isCurrent) Modifier
+                                                        .background(PrimaryBlue.copy(alpha = 0.07f))
+                                                        .border(1.5.dp, PrimaryBlue, FaflowShapes.small)
+                                                    else Modifier
+                                                )
                                                 .clickable { onNavigateToTimetable() }
                                                 .padding(FaflowSpacing.md),
                                             verticalAlignment = Alignment.CenterVertically
                                         ) {
                                             Box(
                                                 modifier = Modifier
-                                                    .size(36.dp)
+                                                    .size(38.dp)
                                                     .clip(FaflowShapes.small)
-                                                    .background(PrimaryBlue.copy(alpha = 0.08f)),
+                                                    .background(if (isCurrent) PrimaryBlue else PrimaryBlue.copy(alpha = 0.08f)),
                                                 contentAlignment = Alignment.Center
                                             ) {
                                                 Text(
                                                     text = "P${slot.periodNumber}",
                                                     style = MaterialTheme.typography.labelMedium,
                                                     fontWeight = FontWeight.Bold,
-                                                    color = PrimaryBlue
+                                                    color = if (isCurrent) Color.White else PrimaryBlue
                                                 )
                                             }
                                             Spacer(modifier = Modifier.width(FaflowSpacing.md))
                                             Column(modifier = Modifier.weight(1f)) {
+                                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                                    Text(
+                                                        text = if (slot.subjectCode.isNotBlank()) "${slot.subjectName} (${slot.subjectCode})" else slot.subjectName,
+                                                        style = MaterialTheme.typography.titleSmall,
+                                                        fontWeight = FontWeight.SemiBold,
+                                                        color = MaterialTheme.colorScheme.onSurface
+                                                    )
+                                                    if (isCurrent) {
+                                                        Spacer(modifier = Modifier.width(6.dp))
+                                                        FaflowStatusBadge(
+                                                            text = "CURRENT",
+                                                            statusColor = PrimaryBlue,
+                                                            showDot = true
+                                                        )
+                                                    }
+                                                }
                                                 Text(
-                                                    text = slot.subjectName,
-                                                    style = MaterialTheme.typography.titleSmall,
-                                                    fontWeight = FontWeight.SemiBold,
-                                                    color = MaterialTheme.colorScheme.onSurface
-                                                )
-                                                Text(
-                                                    text = "${slot.className} (${slot.section}) • Room ${slot.roomNumber}",
+                                                    text = "${slot.className} (${slot.section}) • Room ${slot.roomNumber}${if (periodTimeRange.isNotBlank()) " • $periodTimeRange" else ""}",
                                                     style = MaterialTheme.typography.bodySmall,
                                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                                 )
@@ -1215,6 +1240,7 @@ fun DashboardScreen(
                         }
                     }
                 }
+            }
             }
         }
     }

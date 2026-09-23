@@ -71,7 +71,6 @@ fun MoreScreen(
     onNavigateToPreferences: () -> Unit,
     onNavigateToNotifications: () -> Unit,
     onNavigateToProfile: () -> Unit,
-    onNavigateToGeofences: () -> Unit = {},
     onNavigateToLeaveApprovals: () -> Unit = {},
     onNavigateToLiveAttendance: () -> Unit = {},
     onNavigateToFacultyDirectory: () -> Unit = {},
@@ -123,15 +122,6 @@ fun MoreScreen(
                             subtitle = "Review and approve faculty requests",
                             showDivider = true,
                             onClick = onNavigateToLeaveApprovals
-                        )
-                        com.governence.faflow.ui.components.FaflowListRow(
-                            icon = Icons.Default.LocationOn,
-                            iconBg = com.governence.faflow.ui.theme.FaflowTealTint,
-                            iconTint = com.governence.faflow.ui.theme.FaflowTeal,
-                            title = "Campus geofence boundaries",
-                            subtitle = "Manage authorized attendance zones",
-                            showDivider = true,
-                            onClick = onNavigateToGeofences
                         )
                         com.governence.faflow.ui.components.FaflowListRow(
                             icon = Icons.Default.SupervisorAccount,

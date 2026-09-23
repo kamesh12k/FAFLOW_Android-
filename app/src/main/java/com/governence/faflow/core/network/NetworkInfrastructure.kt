@@ -65,6 +65,7 @@ class TokenManager(context: Context) {
         userName: String,
         userEmail: String,
         role: String,
+        adminLevel: String? = null,
         departmentId: Int?,
         policyVersionAccepted: String? = null,
         policyAcceptedAt: String? = null,
@@ -77,6 +78,7 @@ class TokenManager(context: Context) {
             .putString(KEY_USER_NAME, userName)
             .putString(KEY_USER_EMAIL, userEmail)
             .putString(KEY_USER_ROLE, role)
+            .putString(KEY_ADMIN_LEVEL, adminLevel)
             .putInt(KEY_DEPT_ID, departmentId ?: -1)
             .putString(KEY_POLICY_VERSION, policyVersionAccepted)
             .putString(KEY_POLICY_ACCEPTED_AT, policyAcceptedAt)
@@ -91,6 +93,7 @@ class TokenManager(context: Context) {
     fun getUserName(): String? = sharedPreferences.getString(KEY_USER_NAME, null)
     fun getUserEmail(): String? = sharedPreferences.getString(KEY_USER_EMAIL, null)
     fun getUserRole(): String? = sharedPreferences.getString(KEY_USER_ROLE, "teacher")
+    fun getAdminLevel(): String? = sharedPreferences.getString(KEY_ADMIN_LEVEL, null)
     fun getDepartmentId(): Int? {
         val id = sharedPreferences.getInt(KEY_DEPT_ID, -1)
         return if (id != -1) id else null
@@ -136,6 +139,7 @@ class TokenManager(context: Context) {
         private const val KEY_USER_NAME = "user_name"
         private const val KEY_USER_EMAIL = "user_email"
         private const val KEY_USER_ROLE = "user_role"
+        private const val KEY_ADMIN_LEVEL = "admin_level"
         private const val KEY_DEPT_ID = "department_id"
         private const val KEY_POLICY_VERSION = "policy_version_accepted"
         private const val KEY_POLICY_ACCEPTED_AT = "policy_accepted_at"

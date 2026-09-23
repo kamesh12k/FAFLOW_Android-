@@ -9,6 +9,7 @@ data class StaffMember(
     val email: String,
     val username: String? = null,
     val role: String = "teacher",
+    val adminLevel: String? = null,
     val departmentId: Int? = null,
     val departmentName: String? = null,
     val isActive: Boolean = true,

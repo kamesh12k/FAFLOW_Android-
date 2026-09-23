@@ -33,6 +33,7 @@ import androidx.compose.material.icons.filled.Attachment
 import androidx.compose.material.icons.filled.Campaign
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.Notifications
@@ -64,6 +65,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -103,7 +105,8 @@ import com.governence.faflow.ui.viewmodels.AnnouncementsViewModel
 @Composable
 fun AnnouncementsScreen(
     viewModel: AnnouncementsViewModel,
-    onNavigateBack: () -> Unit
+    onNavigateBack: () -> Unit,
+    onNavigateToDetail: ((Int) -> Unit)? = null
 ) {
     val context = LocalContext.current
     val uiState by viewModel.uiState.collectAsState()
@@ -249,7 +252,13 @@ fun AnnouncementsScreen(
                     items(uiState.filteredAnnouncements, key = { it.id }) { item ->
                         AnnouncementCard(
                             item = item,
-                            onClick = { viewModel.loadDetail(item.id) }
+                            onClick = {
+                                if (onNavigateToDetail != null) {
+                                    onNavigateToDetail(item.id)
+                                } else {
+                                    viewModel.loadDetail(item.id)
+                                }
+                            }
                         )
                     }
                 }
@@ -610,12 +619,15 @@ fun InAppDocViewerSheet(url: String, fileName: String, onDismiss: () -> Unit) {
                     overflow = TextOverflow.Ellipsis
                 )
                 Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = { downloadAttachment(context, url, fileName) }) {
+                        Icon(Icons.Default.Download, contentDescription = "Download file", tint = PrimaryBlue)
+                    }
                     IconButton(onClick = {
                         try {
                             val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
                             context.startActivity(intent)
                         } catch (_: Exception) {
-                            Toast.makeText(context, "Cannot open: $fileName", Toast.LENGTH_SHORT).show()
+                            downloadAttachment(context, url, fileName)
                         }
                     }) {
                         Icon(Icons.Default.OpenInNew, contentDescription = "Open in browser", tint = PrimaryBlue)
@@ -714,11 +726,206 @@ fun AttachmentRow(attachment: AnnouncementAttachmentDto) {
                 overflow = TextOverflow.Ellipsis
             )
         }
-        Icon(
-            imageVector = if (isImageFile(fileName) || isPdfOrDoc(fileName)) Icons.Default.OpenInNew else Icons.Default.OpenInNew,
-            contentDescription = "Open",
-            tint = FaflowText3,
-            modifier = Modifier.size(16.dp)
-        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconButton(
+                onClick = { downloadAttachment(context, url, fileName) },
+                modifier = Modifier.size(28.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Download,
+                    contentDescription = "Download",
+                    tint = PrimaryBlue,
+                    modifier = Modifier.size(16.dp)
+                )
+            }
+            Spacer(modifier = Modifier.width(4.dp))
+            Icon(
+                imageVector = Icons.Default.OpenInNew,
+                contentDescription = "Open",
+                tint = FaflowText3,
+                modifier = Modifier.size(16.dp)
+            )
+        }
+    }
+}
+
+fun downloadAttachment(context: android.content.Context, url: String, fileName: String) {
+    try {
+        if (url.startsWith("http://") || url.startsWith("https://")) {
+            val request = android.app.DownloadManager.Request(Uri.parse(url)).apply {
+                setTitle(fileName)
+                setDescription("Downloading $fileName")
+                setNotificationVisibility(android.app.DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+                setDestinationInExternalPublicDir(android.os.Environment.DIRECTORY_DOWNLOADS, fileName)
+                setAllowedOverMetered(true)
+                setAllowedOverRoaming(true)
+            }
+            val downloadManager = context.getSystemService(android.content.Context.DOWNLOAD_SERVICE) as android.app.DownloadManager
+            downloadManager.enqueue(request)
+            Toast.makeText(context, "Download started: $fileName", Toast.LENGTH_SHORT).show()
+        } else {
+            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+            context.startActivity(intent)
+        }
+    } catch (_: Exception) {
+        try {
+            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+            context.startActivity(intent)
+        } catch (_: Exception) {
+            Toast.makeText(context, "Cannot download: $fileName", Toast.LENGTH_SHORT).show()
+        }
+    }
+}
+
+@Composable
+fun AnnouncementDetailScreen(
+    announcementId: Int,
+    viewModel: AnnouncementsViewModel,
+    onNavigateBack: () -> Unit
+) {
+    val uiState by viewModel.uiState.collectAsState()
+
+    LaunchedEffect(announcementId) {
+        if (announcementId > 0) {
+            viewModel.loadDetail(announcementId)
+        }
+    }
+
+    Scaffold(
+        topBar = {
+            AppTopBar(
+                title = "Announcement",
+                subtitle = "Institutional Circular",
+                canNavigateBack = true,
+                onNavigateBack = onNavigateBack
+            )
+        },
+        containerColor = FaflowBg
+    ) { innerPadding ->
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+        ) {
+            if (uiState.isLoadingDetail && uiState.selectedDetail == null) {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(color = PrimaryBlue, strokeWidth = 2.5.dp)
+                }
+            } else if (uiState.selectedDetail != null) {
+                val detail = uiState.selectedDetail!!
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .verticalScroll(rememberScrollState())
+                        .padding(horizontal = 20.dp, vertical = 16.dp)
+                        .padding(bottom = 32.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            if (detail.isPinned) {
+                                Icon(Icons.Default.PushPin, contentDescription = "Pinned", tint = PrimaryBlue, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                            }
+                            PriorityBadge(priority = detail.priority)
+                        }
+                        Text(
+                            text = detail.publishedAt?.take(10) ?: detail.createdAt.take(10),
+                            fontSize = 12.sp,
+                            color = FaflowText3
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Text(
+                        text = detail.title,
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = FaflowNavy
+                    )
+
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    Text(
+                        text = "Published by ${detail.authorName} (${detail.authorRole})" +
+                                if (detail.departmentName != null) " • ${detail.departmentName}" else "",
+                        fontSize = 13.sp,
+                        color = FaflowText2,
+                        fontWeight = FontWeight.Medium
+                    )
+
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 16.dp), color = FaflowBorder)
+
+                    Text(
+                        text = detail.body,
+                        fontSize = 15.sp,
+                        color = FaflowText1,
+                        lineHeight = 24.sp
+                    )
+
+                    // Attachments
+                    if (detail.attachments.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(20.dp))
+                        Text(
+                            text = "Attachments (${detail.attachments.size})",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = FaflowNavy
+                        )
+                        Spacer(modifier = Modifier.height(10.dp))
+                        detail.attachments.forEach { att ->
+                            AttachmentRow(attachment = att)
+                            Spacer(modifier = Modifier.height(6.dp))
+                        }
+                    }
+
+                    // Acknowledgment Action
+                    if (detail.requiresAcknowledgement) {
+                        Spacer(modifier = Modifier.height(24.dp))
+                        if (detail.isAcknowledged) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(StatusSuccess.copy(alpha = 0.12f))
+                                    .padding(vertical = 12.dp, horizontal = 16.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(Icons.Default.Verified, contentDescription = null, tint = StatusSuccess, modifier = Modifier.size(20.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "Acknowledged by you",
+                                    fontSize = 13.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = StatusSuccess
+                                )
+                            }
+                        } else {
+                            Button(
+                                onClick = { viewModel.acknowledgeAnnouncement(detail.id) },
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = FaflowShapes.pill,
+                                colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue),
+                                enabled = !uiState.isAcknowledging
+                            ) {
+                                if (uiState.isAcknowledging) {
+                                    CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = Color.White)
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                }
+                                Text("Acknowledge Notice", fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                }
+            } else {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text("Announcement not found", color = FaflowText2)
+                }
+            }
+        }
     }
 }

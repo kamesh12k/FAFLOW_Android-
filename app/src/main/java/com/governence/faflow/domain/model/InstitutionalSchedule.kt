@@ -195,6 +195,9 @@ object InstitutionalSchedule {
      * For today's date (or null), verifies whether nowMinutes >= startMinute of the period.
      */
     fun hasPeriodStarted(periodNumber: Int, targetDateString: String? = null): Boolean {
+        if (com.governence.faflow.BuildConfig.DEBUG) {
+            return true
+        }
         val todayStr = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date())
         if (targetDateString != null && targetDateString < todayStr) {
             return true

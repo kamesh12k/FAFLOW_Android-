@@ -159,9 +159,17 @@ fun FaceEnrollmentScreen(
     }
     val cameraState by cameraController.cameraState.collectAsState()
 
+    val isPoorLighting = remember(detections) {
+        if (detections.isNotEmpty()) {
+            val face = detections.first()
+            face.quality.brightnessScore < 0.25f
+        } else false
+    }
+
     val detectionUiState = when {
         detections.isEmpty() -> FaceDetectionUiState.NoFace
         detections.size > 1 -> FaceDetectionUiState.MultipleFaces(detections.size)
+        isPoorLighting -> FaceDetectionUiState.DetectionError("Lighting too dark. Please move to a well-lit area")
         else -> {
             val face = detections.first()
             if (face.confidence < 0.35f) FaceDetectionUiState.NoFace
@@ -402,13 +410,16 @@ fun FaceEnrollmentScreen(
                     val message = when {
                         !hasCameraPermission -> "Grant camera permission to begin enrollment."
                         detectionUiState is FaceDetectionUiState.MultipleFaces -> "Multiple faces detected. Only you should be in frame."
+                        detectionUiState is FaceDetectionUiState.DetectionError -> detectionUiState.message
                         detectionUiState is FaceDetectionUiState.FaceDetected -> "Keep your head straight and centered."
                         else -> "Position your face inside the guide oval."
                     }
+                    val isErrorState = detectionUiState is FaceDetectionUiState.MultipleFaces || detectionUiState is FaceDetectionUiState.DetectionError
                     Text(
                         text = message,
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontWeight = if (isErrorState) FontWeight.Bold else FontWeight.Normal,
+                        color = if (isErrorState) StatusError else MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(14.dp),
                         textAlign = TextAlign.Center
                     )

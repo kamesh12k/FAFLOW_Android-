@@ -24,12 +24,25 @@ class AuthRepository(
                 val tokenDto = response.body()!!
                 val userDto = tokenDto.user
 
+                val roleLower = userDto.role.lowercase()
+                val adminLevelLower = userDto.adminLevel?.lowercase()
+                val isTeacher = roleLower == "teacher"
+                val isHod = (roleLower == "admin" || roleLower == "hod") && (adminLevelLower == "secondary_admin" || (adminLevelLower == null && roleLower == "hod"))
+
+                if (!isTeacher && !isHod) {
+                    return NetworkResult.Error(
+                        403,
+                        "This app is for Teachers and HODs. Please use the web portal."
+                    )
+                }
+
                 tokenManager.saveToken(
                     token = tokenDto.accessToken,
                     userId = userDto.id,
                     userName = userDto.name,
                     userEmail = userDto.email ?: identifier,
                     role = userDto.role,
+                    adminLevel = userDto.adminLevel,
                     departmentId = userDto.departmentId,
                     policyVersionAccepted = userDto.policyVersionAccepted,
                     policyAcceptedAt = userDto.policyAcceptedAt,
@@ -43,6 +56,7 @@ class AuthRepository(
                     email = userDto.email ?: identifier,
                     username = userDto.username,
                     role = userDto.role,
+                    adminLevel = userDto.adminLevel,
                     departmentId = userDto.departmentId,
                     departmentName = userDto.department,
                     isActive = userDto.isActive,
@@ -71,6 +85,19 @@ class AuthRepository(
             val response = apiService.getMe()
             if (response.isSuccessful && response.body() != null) {
                 val u = response.body()!!
+                val roleLower = u.role.lowercase()
+                val adminLevelLower = u.adminLevel?.lowercase()
+                val isTeacher = roleLower == "teacher"
+                val isHod = (roleLower == "admin" || roleLower == "hod") && (adminLevelLower == "secondary_admin" || (adminLevelLower == null && roleLower == "hod"))
+
+                if (!isTeacher && !isHod) {
+                    tokenManager.clearSession()
+                    return NetworkResult.Error(
+                        403,
+                        "This app is for Teachers and HODs. Please use the web portal."
+                    )
+                }
+
                 if (u.policyVersionAccepted != null) {
                     tokenManager.updatePolicyAccepted(u.policyVersionAccepted, u.policyAcceptedAt)
                 }
@@ -82,6 +109,7 @@ class AuthRepository(
                     email = u.email ?: "",
                     username = u.username,
                     role = u.role,
+                    adminLevel = u.adminLevel,
                     departmentId = u.departmentId,
                     departmentName = u.department,
                     isActive = u.isActive,
@@ -192,6 +220,7 @@ class AuthRepository(
                     userName = userDto.name,
                     userEmail = userDto.email ?: "",
                     role = userDto.role,
+                    adminLevel = userDto.adminLevel,
                     departmentId = userDto.departmentId,
                     policyVersionAccepted = userDto.policyVersionAccepted,
                     policyAcceptedAt = userDto.policyAcceptedAt,
@@ -205,6 +234,7 @@ class AuthRepository(
                     email = userDto.email ?: "",
                     username = userDto.username,
                     role = userDto.role,
+                    adminLevel = userDto.adminLevel,
                     departmentId = userDto.departmentId,
                     departmentName = userDto.department,
                     isActive = userDto.isActive,
@@ -243,6 +273,7 @@ class AuthRepository(
             name = tokenManager.getUserName() ?: "Faculty Member",
             email = tokenManager.getUserEmail() ?: "",
             role = tokenManager.getUserRole() ?: "teacher",
+            adminLevel = tokenManager.getAdminLevel(),
             departmentId = tokenManager.getDepartmentId(),
             policyVersionAccepted = tokenManager.getPolicyVersionAccepted(),
             policyAcceptedAt = tokenManager.getPolicyAcceptedAt(),

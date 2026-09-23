@@ -926,7 +926,13 @@ class AttendanceViewModel(
                         val id = com.governence.faflow.core.di.AppContainer.getInstance(ctx).tokenManager.getUserId()
                         if (id > 0) id.toString() else null
                     }
-                    ?: "1"
+
+                if (targetStaffId == null) {
+                    android.util.Log.e("FAFLOW_BIOMETRICS", "No authenticated staff ID found for biometric verification")
+                    _identityVerificationState.value = StaffBiometricVerificationState.Unavailable("No authenticated staff ID found")
+                    activeSession.markFaceFailed()
+                    return@launch
+                }
 
                 // 1. Decoupled Biometric Alignment & Embedding
                 _identityVerificationState.value = StaffBiometricVerificationState.Aligning

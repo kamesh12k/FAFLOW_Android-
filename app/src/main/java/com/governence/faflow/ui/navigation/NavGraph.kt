@@ -18,6 +18,7 @@ import com.governence.faflow.auth.ui.AuthUiState
 import com.governence.faflow.auth.ui.AuthViewModel
 import com.governence.faflow.core.di.AppContainer
 import com.governence.faflow.ui.components.MainBottomNavigation
+import com.governence.faflow.ui.screens.AnnouncementDetailScreen
 import com.governence.faflow.ui.screens.AnnouncementsScreen
 import com.governence.faflow.ui.screens.ApplyLeaveScreen
 import com.governence.faflow.ui.screens.AttendanceCheckInOutScreen
@@ -28,8 +29,6 @@ import com.governence.faflow.ui.screens.ClasswiseTimetableScreen
 import com.governence.faflow.ui.screens.CreditsScreen
 import com.governence.faflow.ui.screens.DashboardScreen
 import com.governence.faflow.ui.screens.FaceEnrollmentScreen
-import com.governence.faflow.ui.screens.GeofenceAdminScreen
-import com.governence.faflow.ui.viewmodels.GeofenceAdminViewModel
 import com.governence.faflow.ui.screens.HodAttendanceScreen
 import com.governence.faflow.ui.screens.HodDashboardScreen
 import com.governence.faflow.ui.screens.HodFacultyDirectoryScreen
@@ -317,7 +316,6 @@ fun NavGraph(
                     onNavigateToPreferences = { navController.navigate(Screen.Preferences.route) },
                     onNavigateToNotifications = { navController.navigate(Screen.Notifications.route) },
                     onNavigateToProfile = { navController.navigate(Screen.Profile.route) },
-                    onNavigateToGeofences = { navController.navigate(Screen.GeofenceAdmin.route) },
                     onNavigateToLeaveApprovals = { navController.navigate(Screen.HodLeaveApprovals.route) },
                     onNavigateToLiveAttendance = { navController.navigate(Screen.HodAttendance.route) },
                     onNavigateToFacultyDirectory = { navController.navigate(Screen.HodFacultyDirectory.route) },
@@ -557,24 +555,34 @@ fun NavGraph(
                 }
                 AnnouncementsScreen(
                     viewModel = announcementsViewModel,
+                    onNavigateBack = { navController.popBackStack() },
+                    onNavigateToDetail = { id ->
+                        navController.navigate(Screen.AnnouncementDetail.createRoute(id))
+                    }
+                )
+            }
+
+            composable(
+                route = Screen.AnnouncementDetail.route,
+                arguments = listOf(
+                    androidx.navigation.navArgument("announcementId") {
+                        type = androidx.navigation.NavType.IntType
+                    }
+                )
+            ) { backStackEntry ->
+                val announcementId = backStackEntry.arguments?.getInt("announcementId") ?: -1
+                val announcementsViewModel = remember(backStackEntry) {
+                    com.governence.faflow.ui.viewmodels.AnnouncementsViewModel(appContainer.announcementRepository)
+                }
+                AnnouncementDetailScreen(
+                    announcementId = announcementId,
+                    viewModel = announcementsViewModel,
                     onNavigateBack = { navController.popBackStack() }
                 )
             }
 
             composable(Screen.SyncStatus.route) {
                 SyncStatusScreen(
-                    onNavigateBack = { navController.popBackStack() }
-                )
-            }
-
-            composable(Screen.GeofenceAdmin.route) { backStackEntry ->
-                val geofenceViewModel = remember(backStackEntry) {
-                    GeofenceAdminViewModel(
-                        apiService = appContainer.apiService
-                    )
-                }
-                GeofenceAdminScreen(
-                    viewModel = geofenceViewModel,
                     onNavigateBack = { navController.popBackStack() }
                 )
             }

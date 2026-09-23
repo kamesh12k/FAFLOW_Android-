@@ -54,6 +54,7 @@ import com.governence.faflow.ui.theme.FaflowShapes
 import com.governence.faflow.ui.theme.FaflowText1
 import com.governence.faflow.ui.theme.FaflowText2
 import com.governence.faflow.ui.theme.FaflowText3
+import com.governence.faflow.ui.theme.PrimaryBlue
 import com.governence.faflow.ui.theme.StatusError
 import com.governence.faflow.ui.viewmodels.NotificationsViewModel
 
@@ -95,20 +96,39 @@ fun NotificationsScreen(
                 onNavigateBack = onNavigateBack,
                 actions = {
                     if (state.notifications.isNotEmpty()) {
-                        TextButton(onClick = { viewModel.clearAll(context) }) {
-                            Icon(
-                                Icons.Default.Clear,
-                                contentDescription = "Clear All Notifications",
-                                tint = Color(0xFFE11D48),
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Spacer(Modifier.width(4.dp))
-                            Text(
-                                "Clear All",
-                                color = Color(0xFFE11D48),
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.Bold
-                            )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            if (state.unreadCount > 0) {
+                                TextButton(onClick = { viewModel.markAllRead() }) {
+                                    Icon(
+                                        Icons.Default.DoneAll,
+                                        contentDescription = "Mark All as Read",
+                                        tint = PrimaryBlue,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Spacer(Modifier.width(4.dp))
+                                    Text(
+                                        "Read All",
+                                        color = PrimaryBlue,
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+                            TextButton(onClick = { viewModel.clearAll(context) }) {
+                                Icon(
+                                    Icons.Default.Clear,
+                                    contentDescription = "Clear All Notifications",
+                                    tint = Color(0xFFE11D48),
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(Modifier.width(4.dp))
+                                Text(
+                                    "Clear All",
+                                    color = Color(0xFFE11D48),
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
                         }
                     }
                 }
@@ -217,7 +237,14 @@ fun NotificationsScreen(
                                     else com.governence.faflow.ui.theme.FaflowBorder,
                                     RoundedCornerShape(14.dp)
                                 )
-                                .clickable { viewModel.markRead(notif.id) }
+                                .clickable {
+                                    viewModel.markRead(notif.id)
+                                    when {
+                                        isSubstitution -> onNavigateToSubstitution()
+                                        isLeave -> onNavigateToLeaveHistory()
+                                        isAttendance -> onNavigateToAttendance()
+                                    }
+                                }
                                 .padding(16.dp)
                         ) {
                             Row(

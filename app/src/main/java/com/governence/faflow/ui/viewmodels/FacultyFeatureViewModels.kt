@@ -25,6 +25,10 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import java.text.SimpleDateFormat
+import java.util.Calendar
+import java.util.Date
+import java.util.Locale
 
 // ---------- Leave ViewModel ----------
 
@@ -239,6 +243,100 @@ class LeaveViewModel(
                     _uiState.value = _uiState.value.copy(isLoading = false, errorMessage = res.message)
                 }
                 NetworkResult.Loading -> Unit
+            }
+        }
+    }
+
+    fun submitLeaveRange(
+        startDate: String,
+        endDate: String,
+        leaveType: String,
+        reason: String,
+        selectedPeriods: List<Int>,
+        isWholeDay: Boolean,
+        onComplete: () -> Unit,
+        periodSubstitutes: Map<String, Int>? = null
+    ) {
+        val formattedReason = if (leaveType.isNotBlank()) "[$leaveType] $reason".trim() else reason
+        if (startDate == endDate) {
+            if (isWholeDay || selectedPeriods.size > 1) {
+                submitLeaveBatch(
+                    startDate,
+                    selectedPeriods,
+                    formattedReason,
+                    onComplete,
+                    periodSubstitutes = periodSubstitutes,
+                    wholeDay = isWholeDay
+                )
+            } else {
+                val proposedId = periodSubstitutes?.values?.firstOrNull()
+                submitLeave(
+                    startDate,
+                    selectedPeriods.firstOrNull() ?: 1,
+                    formattedReason,
+                    onComplete,
+                    proposedSubstituteId = proposedId
+                )
+            }
+            return
+        }
+
+        // Multi-day range submission
+        _uiState.value = _uiState.value.copy(isLoading = true, errorMessage = null)
+        viewModelScope.launch {
+            try {
+                val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.US)
+                val start = sdf.parse(startDate) ?: Date()
+                val end = sdf.parse(endDate) ?: Date()
+                val cal = Calendar.getInstance()
+                cal.time = start
+
+                var anyFailure: String? = null
+                var successCount = 0
+                while (!cal.time.after(end)) {
+                    val dayOfWeek = cal.get(Calendar.DAY_OF_WEEK)
+                    if (dayOfWeek != Calendar.SUNDAY) {
+                        val dateStr = sdf.format(cal.time)
+                        val res = leaveRepository.applyLeaveBatch(
+                            date = dateStr,
+                            periodNumbers = selectedPeriods.ifEmpty { listOf(1, 2, 3, 4, 5) },
+                            reason = formattedReason,
+                            periodSubstitutes = null,
+                            wholeDay = true
+                        )
+                        if (res is NetworkResult.Error) {
+                            anyFailure = if (successCount > 0) {
+                                "Submitted $successCount day(s). Failed for $dateStr: ${res.message}"
+                            } else {
+                                res.message
+                            }
+                            break
+                        } else {
+                            successCount++
+                        }
+                    }
+                    cal.add(Calendar.DAY_OF_MONTH, 1)
+                }
+
+                if (anyFailure != null) {
+                    _uiState.value = _uiState.value.copy(isLoading = false, errorMessage = anyFailure)
+                    if (successCount > 0) {
+                        loadMyLeaves()
+                    }
+                } else {
+                    _uiState.value = _uiState.value.copy(
+                        isLoading = false,
+                        isSubmittedSuccessfully = true,
+                        selectedSubstitutePerPeriod = emptyMap()
+                    )
+                    loadMyLeaves()
+                    onComplete()
+                }
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    errorMessage = e.localizedMessage ?: "Failed to submit date range leave"
+                )
             }
         }
     }
@@ -479,6 +577,7 @@ data class SubstitutionUiState(
     val candidates: List<com.governence.faflow.core.network.RecommendationOutDto> = emptyList(),
     val isLoadingCandidates: Boolean = false,
     val isAssignmentInProgress: Boolean = false,
+    val acceptedDutyIds: Set<Int> = emptySet(),
     val actionMessage: String? = null,
     val errorMessage: String? = null
 )
@@ -612,6 +711,13 @@ class SubstitutionViewModel(
 
     fun loadDuties() {
         loadData()
+    }
+
+    fun acceptDuty(dutyId: Int) {
+        _uiState.value = _uiState.value.copy(
+            acceptedDutyIds = _uiState.value.acceptedDutyIds + dutyId,
+            actionMessage = "Substitution duty accepted! +1.0 Credit upon attendance/completion."
+        )
     }
 
     fun clearActionMessage() {

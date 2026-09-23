@@ -18,6 +18,7 @@ data class UserOutDto(
     @Json(name = "email") val email: String?,
     @Json(name = "username") val username: String?,
     @Json(name = "role") val role: String,
+    @Json(name = "admin_level") val adminLevel: String? = null,
     @Json(name = "department") val department: String?,
     @Json(name = "department_id") val departmentId: Int?,
     @Json(name = "must_change_credentials") val mustChangeCredentials: Boolean = false,
