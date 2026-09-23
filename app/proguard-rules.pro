@@ -6,9 +6,14 @@
 # Global attribute preservation for Kotlin, reflection, and serialization
 -keepattributes *Annotation*, Signature, InnerClasses, EnclosingMethod
 
-# ONNX Runtime Mobile (InsightFace SCRFD & ArcFace ONNX inference)
--keep class ai.onnxruntime.OrtEnvironment, ai.onnxruntime.OrtSession, ai.onnxruntime.OnnxTensor { *; }
+# ONNX Runtime Mobile (InsightFace SCRFD & ArcFace ONNX inference + JNI types)
+-keep class ai.onnxruntime.** { *; }
+-keep interface ai.onnxruntime.** { *; }
 -dontwarn ai.onnxruntime.**
+
+# Biometrics ML & Face Recognition Pipeline
+-keep class com.governence.faflow.attendance.biometrics.** { *; }
+-keepclassmembers class com.governence.faflow.attendance.biometrics.** { *; }
 
 # Kotlin Metadata & Reflection (Required by Moshi KotlinJsonAdapterFactory)
 -keep class kotlin.Metadata { *; }
