@@ -10,18 +10,30 @@
 -keep class ai.onnxruntime.OrtEnvironment, ai.onnxruntime.OrtSession, ai.onnxruntime.OnnxTensor { *; }
 -dontwarn ai.onnxruntime.**
 
-# Moshi JSON DTO Serialization (Scoped to annotated models)
--keep @com.squareup.moshi.JsonClass class * {
-    <fields>;
-    <init>(...);
-}
--keep class *JsonAdapter {
-    <init>(...);
-}
+# Kotlin Metadata & Reflection (Required by Moshi KotlinJsonAdapterFactory)
+-keep class kotlin.Metadata { *; }
+-keep class kotlin.reflect.jvm.internal.** { *; }
+-keep interface kotlin.reflect.jvm.internal.** { *; }
+-dontwarn kotlin.reflect.**
+
+# Moshi JSON Serialization & Reflection
+-keep class com.squareup.moshi.** { *; }
+-keep interface com.squareup.moshi.** { *; }
+-dontwarn com.squareup.moshi.**
+
+# Keep all DTO models completely (needed by Moshi KotlinJsonAdapterFactory for fields, constructors, and generic signatures)
+-keep class com.governence.faflow.core.network.** { *; }
+-keepclassmembers class com.governence.faflow.core.network.** { *; }
+-keep class com.governence.faflow.attendance.student.data.** { *; }
+-keepclassmembers class com.governence.faflow.attendance.student.data.** { *; }
+-keep class com.governence.faflow.domain.model.** { *; }
+-keepclassmembers class com.governence.faflow.domain.model.** { *; }
+-keep @com.squareup.moshi.JsonClass class * { *; }
+-keepclassmembers @com.squareup.moshi.JsonClass class * { *; }
 -keepclassmembers class * {
     @com.squareup.moshi.Json <fields>;
+    @com.squareup.moshi.Json <methods>;
 }
--dontwarn com.squareup.moshi.**
 
 # Android Jetpack Security (Warnings suppression; consumer rules bundled in AAR)
 -dontwarn androidx.security.crypto.**

@@ -617,8 +617,8 @@ data class TeacherTodayScheduleDto(
     val isHoliday: Boolean get() = isBlockedDate || isHolidayFallback
     val holidayReason: String? get() = blockReason ?: holidayReasonFallback
     val periods: List<TeacherPeriodSlotDto> get() = when {
-        directPeriods.isNotEmpty() -> directPeriods
-        scheduledClasses.isNotEmpty() || substitutions.isNotEmpty() -> (scheduledClasses + substitutions).sortedBy { it.periodNumber }
+        directPeriods.isNotEmpty() -> directPeriods.filterIsInstance<TeacherPeriodSlotDto>()
+        scheduledClasses.isNotEmpty() || substitutions.isNotEmpty() -> (scheduledClasses + substitutions).filterIsInstance<TeacherPeriodSlotDto>().sortedBy { it.periodNumber }
         else -> emptyList()
     }
 }
