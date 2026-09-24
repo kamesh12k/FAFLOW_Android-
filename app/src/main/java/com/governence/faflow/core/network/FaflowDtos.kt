@@ -179,38 +179,64 @@ data class LeaveOutDto(
 
 @JsonClass(generateAdapter = true)
 data class LeavePolicyOutDto(
-    @Json(name = "id") val id: Int,
-    @Json(name = "name") val name: String,
-    @Json(name = "code") val code: String,
+    @Json(name = "id") val id: Int = 0,
+    @Json(name = "name") val name: String = "",
+    @Json(name = "code") val code: String = "",
     @Json(name = "description") val description: String? = null,
     @Json(name = "entitlement_days") val entitlementDays: Double = 0.0,
+    @Json(name = "entitlement") val entitlement: Double? = null,
     @Json(name = "entitlement_period") val entitlementPeriod: String = "YEAR",
+    @Json(name = "period") val period: String? = null,
     @Json(name = "max_consecutive_days") val maxConsecutiveDays: Int? = null,
     @Json(name = "max_per_month") val maxPerMonth: Int? = null,
+    @Json(name = "monthly_limit") val monthlyLimit: Double? = null,
     @Json(name = "requires_document") val requiresDocument: Boolean = false,
+    @Json(name = "document_required") val documentRequired: Boolean? = null,
     @Json(name = "requires_prior_notice_days") val requiresPriorNoticeDays: Int = 0,
     @Json(name = "is_active") val isActive: Boolean = true
-)
+) {
+    val effectiveEntitlementDays: Double
+        get() = if (entitlementDays > 0.0) entitlementDays else (entitlement ?: 0.0)
+
+    val effectiveEntitlementPeriod: String
+        get() = if (entitlementPeriod.isNotBlank()) entitlementPeriod else (period ?: "YEAR")
+
+    val effectiveRequiresDocument: Boolean
+        get() = requiresDocument || (documentRequired ?: false)
+}
 
 @JsonClass(generateAdapter = true)
 data class TeacherPolicyBalanceDto(
-    @Json(name = "id") val id: Int,
-    @Json(name = "policy_id") val policyId: Int,
-    @Json(name = "policy_code") val policyCode: String,
-    @Json(name = "policy_name") val policyName: String,
+    @Json(name = "id") val id: Int = 0,
+    @Json(name = "policy_id") val policyId: Int = 0,
+    @Json(name = "policy_code") val policyCode: String = "",
+    @Json(name = "code") val code: String? = null,
+    @Json(name = "policy_name") val policyName: String = "",
+    @Json(name = "name") val name: String? = null,
     @Json(name = "entitlement") val entitlement: Double = 0.0,
     @Json(name = "consumed") val consumed: Double = 0.0,
     @Json(name = "pending") val pending: Double = 0.0,
     @Json(name = "remaining") val remaining: Double = 0.0,
     @Json(name = "period") val period: String = "YEAR",
     @Json(name = "max_per_month") val maxPerMonth: Int? = null,
-    @Json(name = "requires_document") val requiresDocument: Boolean = false
-)
+    @Json(name = "monthly_limit") val monthlyLimit: Double? = null,
+    @Json(name = "requires_document") val requiresDocument: Boolean = false,
+    @Json(name = "document_required") val documentRequired: Boolean? = null
+) {
+    val effectivePolicyCode: String
+        get() = if (policyCode.isNotBlank()) policyCode else (code ?: "")
+
+    val effectivePolicyName: String
+        get() = if (policyName.isNotBlank()) policyName else (name ?: "")
+
+    val effectiveRequiresDocument: Boolean
+        get() = requiresDocument || (documentRequired ?: false)
+}
 
 @JsonClass(generateAdapter = true)
 data class TeacherLeaveBalanceSummaryDto(
-    @Json(name = "teacher_id") val teacherId: Int,
-    @Json(name = "academic_year") val academicYear: String,
+    @Json(name = "teacher_id") val teacherId: Int = 0,
+    @Json(name = "academic_year") val academicYear: String = "",
     @Json(name = "balances") val balances: List<TeacherPolicyBalanceDto> = emptyList(),
     @Json(name = "total_entitled") val totalEntitled: Double = 0.0,
     @Json(name = "total_consumed") val totalConsumed: Double = 0.0,

@@ -358,7 +358,11 @@ fun ApplyLeaveScreen(
             ) {
                 policies.forEach { policy ->
                     val isSelected = (state.selectedPolicy?.id == policy.id) || (state.selectedPolicy == null && policy.code == "AL")
-                    val bal = state.leaveBalancesSummary?.balances?.find { it.policyCode == policy.code || it.policyId == policy.id }
+                    val bal = state.leaveBalancesSummary?.balances?.find {
+                        it.policyCode.equals(policy.code, ignoreCase = true) ||
+                        (it.policyId > 0 && it.policyId == policy.id) ||
+                        (it.id > 0 && it.id == policy.id)
+                    }
 
                     Box(
                         modifier = Modifier
@@ -386,8 +390,10 @@ fun ApplyLeaveScreen(
                                     fontWeight = FontWeight.Bold,
                                     color = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurface
                                 )
+                                val daysLeft = bal?.remaining ?: policy.entitlementDays
+                                val daysText = if (daysLeft % 1.0 == 0.0) "${daysLeft.toInt()}d left" else "${daysLeft}d left"
                                 Text(
-                                    text = "${bal?.remaining ?: policy.entitlementDays.toInt()}d left",
+                                    text = daysText,
                                     style = MaterialTheme.typography.bodySmall,
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.SemiBold,
