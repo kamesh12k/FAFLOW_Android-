@@ -409,15 +409,18 @@ fun ApplyLeaveScreen(
 
             // Dynamic Policy Intelligence Card
             state.validationResult?.let { valRes ->
-                val isBlocked = valRes.enforcementMode.equals("STRICT", ignoreCase = true) && !valRes.allowed
-                val isWarning = valRes.requiresWarning
+                val isNetworkError = valRes.violations.isEmpty() && (valRes.message?.contains("Failed to validate", ignoreCase = true) == true || valRes.message?.contains("Unable to resolve", ignoreCase = true) == true)
+                val isBlocked = !isNetworkError && valRes.enforcementMode.equals("STRICT", ignoreCase = true) && !valRes.allowed
+                val isWarning = !isNetworkError && valRes.requiresWarning
 
                 val bgColor = when {
+                    isNetworkError -> Color(0xFFFFFBEB)
                     isBlocked -> FaflowStatusColors.RejectedBg
                     isWarning -> Color(0xFFFEF3C7)
                     else -> Color(0xFFF0FDF4)
                 }
                 val borderColor = when {
+                    isNetworkError -> Color(0xFFFDE68A)
                     isBlocked -> StatusError.copy(alpha = 0.5f)
                     isWarning -> Color(0xFFF59E0B)
                     else -> Color(0xFF86EFAC)
@@ -432,27 +435,35 @@ fun ApplyLeaveScreen(
                     Column {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(
-                                imageVector = if (isBlocked) Icons.Default.Block else if (isWarning) Icons.Default.Warning else Icons.Default.Check,
+                                imageVector = if (isBlocked) Icons.Default.Block else if (isNetworkError || isWarning) Icons.Default.Warning else Icons.Default.Check,
                                 contentDescription = null,
-                                tint = if (isBlocked) StatusError else if (isWarning) Color(0xFFB45309) else Color(0xFF16A34A),
+                                tint = if (isBlocked) StatusError else if (isNetworkError || isWarning) Color(0xFFB45309) else Color(0xFF16A34A),
                                 modifier = Modifier.size(18.dp)
                             )
                             Spacer(modifier = Modifier.width(FaflowSpacing.xs))
                             Text(
                                 text = when {
+                                    isNetworkError -> "POLICY VALIDATION NOTICE"
                                     isBlocked -> "LEAVE REQUEST BLOCKED (STRICT MODE)"
                                     isWarning -> "POLICY WARNING (ADVISORY MODE)"
                                     else -> "${valRes.policyName} Policy Validated"
                                 },
                                 style = MaterialTheme.typography.bodySmall,
                                 fontWeight = FontWeight.Bold,
-                                color = if (isBlocked) StatusError else if (isWarning) Color(0xFF92400E) else Color(0xFF15803D)
+                                color = if (isBlocked) StatusError else if (isNetworkError || isWarning) Color(0xFF92400E) else Color(0xFF15803D)
                             )
                         }
 
                         Spacer(modifier = Modifier.height(FaflowSpacing.xs))
 
-                        if (isBlocked) {
+                        if (isNetworkError) {
+                            Text(
+                                text = valRes.message ?: "Unable to connect to validation service. Please check network connection.",
+                                style = MaterialTheme.typography.bodySmall,
+                                fontSize = 11.sp,
+                                color = Color(0xFF92400E)
+                            )
+                        } else if (isBlocked) {
                             Text(
                                 text = valRes.message ?: "This leave request exceeds policy limits and is blocked under Strict Enforcement.",
                                 style = MaterialTheme.typography.bodySmall,
