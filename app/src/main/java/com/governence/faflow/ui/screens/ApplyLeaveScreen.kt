@@ -298,30 +298,6 @@ fun ApplyLeaveScreen(
                     }
                 }
                 Spacer(modifier = Modifier.height(FaflowSpacing.md))
-            } else {
-                // Standard Contextual Guidance
-                FaflowSurface(
-                    modifier = Modifier.fillMaxWidth(),
-                    backgroundColor = Color.White,
-                    borderColor = com.governence.faflow.ui.theme.FaflowBorder,
-                    contentPadding = PaddingValues(FaflowSpacing.md)
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = Icons.Default.Info,
-                            contentDescription = null,
-                            tint = com.governence.faflow.ui.theme.FaflowNavy,
-                            modifier = Modifier.size(20.dp)
-                        )
-                        Spacer(modifier = Modifier.width(FaflowSpacing.sm))
-                        Text(
-                            text = "Leaves submitted close to slot time automatically trigger autonomous substitution candidate recommendations.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                    }
-                }
-                Spacer(modifier = Modifier.height(FaflowSpacing.md))
             }
 
             if (state.errorMessage != null) {
@@ -613,54 +589,70 @@ fun ApplyLeaveScreen(
 
             Spacer(modifier = Modifier.height(FaflowSpacing.md))
 
-            // Leave Type Selector
-            Text(
-                text = "Leave Type",
-                style = MaterialTheme.typography.labelMedium,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            Spacer(modifier = Modifier.height(FaflowSpacing.xs))
+            // Leave Date Field with Quick Selection Chips in Header
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                listOf("Casual Leave", "On Duty", "Medical Leave").forEach { type ->
-                    val isSelected = leaveType == type
+                Text(
+                    text = "Leave Date",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    val tomorrowCal = Calendar.getInstance().apply { add(Calendar.DAY_OF_MONTH, 1) }
+                    val tomorrowStr = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(tomorrowCal.time)
+                    val isTomorrow = leaveDate == tomorrowStr
+
                     Box(
                         modifier = Modifier
-                            .weight(1f)
                             .clip(FaflowShapes.pill)
-                            .background(if (isSelected) com.governence.faflow.ui.theme.FaflowNavy else Color.White)
+                            .background(if (isTomorrow) com.governence.faflow.ui.theme.PrimaryBlue else Color.White)
                             .border(
                                 width = 1.dp,
-                                color = if (isSelected) Color.Transparent else com.governence.faflow.ui.theme.FaflowBorder,
+                                color = if (isTomorrow) Color.Transparent else com.governence.faflow.ui.theme.FaflowBorder,
                                 shape = FaflowShapes.pill
                             )
-                            .clickable { leaveType = type }
-                            .padding(vertical = 8.dp),
-                        contentAlignment = Alignment.Center
+                            .clickable { leaveDate = tomorrowStr }
+                            .padding(horizontal = 10.dp, vertical = 4.dp)
                     ) {
                         Text(
-                            text = type,
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                            color = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurface,
-                            maxLines = 1
+                            text = "Tomorrow",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = if (isTomorrow) FontWeight.Bold else FontWeight.Medium,
+                            color = if (isTomorrow) Color.White else MaterialTheme.colorScheme.onSurface
                         )
+                    }
+
+                    val nowCal = Calendar.getInstance()
+                    val isNowPastCutoff = (nowCal.get(Calendar.HOUR_OF_DAY) * 60 + nowCal.get(Calendar.MINUTE)) >= (cutoffHour * 60 + cutoffMinute)
+                    if (!isNowPastCutoff) {
+                        val isToday = leaveDate == todayStr
+                        Box(
+                            modifier = Modifier
+                                .clip(FaflowShapes.pill)
+                                .background(if (isToday) com.governence.faflow.ui.theme.PrimaryBlue else Color.White)
+                                .border(
+                                    width = 1.dp,
+                                    color = if (isToday) Color.Transparent else com.governence.faflow.ui.theme.FaflowBorder,
+                                    shape = FaflowShapes.pill
+                                )
+                                .clickable { leaveDate = todayStr }
+                                .padding(horizontal = 10.dp, vertical = 4.dp)
+                        ) {
+                            Text(
+                                text = "Today",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = if (isToday) FontWeight.Bold else FontWeight.Medium,
+                                color = if (isToday) Color.White else MaterialTheme.colorScheme.onSurface
+                            )
+                        }
                     }
                 }
             }
-
-            Spacer(modifier = Modifier.height(FaflowSpacing.md))
-
-            // Leave Date Field
-            Text(
-                text = "Leave Date (YYYY-MM-DD)",
-                style = MaterialTheme.typography.labelMedium,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurface
-            )
             Spacer(modifier = Modifier.height(FaflowSpacing.xs))
             OutlinedTextField(
                 value = leaveDate,
@@ -688,93 +680,7 @@ fun ApplyLeaveScreen(
                 )
             }
 
-            Spacer(modifier = Modifier.height(FaflowSpacing.xs))
-
-            // Quick Date Selection Chips
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                val tomorrowCal = Calendar.getInstance().apply { add(Calendar.DAY_OF_MONTH, 1) }
-                val tomorrowStr = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(tomorrowCal.time)
-                val isTomorrow = leaveDate == tomorrowStr
-
-                Box(
-                    modifier = Modifier
-                        .clip(FaflowShapes.pill)
-                        .background(if (isTomorrow) com.governence.faflow.ui.theme.FaflowNavy else Color.White)
-                        .border(
-                            width = 1.dp,
-                            color = if (isTomorrow) Color.Transparent else com.governence.faflow.ui.theme.FaflowBorder,
-                            shape = FaflowShapes.pill
-                        )
-                        .clickable { leaveDate = tomorrowStr }
-                        .padding(horizontal = 12.dp, vertical = 6.dp)
-                ) {
-                    Text(
-                        text = "Tomorrow ($tomorrowStr)",
-                        style = MaterialTheme.typography.labelSmall,
-                        fontWeight = if (isTomorrow) FontWeight.Bold else FontWeight.Medium,
-                        color = if (isTomorrow) Color.White else MaterialTheme.colorScheme.onSurface
-                    )
-                }
-
-                val nowCal = Calendar.getInstance()
-                val isNowPastCutoff = (nowCal.get(Calendar.HOUR_OF_DAY) * 60 + nowCal.get(Calendar.MINUTE)) >= (cutoffHour * 60 + cutoffMinute)
-                if (!isNowPastCutoff) {
-                    val isToday = leaveDate == todayStr
-                    Box(
-                        modifier = Modifier
-                            .clip(FaflowShapes.pill)
-                            .background(if (isToday) com.governence.faflow.ui.theme.FaflowNavy else Color.White)
-                            .border(
-                                width = 1.dp,
-                                color = if (isToday) Color.Transparent else com.governence.faflow.ui.theme.FaflowBorder,
-                                shape = FaflowShapes.pill
-                            )
-                            .clickable { leaveDate = todayStr }
-                            .padding(horizontal = 12.dp, vertical = 6.dp)
-                    ) {
-                        Text(
-                            text = "Today ($todayStr)",
-                            style = MaterialTheme.typography.labelSmall,
-                            fontWeight = if (isToday) FontWeight.Bold else FontWeight.Medium,
-                            color = if (isToday) Color.White else MaterialTheme.colorScheme.onSurface
-                        )
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(FaflowSpacing.sm))
-
-            // Resolved Day Order Pill
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "Calendar Day Order",
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                if (state.resolvedDayOrder != null) {
-                    FaflowStatusBadge(
-                        text = "Day Order ${state.resolvedDayOrder}",
-                        statusColor = PrimaryBlue,
-                        showDot = true
-                    )
-                } else {
-                    Text(
-                        text = "Resolving day order…",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(FaflowSpacing.lg))
+            Spacer(modifier = Modifier.height(FaflowSpacing.md))
 
             // Period Selector Chips
             val headerText = if (isWholeDay) {
@@ -802,8 +708,18 @@ fun ApplyLeaveScreen(
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onSurface
                 )
-                if (!isWholeDay) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    if (state.resolvedDayOrder != null) {
+                        FaflowStatusBadge(
+                            text = "Day Order ${state.resolvedDayOrder}",
+                            statusColor = PrimaryBlue,
+                            showDot = true
+                        )
+                    }
+                    if (!isWholeDay) {
                         Text(
                             text = "Select All",
                             fontSize = 11.sp,
@@ -926,12 +842,6 @@ fun ApplyLeaveScreen(
                                 statusColor = if (isFullyCovered) StatusSuccess else FaflowStatusColors.Pending
                             )
                         }
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = "Please nominate an available faculty substitute for each scheduled class. Use the filters below to widen or narrow faculty eligibility.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
 
                         val errorMsg = state.errorMessage
                         if (!errorMsg.isNullOrBlank()) {
