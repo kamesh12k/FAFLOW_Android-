@@ -33,7 +33,10 @@ import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.School
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -104,8 +107,33 @@ fun ApplyLeaveScreen(
     val state by viewModel.uiState.collectAsState()
 
     val todayStr = remember { SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date()) }
-    var startDate by remember { mutableStateOf(todayStr) }
-    var endDate by remember { mutableStateOf(todayStr) }
+
+    // Parse cutoff time from institutional governance policy (default 09:00 AM)
+    val sameDayCutoff = state.sameDayCutoffTime.ifBlank { "09:00" }
+    val (cutoffHour, cutoffMinute) = remember(sameDayCutoff) {
+        try {
+            val parts = sameDayCutoff.split(":")
+            val h = parts[0].trim().toInt()
+            val m = if (parts.size > 1) parts[1].trim().toInt() else 0
+            h to m
+        } catch (_: Exception) {
+            9 to 0
+        }
+    }
+
+    // Default to tomorrow's date if current time is past the cutoff (e.g. >= 09:00 AM)
+    val initialDateStr = remember(sameDayCutoff) {
+        val cal = Calendar.getInstance()
+        val currentHour = cal.get(Calendar.HOUR_OF_DAY)
+        val currentMinute = cal.get(Calendar.MINUTE)
+        val isPastCutoff = (currentHour * 60 + currentMinute) >= (cutoffHour * 60 + cutoffMinute)
+        if (isPastCutoff) {
+            cal.add(Calendar.DAY_OF_MONTH, 1)
+        }
+        SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(cal.time)
+    }
+
+    var leaveDate by remember(initialDateStr) { mutableStateOf(initialDateStr) }
     var leaveType by remember { mutableStateOf("Casual Leave") }
     var isWholeDay by remember { mutableStateOf(true) }
     var selectedPeriods by remember { mutableStateOf(emptySet<Int>()) }
@@ -113,46 +141,32 @@ fun ApplyLeaveScreen(
     var attemptedSubmit by remember { mutableStateOf(false) }
     var expandedPeriod by remember { mutableStateOf<Int?>(null) }
 
-    val isDateRangeInvalid = remember(startDate, endDate) {
-        if (startDate.length == 10 && endDate.length == 10) {
-            endDate < startDate
+    // Check if user selected today's date when past the policy cutoff
+    val isSameDayPastCutoff = remember(leaveDate, sameDayCutoff) {
+        if (leaveDate == todayStr) {
+            val cal = Calendar.getInstance()
+            val currentHour = cal.get(Calendar.HOUR_OF_DAY)
+            val currentMinute = cal.get(Calendar.MINUTE)
+            (currentHour * 60 + currentMinute) >= (cutoffHour * 60 + cutoffMinute)
         } else false
     }
-
-    val durationDays = remember(startDate, endDate) {
-        try {
-            if (startDate.length == 10 && endDate.length == 10 && startDate <= endDate) {
-                val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.US)
-                val s = sdf.parse(startDate)
-                val e = sdf.parse(endDate)
-                if (s != null && e != null) {
-                    val cal = Calendar.getInstance()
-                    cal.time = s
-                    var workingDays = 0
-                    while (!cal.time.after(e)) {
-                        val dayOfWeek = cal.get(Calendar.DAY_OF_WEEK)
-                        if (dayOfWeek != Calendar.SUNDAY) {
-                            workingDays++
-                        }
-                        cal.add(Calendar.DAY_OF_MONTH, 1)
-                    }
-                    if (workingDays > 0) workingDays else 1
-                } else 1
-            } else 1
-        } catch (_: Exception) {
-            1
-        }
-    }
-    val isMultiDay = durationDays > 1
 
     LaunchedEffect(Unit) {
         viewModel.loadCampusMode()
         viewModel.loadTeacherTimetable()
+        viewModel.loadLeavePolicy()
     }
 
-    LaunchedEffect(startDate) {
-        if (startDate.length == 10) {
-            viewModel.resolveDateDayOrder(startDate)
+    LaunchedEffect(leaveDate) {
+        if (leaveDate.length == 10) {
+            viewModel.resolveDateDayOrder(leaveDate)
+        }
+    }
+
+    LaunchedEffect(leaveDate, state.selectedPolicy) {
+        val policy = state.selectedPolicy
+        if (leaveDate.length == 10 && policy != null) {
+            viewModel.validateLeavePolicy(policy.id, leaveDate)
         }
     }
 
@@ -172,9 +186,9 @@ fun ApplyLeaveScreen(
         }
     }
 
-    LaunchedEffect(startDate, selectedPeriods, state.isFlexibleMode) {
-        if (state.isFlexibleMode && startDate.length == 10 && selectedPeriods.isNotEmpty()) {
-            viewModel.loadCandidatesForPeriods(startDate, selectedPeriods)
+    LaunchedEffect(leaveDate, selectedPeriods, state.isFlexibleMode) {
+        if (state.isFlexibleMode && leaveDate.length == 10 && selectedPeriods.isNotEmpty()) {
+            viewModel.loadCandidatesForPeriods(leaveDate, selectedPeriods)
         }
     }
 
@@ -199,6 +213,41 @@ fun ApplyLeaveScreen(
         ) {
             Spacer(modifier = Modifier.height(FaflowSpacing.sm))
 
+            // Same-Day Policy Cutoff Warning Banner
+            if (isSameDayPastCutoff) {
+                FaflowSurface(
+                    modifier = Modifier.fillMaxWidth(),
+                    backgroundColor = FaflowStatusColors.RejectedBg,
+                    borderColor = StatusError.copy(alpha = 0.4f),
+                    contentPadding = PaddingValues(FaflowSpacing.md)
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.Warning,
+                            contentDescription = null,
+                            tint = StatusError,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(FaflowSpacing.sm))
+                        Column {
+                            Text(
+                                text = "Same-Day Cutoff Passed ($sameDayCutoff)",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = StatusError
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = "As per institutional policy, same-day leaves cannot be applied after $sameDayCutoff. Please select tomorrow or a future date.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = StatusError
+                            )
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(FaflowSpacing.md))
+            }
+
             // Holiday or Operation Blocked Warning Banner
             if (state.isBlockedDate) {
                 FaflowSurface(
@@ -216,7 +265,7 @@ fun ApplyLeaveScreen(
                         )
                         Spacer(modifier = Modifier.width(FaflowSpacing.sm))
                         Text(
-                            text = "${startDate} is marked as a ${state.dayType ?: "Non-Working Day"}. Classes are not scheduled, so leave cannot be submitted.",
+                            text = "${leaveDate} is marked as a ${state.dayType ?: "Non-Working Day"}. Classes are not scheduled, so leave cannot be submitted.",
                             style = MaterialTheme.typography.bodySmall,
                             fontWeight = FontWeight.SemiBold,
                             color = StatusError
@@ -241,7 +290,7 @@ fun ApplyLeaveScreen(
                         )
                         Spacer(modifier = Modifier.width(FaflowSpacing.sm))
                         Text(
-                            text = "A leave request is already recorded for $startDate${if (state.existingLeavePeriods.isNotEmpty()) " (Periods: ${state.existingLeavePeriods.sorted().joinToString()})" else ""}. Please review your leave history before submitting again.",
+                            text = "A leave request is already recorded for $leaveDate${if (state.existingLeavePeriods.isNotEmpty()) " (Periods: ${state.existingLeavePeriods.sorted().joinToString()})" else ""}. Please review your leave history before submitting again.",
                             style = MaterialTheme.typography.bodySmall,
                             fontWeight = FontWeight.SemiBold,
                             color = MaterialTheme.colorScheme.onSurface
@@ -282,6 +331,202 @@ fun ApplyLeaveScreen(
                     color = StatusError,
                     modifier = Modifier.padding(bottom = FaflowSpacing.sm)
                 )
+            }
+
+            // Institutional Leave Policy Selector
+            Text(
+                text = "Institutional Leave Policy",
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Spacer(modifier = Modifier.height(FaflowSpacing.xs))
+
+            val policies = if (state.activePolicies.isNotEmpty()) state.activePolicies else listOf(
+                com.governence.faflow.core.network.LeavePolicyOutDto(id = 1, code = "AL", name = "Applied Leave", entitlementDays = 12.0),
+                com.governence.faflow.core.network.LeavePolicyOutDto(id = 2, code = "IL", name = "Informed Leave", entitlementDays = 2.0, entitlementPeriod = "SEMESTER"),
+                com.governence.faflow.core.network.LeavePolicyOutDto(id = 3, code = "ML", name = "Medical Leave", entitlementDays = 5.0, requiresDocument = true),
+                com.governence.faflow.core.network.LeavePolicyOutDto(id = 4, code = "WL", name = "Wedding Leave", entitlementDays = 5.0),
+                com.governence.faflow.core.network.LeavePolicyOutDto(id = 5, code = "VL", name = "Vacation Leave", entitlementDays = 10.0),
+                com.governence.faflow.core.network.LeavePolicyOutDto(id = 6, code = "OOD", name = "Official On Duty", entitlementDays = 10.0)
+            )
+
+            FlowRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                policies.forEach { policy ->
+                    val isSelected = (state.selectedPolicy?.id == policy.id) || (state.selectedPolicy == null && policy.code == "AL")
+                    val bal = state.leaveBalancesSummary?.balances?.find { it.policyCode == policy.code || it.policyId == policy.id }
+
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(if (isSelected) com.governence.faflow.ui.theme.PrimaryBlue else Color.White)
+                            .border(
+                                width = if (isSelected) 2.dp else 1.dp,
+                                color = if (isSelected) com.governence.faflow.ui.theme.PrimaryBlue else com.governence.faflow.ui.theme.FaflowBorder,
+                                shape = RoundedCornerShape(12.dp)
+                            )
+                            .clickable {
+                                viewModel.selectPolicy(policy, leaveDate)
+                                leaveType = policy.name
+                            }
+                            .padding(horizontal = 12.dp, vertical = 8.dp)
+                    ) {
+                        Column {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Text(
+                                    text = policy.code,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurface
+                                )
+                                Text(
+                                    text = "${bal?.remaining ?: policy.entitlementDays.toInt()}d left",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = if (isSelected) Color.White.copy(alpha = 0.9f) else com.governence.faflow.ui.theme.PrimaryBlue
+                                )
+                            }
+                            Text(
+                                text = policy.name,
+                                style = MaterialTheme.typography.bodySmall,
+                                fontSize = 10.sp,
+                                color = if (isSelected) Color.White.copy(alpha = 0.8f) else Color.Gray
+                            )
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(FaflowSpacing.sm))
+
+            // Dynamic Policy Intelligence Card
+            state.validationResult?.let { valRes ->
+                val isBlocked = valRes.enforcementMode.equals("STRICT", ignoreCase = true) && !valRes.allowed
+                val isWarning = valRes.requiresWarning
+
+                val bgColor = when {
+                    isBlocked -> FaflowStatusColors.RejectedBg
+                    isWarning -> Color(0xFFFEF3C7)
+                    else -> Color(0xFFF0FDF4)
+                }
+                val borderColor = when {
+                    isBlocked -> StatusError.copy(alpha = 0.5f)
+                    isWarning -> Color(0xFFF59E0B)
+                    else -> Color(0xFF86EFAC)
+                }
+
+                FaflowSurface(
+                    modifier = Modifier.fillMaxWidth(),
+                    backgroundColor = bgColor,
+                    borderColor = borderColor,
+                    contentPadding = PaddingValues(FaflowSpacing.sm)
+                ) {
+                    Column {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = if (isBlocked) Icons.Default.Block else if (isWarning) Icons.Default.Warning else Icons.Default.Check,
+                                contentDescription = null,
+                                tint = if (isBlocked) StatusError else if (isWarning) Color(0xFFB45309) else Color(0xFF16A34A),
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(FaflowSpacing.xs))
+                            Text(
+                                text = when {
+                                    isBlocked -> "LEAVE REQUEST BLOCKED (STRICT MODE)"
+                                    isWarning -> "POLICY WARNING (ADVISORY MODE)"
+                                    else -> "${valRes.policyName} Policy Validated"
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.Bold,
+                                color = if (isBlocked) StatusError else if (isWarning) Color(0xFF92400E) else Color(0xFF15803D)
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(FaflowSpacing.xs))
+
+                        if (isBlocked) {
+                            Text(
+                                text = valRes.message ?: "This leave request exceeds policy limits and is blocked under Strict Enforcement.",
+                                style = MaterialTheme.typography.bodySmall,
+                                fontSize = 11.sp,
+                                color = StatusError
+                            )
+                            valRes.violations.forEach { violation ->
+                                Text(
+                                    text = "• ${violation.message}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontSize = 11.sp,
+                                    color = StatusError,
+                                    modifier = Modifier.padding(start = 8.dp, top = 2.dp)
+                                )
+                            }
+                        } else if (isWarning) {
+                            Text(
+                                text = valRes.message ?: "Leave exceeds allocated policy entitlement or limits. Permitted under Advisory Mode with acknowledgement and HOD exception review.",
+                                style = MaterialTheme.typography.bodySmall,
+                                fontSize = 11.sp,
+                                color = Color(0xFF92400E)
+                            )
+                            valRes.violations.forEach { violation ->
+                                Text(
+                                    text = "• ${violation.message}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontSize = 11.sp,
+                                    color = Color(0xFF92400E),
+                                    modifier = Modifier.padding(start = 8.dp, top = 2.dp)
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.height(FaflowSpacing.xs))
+
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(Color.White.copy(alpha = 0.8f))
+                                    .clickable {
+                                        viewModel.setPolicyWarningAcknowledged(!state.policyWarningAcknowledged)
+                                    }
+                                    .padding(FaflowSpacing.xs)
+                            ) {
+                                Checkbox(
+                                    checked = state.policyWarningAcknowledged,
+                                    onCheckedChange = { viewModel.setPolicyWarningAcknowledged(it) },
+                                    colors = CheckboxDefaults.colors(
+                                        checkedColor = Color(0xFFD97706),
+                                        checkmarkColor = Color.White
+                                    ),
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(modifier = Modifier.width(FaflowSpacing.xs))
+                                Text(
+                                    text = "I understand this leave violates policy and acknowledge the warning for HOD exception review.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = Color(0xFF78350F)
+                                )
+                            }
+                        } else {
+                            Text(
+                                text = "Current: ${valRes.remainingBefore}d · Projected: ${valRes.projectedRemaining}d (Deducts upon leave consumption)",
+                                style = MaterialTheme.typography.bodySmall,
+                                fontSize = 11.sp,
+                                color = Color(0xFF166534)
+                            )
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(FaflowSpacing.sm))
             }
 
             // Mode Selector: Whole Day vs Custom Periods
@@ -392,81 +637,94 @@ fun ApplyLeaveScreen(
 
             Spacer(modifier = Modifier.height(FaflowSpacing.md))
 
-            // Start Date and End Date Fields
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "Start Date (YYYY-MM-DD)",
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Spacer(modifier = Modifier.height(FaflowSpacing.xs))
-                    OutlinedTextField(
-                        value = startDate,
-                        onValueChange = {
-                            startDate = it
-                            if (endDate < it) {
-                                endDate = it
-                            }
-                        },
-                        singleLine = true,
-                        shape = FaflowShapes.medium,
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = PrimaryBlue,
-                            unfocusedBorderColor = com.governence.faflow.ui.theme.FaflowBorder,
-                            focusedContainerColor = Color.White,
-                            unfocusedContainerColor = Color.White
-                        ),
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
+            // Leave Date Field
+            Text(
+                text = "Leave Date (YYYY-MM-DD)",
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Spacer(modifier = Modifier.height(FaflowSpacing.xs))
+            OutlinedTextField(
+                value = leaveDate,
+                onValueChange = { leaveDate = it },
+                singleLine = true,
+                isError = isSameDayPastCutoff,
+                shape = FaflowShapes.medium,
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = PrimaryBlue,
+                    unfocusedBorderColor = if (isSameDayPastCutoff) StatusError else com.governence.faflow.ui.theme.FaflowBorder,
+                    errorBorderColor = StatusError,
+                    focusedContainerColor = Color.White,
+                    unfocusedContainerColor = Color.White
+                ),
+                modifier = Modifier.fillMaxWidth()
+            )
 
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "End Date (YYYY-MM-DD)",
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Spacer(modifier = Modifier.height(FaflowSpacing.xs))
-                    OutlinedTextField(
-                        value = endDate,
-                        onValueChange = { endDate = it },
-                        singleLine = true,
-                        isError = isDateRangeInvalid,
-                        shape = FaflowShapes.medium,
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = PrimaryBlue,
-                            unfocusedBorderColor = if (isDateRangeInvalid) StatusError else com.governence.faflow.ui.theme.FaflowBorder,
-                            errorBorderColor = StatusError,
-                            focusedContainerColor = Color.White,
-                            unfocusedContainerColor = Color.White
-                        ),
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
-            }
-
-            if (isDateRangeInvalid) {
-                Spacer(modifier = Modifier.height(FaflowSpacing.xs))
+            if (isSameDayPastCutoff) {
+                Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "End date cannot be earlier than start date",
+                    text = "Cannot apply for today after $sameDayCutoff as per institutional policy. Please select tomorrow or a later date.",
                     style = MaterialTheme.typography.bodySmall,
                     fontWeight = FontWeight.SemiBold,
                     color = StatusError
                 )
-            } else if (durationDays > 1) {
-                Spacer(modifier = Modifier.height(FaflowSpacing.xs))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    FaflowStatusBadge(
-                        text = "$durationDays Days Duration",
-                        statusColor = PrimaryBlue,
-                        showDot = true
+            }
+
+            Spacer(modifier = Modifier.height(FaflowSpacing.xs))
+
+            // Quick Date Selection Chips
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                val tomorrowCal = Calendar.getInstance().apply { add(Calendar.DAY_OF_MONTH, 1) }
+                val tomorrowStr = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(tomorrowCal.time)
+                val isTomorrow = leaveDate == tomorrowStr
+
+                Box(
+                    modifier = Modifier
+                        .clip(FaflowShapes.pill)
+                        .background(if (isTomorrow) com.governence.faflow.ui.theme.FaflowNavy else Color.White)
+                        .border(
+                            width = 1.dp,
+                            color = if (isTomorrow) Color.Transparent else com.governence.faflow.ui.theme.FaflowBorder,
+                            shape = FaflowShapes.pill
+                        )
+                        .clickable { leaveDate = tomorrowStr }
+                        .padding(horizontal = 12.dp, vertical = 6.dp)
+                ) {
+                    Text(
+                        text = "Tomorrow ($tomorrowStr)",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = if (isTomorrow) FontWeight.Bold else FontWeight.Medium,
+                        color = if (isTomorrow) Color.White else MaterialTheme.colorScheme.onSurface
                     )
+                }
+
+                val nowCal = Calendar.getInstance()
+                val isNowPastCutoff = (nowCal.get(Calendar.HOUR_OF_DAY) * 60 + nowCal.get(Calendar.MINUTE)) >= (cutoffHour * 60 + cutoffMinute)
+                if (!isNowPastCutoff) {
+                    val isToday = leaveDate == todayStr
+                    Box(
+                        modifier = Modifier
+                            .clip(FaflowShapes.pill)
+                            .background(if (isToday) com.governence.faflow.ui.theme.FaflowNavy else Color.White)
+                            .border(
+                                width = 1.dp,
+                                color = if (isToday) Color.Transparent else com.governence.faflow.ui.theme.FaflowBorder,
+                                shape = FaflowShapes.pill
+                            )
+                            .clickable { leaveDate = todayStr }
+                            .padding(horizontal = 12.dp, vertical = 6.dp)
+                    ) {
+                        Text(
+                            text = "Today ($todayStr)",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = if (isToday) FontWeight.Bold else FontWeight.Medium,
+                            color = if (isToday) Color.White else MaterialTheme.colorScheme.onSurface
+                        )
+                    }
                 }
             }
 
@@ -657,6 +915,53 @@ fun ApplyLeaveScreen(
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
+
+                        val errorMsg = state.errorMessage
+                        if (!errorMsg.isNullOrBlank()) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            FaflowSurface(
+                                modifier = Modifier.fillMaxWidth(),
+                                backgroundColor = Color(0xFFFEF2F2),
+                                borderColor = Color(0xFFFECACA),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Row(
+                                        modifier = Modifier.weight(1f),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Warning,
+                                            contentDescription = null,
+                                            tint = Color(0xFFDC2626),
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text(
+                                            text = errorMsg,
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Medium,
+                                            color = Color(0xFF991B1B)
+                                        )
+                                    }
+                                    IconButton(
+                                        onClick = { viewModel.dismissErrorMessage() },
+                                        modifier = Modifier.size(24.dp)
+                                    ) {
+                                        Icon(
+                                            Icons.Default.Close,
+                                            contentDescription = "Dismiss",
+                                            tint = Color(0xFF991B1B),
+                                            modifier = Modifier.size(14.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
 
@@ -689,7 +994,7 @@ fun ApplyLeaveScreen(
                                     if (isCross) com.governence.faflow.ui.theme.FaflowNavy else Color(0xFFCBD5E1),
                                     FaflowShapes.pill
                                 )
-                                .clickable { viewModel.toggleCrossDepartment(startDate, selectedPeriods) }
+                                .clickable { viewModel.toggleCrossDepartment(leaveDate, selectedPeriods) }
                                 .padding(horizontal = 10.dp, vertical = 7.dp),
                             contentAlignment = Alignment.Center
                         ) {
@@ -702,7 +1007,7 @@ fun ApplyLeaveScreen(
                                 )
                                 Spacer(modifier = Modifier.width(4.dp))
                                 Text(
-                                    text = "Cross Dept",
+                                    text = if (isCross) "Cross Dept: ON" else "Cross Dept: OFF",
                                     fontSize = 11.sp,
                                     fontWeight = if (isCross) FontWeight.Bold else FontWeight.SemiBold,
                                     color = if (isCross) Color.White else Color(0xFF334155)
@@ -716,13 +1021,13 @@ fun ApplyLeaveScreen(
                             modifier = Modifier
                                 .weight(1f)
                                 .clip(FaflowShapes.pill)
-                                .background(if (isClassOnly) com.governence.faflow.ui.theme.FaflowNavy else Color(0xFFF1F5F9))
+                                .background(if (isClassOnly) Color(0xFFD97706) else Color(0xFFF1F5F9))
                                 .border(
                                     1.dp,
-                                    if (isClassOnly) com.governence.faflow.ui.theme.FaflowNavy else Color(0xFFCBD5E1),
+                                    if (isClassOnly) Color(0xFFB45309) else Color(0xFFCBD5E1),
                                     FaflowShapes.pill
                                 )
-                                .clickable { viewModel.toggleOnlyHandlesClass(startDate, selectedPeriods) }
+                                .clickable { viewModel.toggleOnlyHandlesClass(leaveDate, selectedPeriods) }
                                 .padding(horizontal = 10.dp, vertical = 7.dp),
                             contentAlignment = Alignment.Center
                         ) {
@@ -735,7 +1040,7 @@ fun ApplyLeaveScreen(
                                 )
                                 Spacer(modifier = Modifier.width(4.dp))
                                 Text(
-                                    text = "Same Class",
+                                    text = if (isClassOnly) "Same Class: ON" else "Same Class: OFF",
                                     fontSize = 11.sp,
                                     fontWeight = if (isClassOnly) FontWeight.Bold else FontWeight.SemiBold,
                                     color = if (isClassOnly) Color.White else Color(0xFF334155)
@@ -916,33 +1221,62 @@ fun ApplyLeaveScreen(
                                         }
                                     }
 
-                                    // Expandable Candidates Drawer
+                                    // Expandable Candidates Drawer (Matches web ApplyLeave drawer)
                                     if (isExpanded) {
-                                        Spacer(modifier = Modifier.height(12.dp))
+                                        Spacer(modifier = Modifier.height(10.dp))
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .height(1.dp)
+                                                .background(Color(0xFFF1F5F9))
+                                        )
+                                        Spacer(modifier = Modifier.height(10.dp))
 
-                                        // Drawer Sub-Header
+                                        // Drawer Sub-Header (Sparkles + Recommended Candidates + Ranked by score & workload)
                                         Row(
                                             modifier = Modifier.fillMaxWidth(),
                                             horizontalArrangement = Arrangement.SpaceBetween,
                                             verticalAlignment = Alignment.CenterVertically
                                         ) {
-                                            Text(
-                                                text = "RECOMMENDED FACULTY (${matchingCandidates.size})",
-                                                fontSize = 10.sp,
-                                                fontWeight = FontWeight.Bold,
-                                                color = Color(0xFF475569),
-                                                letterSpacing = 0.5.sp
-                                            )
-                                            if (pickedId != null) {
-                                                Text(
-                                                    text = "Clear Selection",
-                                                    fontSize = 10.sp,
-                                                    fontWeight = FontWeight.Bold,
-                                                    color = Color(0xFFE11D48),
-                                                    modifier = Modifier.clickable {
-                                                        viewModel.clearSubstituteForPeriod(period)
-                                                    }
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(5.dp)
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.Star,
+                                                    contentDescription = null,
+                                                    tint = PrimaryBlue,
+                                                    modifier = Modifier.size(15.dp)
                                                 )
+                                                Text(
+                                                    text = "RECOMMENDED CANDIDATES (${matchingCandidates.size})",
+                                                    fontSize = 11.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = Color(0xFF475569),
+                                                    letterSpacing = 0.5.sp
+                                                )
+                                            }
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                            ) {
+                                                Text(
+                                                    text = "Ranked by score & workload",
+                                                    fontSize = 10.sp,
+                                                    color = Color(0xFF94A3B8),
+                                                    fontWeight = FontWeight.Medium
+                                                )
+                                                if (pickedId != null) {
+                                                    Text(
+                                                        text = "Clear Selection",
+                                                        fontSize = 10.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = Color(0xFFE11D48),
+                                                        modifier = Modifier.clickable {
+                                                            viewModel.clearSubstituteForPeriod(period)
+                                                        }
+                                                    )
+                                                }
                                             }
                                         }
 
@@ -955,19 +1289,40 @@ fun ApplyLeaveScreen(
                                                     .clip(RoundedCornerShape(10.dp))
                                                     .background(Color(0xFFFFFBEB))
                                                     .border(1.dp, Color(0xFFFDE68A), RoundedCornerShape(10.dp))
-                                                    .padding(10.dp)
+                                                    .padding(12.dp)
                                             ) {
-                                                Text(
-                                                    text = if (state.isLoadingCandidates)
-                                                        "Loading candidates for Period $period…"
-                                                    else if (query.isNotBlank())
-                                                        "No faculty matching \"$query\" found for Period P$period."
-                                                    else
-                                                        "No free faculty found for Period P$period. Try enabling Cross-Department.",
-                                                    style = MaterialTheme.typography.bodySmall,
-                                                    fontSize = 11.sp,
-                                                    color = Color(0xFF92400E)
-                                                )
+                                                Column {
+                                                    val emptyMessage = when {
+                                                        state.isLoadingCandidates ->
+                                                            "Finding eligible substitute candidates for Period P$period…"
+                                                        query.isNotBlank() ->
+                                                            "No faculty matching \"$query\" found for Period P$period."
+                                                        state.onlyHandlesClass ->
+                                                            "No other faculty in your department teaches this specific class for Period P$period."
+                                                        state.includeCrossDepartment ->
+                                                            "No eligible faculty found across departments for Period P$period."
+                                                        else ->
+                                                            "No free faculty found in your department for Period P$period."
+                                                    }
+                                                    Text(
+                                                        text = emptyMessage,
+                                                        style = MaterialTheme.typography.bodySmall,
+                                                        fontSize = 11.sp,
+                                                        color = Color(0xFF92400E)
+                                                    )
+                                                    if (state.onlyHandlesClass && !state.isLoadingCandidates && query.isBlank()) {
+                                                        Spacer(modifier = Modifier.height(6.dp))
+                                                        Text(
+                                                            text = "Turn off \"Same Class\" to see all available department faculty →",
+                                                            fontSize = 11.sp,
+                                                            fontWeight = FontWeight.Bold,
+                                                            color = PrimaryBlue,
+                                                            modifier = Modifier.clickable {
+                                                                viewModel.toggleOnlyHandlesClass(leaveDate, selectedPeriods)
+                                                            }
+                                                        )
+                                                    }
+                                                }
                                             }
                                         } else {
                                             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -1094,8 +1449,15 @@ fun ApplyLeaveScreen(
             val isFlexibleCoverageOk = !state.isFlexibleMode || selectedPeriods.all { p ->
                 state.selectedSubstitutePerPeriod.containsKey(p)
             }
-            val isSubmitEnabled = !isDateRangeInvalid && selectedPeriods.isNotEmpty() &&
-                    !state.isBlockedDate && !hasConflict && isFlexibleCoverageOk && (!attemptedSubmit || reason.isNotBlank())
+            val isPolicyBlocked = state.validationResult?.let {
+                it.enforcementMode.equals("STRICT", ignoreCase = true) && !it.allowed
+            } ?: false
+            val isWarningPending = state.validationResult?.let {
+                it.requiresWarning && !state.policyWarningAcknowledged
+            } ?: false
+            val isPolicyAllowed = !isPolicyBlocked && !isWarningPending
+            val isSubmitEnabled = !isSameDayPastCutoff && selectedPeriods.isNotEmpty() &&
+                    !state.isBlockedDate && !hasConflict && isFlexibleCoverageOk && isPolicyAllowed && (!attemptedSubmit || reason.isNotBlank())
 
             if (state.isLoading) {
                 CircularProgressIndicator(
@@ -1105,14 +1467,16 @@ fun ApplyLeaveScreen(
                 )
             } else {
                 val buttonText = when {
-                    isDateRangeInvalid ->
-                        "Invalid Date Range"
-                    state.isTimetableLoaded && state.teacherSlots.isNotEmpty() && state.scheduledPeriodsForDate.isEmpty() && isWholeDay && !isMultiDay ->
+                    isSameDayPastCutoff ->
+                        "Cutoff Passed ($sameDayCutoff)"
+                    isPolicyBlocked ->
+                        state.validationResult?.message ?: "Blocked by Leave Policy"
+                    isWarningPending ->
+                        "Acknowledge Policy Warning to Submit"
+                    state.isTimetableLoaded && state.teacherSlots.isNotEmpty() && state.scheduledPeriodsForDate.isEmpty() && isWholeDay ->
                         "No Scheduled Classes to Cover"
                     selectedPeriods.isEmpty() ->
                         "Select Absence Period"
-                    isMultiDay ->
-                        "Submit $leaveType ($durationDays Days)"
                     isWholeDay && selectedPeriods.size == 1 ->
                         "Submit $leaveType (1 Period Covered)"
                     isWholeDay ->
@@ -1130,7 +1494,7 @@ fun ApplyLeaveScreen(
                             attemptedSubmit = true
                             return@FaflowPillButton
                         }
-                        if (isDateRangeInvalid) {
+                        if (isSameDayPastCutoff) {
                             return@FaflowPillButton
                         }
                         val periodsList = selectedPeriods.toList().sorted()
@@ -1140,16 +1504,26 @@ fun ApplyLeaveScreen(
                                 .ifEmpty { null }
                         } else null
 
-                        viewModel.submitLeaveRange(
-                            startDate = startDate,
-                            endDate = endDate,
-                            leaveType = leaveType,
-                            reason = reason,
-                            selectedPeriods = periodsList,
-                            isWholeDay = isWholeDay || isMultiDay,
-                            onComplete = onLeaveSubmitted,
-                            periodSubstitutes = periodSubstitutes
-                        )
+                        val formattedReason = if (leaveType.isNotBlank()) "[$leaveType] $reason".trim() else reason
+                        if (isWholeDay || periodsList.size > 1) {
+                            viewModel.submitLeaveBatch(
+                                date = leaveDate,
+                                periodNumbers = periodsList,
+                                reason = formattedReason,
+                                onComplete = onLeaveSubmitted,
+                                periodSubstitutes = periodSubstitutes,
+                                wholeDay = isWholeDay
+                            )
+                        } else {
+                            val proposedId = periodSubstitutes?.values?.firstOrNull()
+                            viewModel.submitLeave(
+                                date = leaveDate,
+                                periodNumber = periodsList.firstOrNull() ?: 1,
+                                reason = formattedReason,
+                                onComplete = onLeaveSubmitted,
+                                proposedSubstituteId = proposedId
+                            )
+                        }
                     },
                     enabled = isSubmitEnabled,
                     isPrimary = true,
@@ -1193,7 +1567,7 @@ private fun RecommendationCard(
     val projCont = candidate.resolvedProjCont
     val hasContinuousWarning = candidate.hasContinuousWarning
     val todayPeriods = candidate.todayPeriods
-    val subsWeek = candidate.substitutionsWeek ?: 0
+    val subsWeek = candidate.resolvedSubsWeek
 
     val tierBgColor = when (tier) {
         "EXCELLENT" -> Color(0xFFD1FAE5)

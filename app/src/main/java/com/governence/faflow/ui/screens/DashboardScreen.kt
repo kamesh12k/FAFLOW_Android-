@@ -467,8 +467,9 @@ fun DashboardScreen(
                                                         )
                                                     }
                                                 }
+                                                val roomDisplay = if (currentSlot.roomNumber.startsWith("Room", ignoreCase = true)) currentSlot.roomNumber else "Room ${currentSlot.roomNumber}"
                                                 Text(
-                                                    text = "Room ${currentSlot.roomNumber}",
+                                                    text = roomDisplay,
                                                     fontSize = 12.sp,
                                                     fontWeight = FontWeight.Bold,
                                                     color = com.governence.faflow.ui.theme.FaflowText1
@@ -597,8 +598,9 @@ fun DashboardScreen(
                                                         color = com.governence.faflow.ui.theme.FaflowText2
                                                     )
                                                 }
+                                                val upRoomDisplay = if (upcoming.roomNumber.startsWith("Room", ignoreCase = true)) upcoming.roomNumber else "Room ${upcoming.roomNumber}"
                                                 Text(
-                                                    text = "Room ${upcoming.roomNumber}",
+                                                    text = upRoomDisplay,
                                                     fontSize = 12.sp,
                                                     fontWeight = FontWeight.Bold,
                                                     color = com.governence.faflow.ui.theme.FaflowText1
@@ -748,9 +750,19 @@ fun DashboardScreen(
                                             }
                                             Spacer(modifier = Modifier.width(FaflowSpacing.md))
                                             Column(modifier = Modifier.weight(1f)) {
+                                                val classTitle = if (slot.section.isNotBlank() && !slot.className.contains(slot.section)) {
+                                                    "${slot.className} (${slot.section})"
+                                                } else {
+                                                    slot.className
+                                                }
+                                                val roomDisplay = if (slot.roomNumber.startsWith("Room", ignoreCase = true)) {
+                                                    slot.roomNumber
+                                                } else {
+                                                    if (slot.roomNumber.startsWith("Room", ignoreCase = true)) slot.roomNumber else "Room ${slot.roomNumber}"
+                                                }
                                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                                     Text(
-                                                        text = if (slot.subjectCode.isNotBlank()) "${slot.subjectName} (${slot.subjectCode})" else slot.subjectName,
+                                                        text = classTitle,
                                                         style = MaterialTheme.typography.titleSmall,
                                                         fontWeight = FontWeight.SemiBold,
                                                         color = MaterialTheme.colorScheme.onSurface
@@ -764,8 +776,14 @@ fun DashboardScreen(
                                                         )
                                                     }
                                                 }
+                                                val subjectDisplay = slot.subjectName.ifBlank { slot.subjectCode }
+                                                val detailsText = buildList {
+                                                    if (subjectDisplay.isNotBlank()) add(subjectDisplay)
+                                                    add(roomDisplay)
+                                                    if (periodTimeRange.isNotBlank()) add(periodTimeRange)
+                                                }.joinToString(" • ")
                                                 Text(
-                                                    text = "${slot.className} (${slot.section}) • Room ${slot.roomNumber}${if (periodTimeRange.isNotBlank()) " • $periodTimeRange" else ""}",
+                                                    text = detailsText,
                                                     style = MaterialTheme.typography.bodySmall,
                                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                                 )

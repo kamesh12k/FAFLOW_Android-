@@ -127,7 +127,11 @@ data class LeaveCreateDto(
     @Json(name = "date") val date: String,
     @Json(name = "period_number") val periodNumber: Int,
     @Json(name = "reason") val reason: String,
-    @Json(name = "proposed_substitute_id") val proposedSubstituteId: Int? = null
+    @Json(name = "proposed_substitute_id") val proposedSubstituteId: Int? = null,
+    @Json(name = "leave_policy_id") val leavePolicyId: Int? = null,
+    @Json(name = "leave_type") val leaveType: String? = null,
+    @Json(name = "document_url") val documentUrl: String? = null,
+    @Json(name = "policy_warning_acknowledged") val policyWarningAcknowledged: Boolean = false
 )
 
 @JsonClass(generateAdapter = true)
@@ -136,7 +140,11 @@ data class LeaveBatchCreateDto(
     @Json(name = "period_numbers") val periodNumbers: List<Int>? = null,
     @Json(name = "whole_day") val wholeDay: Boolean? = null,
     @Json(name = "reason") val reason: String,
-    @Json(name = "period_substitutes") val periodSubstitutes: Map<String, Int>? = null
+    @Json(name = "period_substitutes") val periodSubstitutes: Map<String, Int>? = null,
+    @Json(name = "leave_policy_id") val leavePolicyId: Int? = null,
+    @Json(name = "leave_type") val leaveType: String? = null,
+    @Json(name = "document_url") val documentUrl: String? = null,
+    @Json(name = "policy_warning_acknowledged") val policyWarningAcknowledged: Boolean = false
 )
 
 @JsonClass(generateAdapter = true)
@@ -154,7 +162,143 @@ data class LeaveOutDto(
     @Json(name = "batch_id") val batchId: String? = null,
     @Json(name = "alter_assignment") val alterAssignment: AlterAssignmentOutDto? = null,
     @Json(name = "proposed_substitute_id") val proposedSubstituteId: Int? = null,
-    @Json(name = "proposed_substitute") val proposedSubstitute: ProposedSubstituteDto? = null
+    @Json(name = "proposed_substitute") val proposedSubstitute: ProposedSubstituteDto? = null,
+    @Json(name = "leave_policy_id") val leavePolicyId: Int? = null,
+    @Json(name = "leave_type") val leaveType: String? = null,
+    @Json(name = "consumed_at") val consumedAt: String? = null,
+    @Json(name = "document_url") val documentUrl: String? = null,
+    @Json(name = "leave_policy") val leavePolicy: LeavePolicyOutDto? = null,
+    @Json(name = "policy_compliant") val policyCompliant: Boolean? = true,
+    @Json(name = "policy_violation") val policyViolation: Boolean? = false,
+    @Json(name = "policy_enforcement_mode") val policyEnforcementMode: String? = null,
+    @Json(name = "policy_warning_acknowledged") val policyWarningAcknowledged: Boolean? = false,
+    @Json(name = "exception_reason") val exceptionReason: String? = null
+)
+
+// ---------- Leave Policy & Balance DTOs ----------
+
+@JsonClass(generateAdapter = true)
+data class LeavePolicyOutDto(
+    @Json(name = "id") val id: Int,
+    @Json(name = "name") val name: String,
+    @Json(name = "code") val code: String,
+    @Json(name = "description") val description: String? = null,
+    @Json(name = "entitlement_days") val entitlementDays: Double = 0.0,
+    @Json(name = "entitlement_period") val entitlementPeriod: String = "YEAR",
+    @Json(name = "max_consecutive_days") val maxConsecutiveDays: Int? = null,
+    @Json(name = "max_per_month") val maxPerMonth: Int? = null,
+    @Json(name = "requires_document") val requiresDocument: Boolean = false,
+    @Json(name = "requires_prior_notice_days") val requiresPriorNoticeDays: Int = 0,
+    @Json(name = "is_active") val isActive: Boolean = true
+)
+
+@JsonClass(generateAdapter = true)
+data class TeacherPolicyBalanceDto(
+    @Json(name = "id") val id: Int,
+    @Json(name = "policy_id") val policyId: Int,
+    @Json(name = "policy_code") val policyCode: String,
+    @Json(name = "policy_name") val policyName: String,
+    @Json(name = "entitlement") val entitlement: Double = 0.0,
+    @Json(name = "consumed") val consumed: Double = 0.0,
+    @Json(name = "pending") val pending: Double = 0.0,
+    @Json(name = "remaining") val remaining: Double = 0.0,
+    @Json(name = "period") val period: String = "YEAR",
+    @Json(name = "max_per_month") val maxPerMonth: Int? = null,
+    @Json(name = "requires_document") val requiresDocument: Boolean = false
+)
+
+@JsonClass(generateAdapter = true)
+data class TeacherLeaveBalanceSummaryDto(
+    @Json(name = "teacher_id") val teacherId: Int,
+    @Json(name = "academic_year") val academicYear: String,
+    @Json(name = "balances") val balances: List<TeacherPolicyBalanceDto> = emptyList(),
+    @Json(name = "total_entitled") val totalEntitled: Double = 0.0,
+    @Json(name = "total_consumed") val totalConsumed: Double = 0.0,
+    @Json(name = "total_remaining") val totalRemaining: Double = 0.0
+)
+
+@JsonClass(generateAdapter = true)
+data class LeaveValidationRequestDto(
+    @Json(name = "policy_id") val policyId: Int,
+    @Json(name = "date") val date: String,
+    @Json(name = "days") val days: Double = 1.0,
+    @Json(name = "consecutive_days") val consecutiveDays: Int = 1
+)
+
+@JsonClass(generateAdapter = true)
+data class LeaveValidationOutDto(
+    @Json(name = "allowed") val allowed: Boolean = true,
+    @Json(name = "message") val message: String? = null,
+    @Json(name = "policy_code") val policyCode: String = "",
+    @Json(name = "policy_name") val policyName: String = "",
+    @Json(name = "remaining_before") val remainingBefore: Double = 0.0,
+    @Json(name = "projected_remaining") val projectedRemaining: Double = 0.0,
+    @Json(name = "monthly_limit_reached") val monthlyLimitReached: Boolean = false,
+    @Json(name = "requires_document") val requiresDocument: Boolean = false,
+    @Json(name = "enforcement_mode") val enforcementMode: String = "STRICT",
+    @Json(name = "requires_warning") val requiresWarning: Boolean = false,
+    @Json(name = "violations") val violations: List<PolicyViolationItemDto> = emptyList()
+)
+
+@JsonClass(generateAdapter = true)
+data class PolicyViolationItemDto(
+    @Json(name = "policy_id") val policyId: Int? = null,
+    @Json(name = "policy_code") val policyCode: String? = null,
+    @Json(name = "policy_name") val policyName: String? = null,
+    @Json(name = "violation_type") val violationType: String = "",
+    @Json(name = "message") val message: String = "",
+    @Json(name = "advisory_allowed") val advisoryAllowed: Boolean = true
+)
+
+@JsonClass(generateAdapter = true)
+data class PolicyEvaluationResultDto(
+    @Json(name = "compliant") val compliant: Boolean = true,
+    @Json(name = "enforcement_mode") val enforcementMode: String = "STRICT",
+    @Json(name = "can_submit") val canSubmit: Boolean = true,
+    @Json(name = "requires_warning") val requiresWarning: Boolean = false,
+    @Json(name = "violations") val violations: List<PolicyViolationItemDto> = emptyList(),
+    @Json(name = "policy_id") val policyId: Int? = null,
+    @Json(name = "policy_code") val policyCode: String? = null,
+    @Json(name = "policy_name") val policyName: String? = null
+)
+
+@JsonClass(generateAdapter = true)
+data class LeavePolicyEvalRequestDto(
+    @Json(name = "leave_policy_id") val leavePolicyId: Int,
+    @Json(name = "date") val date: String,
+    @Json(name = "period_numbers") val periodNumbers: List<Int>? = null,
+    @Json(name = "whole_day") val wholeDay: Boolean = false
+)
+
+@JsonClass(generateAdapter = true)
+data class ApproveWithExceptionRequestDto(
+    @Json(name = "hod_acknowledged") val hodAcknowledged: Boolean = true,
+    @Json(name = "exception_reason") val exceptionReason: String
+)
+
+@JsonClass(generateAdapter = true)
+data class PolicyEnforcementModeResponseDto(
+    @Json(name = "mode") val mode: String = "STRICT",
+    @Json(name = "description") val description: String? = null,
+    @Json(name = "can_toggle") val canToggle: Boolean = false,
+    @Json(name = "institution_name") val institutionName: String? = null,
+    @Json(name = "is_configured") val isConfigured: Boolean = false
+)
+
+@JsonClass(generateAdapter = true)
+data class LeaveBalanceTransactionDto(
+    @Json(name = "id") val id: Int,
+    @Json(name = "teacher_id") val teacherId: Int,
+    @Json(name = "policy_id") val policyId: Int,
+    @Json(name = "policy_code") val policyCode: String? = null,
+    @Json(name = "policy_name") val policyName: String? = null,
+    @Json(name = "transaction_type") val transactionType: String,
+    @Json(name = "days") val days: Double = 0.0,
+    @Json(name = "balance_before") val balanceBefore: Double = 0.0,
+    @Json(name = "balance_after") val balanceAfter: Double = 0.0,
+    @Json(name = "leave_request_id") val leaveRequestId: Int? = null,
+    @Json(name = "reason") val reason: String? = null,
+    @Json(name = "created_at") val createdAt: String? = null
 )
 
 @JsonClass(generateAdapter = true)

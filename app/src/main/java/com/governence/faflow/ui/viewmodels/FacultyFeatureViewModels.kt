@@ -3,11 +3,14 @@ package com.governence.faflow.ui.viewmodels
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.governence.faflow.auth.data.AuthRepository
+import com.governence.faflow.core.network.LeavePolicyOutDto
+import com.governence.faflow.core.network.LeaveValidationOutDto
 import com.governence.faflow.core.network.NetworkResult
 import com.governence.faflow.core.network.NotificationOutDto
 import com.governence.faflow.core.network.RecommendationOutDto
 import com.governence.faflow.core.network.SubstitutionPreferenceOutDto
 import com.governence.faflow.core.network.SubstitutionPreferenceUpdateDto
+import com.governence.faflow.core.network.TeacherLeaveBalanceSummaryDto
 import com.governence.faflow.domain.model.CreditTransaction
 import com.governence.faflow.domain.model.LeaveHistoryDay
 import com.governence.faflow.domain.model.LeaveRequest
@@ -57,7 +60,16 @@ data class LeaveUiState(
     val teacherSlots: List<TimetableSlot> = emptyList(),
     val scheduledPeriodsForDate: Set<Int> = emptySet(),
     val scheduledSlotsForDate: List<TimetableSlot> = emptyList(),
-    val isTimetableLoaded: Boolean = false
+    val isTimetableLoaded: Boolean = false,
+    val sameDayCutoffTime: String = "09:00",
+    // Institutional Leave Policy & Balance state
+    val activePolicies: List<LeavePolicyOutDto> = emptyList(),
+    val selectedPolicy: LeavePolicyOutDto? = null,
+    val leaveBalancesSummary: TeacherLeaveBalanceSummaryDto? = null,
+    val validationResult: LeaveValidationOutDto? = null,
+    val isValidatingPolicy: Boolean = false,
+    val documentUrl: String? = null,
+    val policyWarningAcknowledged: Boolean = false
 )
 
 class LeaveViewModel(
@@ -74,6 +86,81 @@ class LeaveViewModel(
         loadMyLeaves()
         loadCampusMode()
         loadTeacherTimetable()
+        loadLeavePolicy()
+        loadActivePolicies()
+        loadLeaveBalances()
+    }
+
+    fun loadActivePolicies() {
+        viewModelScope.launch {
+            when (val res = leaveRepository.getActiveLeavePolicies()) {
+                is NetworkResult.Success -> {
+                    val policies = res.data
+                    val defaultPolicy = policies.firstOrNull { it.code == "AL" } ?: policies.firstOrNull()
+                    _uiState.value = _uiState.value.copy(
+                        activePolicies = policies,
+                        selectedPolicy = defaultPolicy
+                    )
+                }
+                else -> Unit
+            }
+        }
+    }
+
+    fun loadLeaveBalances() {
+        viewModelScope.launch {
+            when (val res = leaveRepository.getMyLeaveBalances()) {
+                is NetworkResult.Success -> {
+                    _uiState.value = _uiState.value.copy(
+                        leaveBalancesSummary = res.data
+                    )
+                }
+                else -> Unit
+            }
+        }
+    }
+
+    fun selectPolicy(policy: LeavePolicyOutDto, date: String = "") {
+        _uiState.value = _uiState.value.copy(
+            selectedPolicy = policy,
+            validationResult = null
+        )
+        if (date.isNotBlank()) {
+            validateLeavePolicy(policy.id, date)
+        }
+    }
+
+    fun validateLeavePolicy(policyId: Int, date: String, days: Double = 1.0) {
+        if (date.isBlank()) return
+        _uiState.value = _uiState.value.copy(isValidatingPolicy = true)
+        viewModelScope.launch {
+            when (val res = leaveRepository.validateLeaveApplication(policyId, date, days)) {
+                is NetworkResult.Success -> {
+                    _uiState.value = _uiState.value.copy(
+                        validationResult = res.data,
+                        isValidatingPolicy = false
+                    )
+                }
+                is NetworkResult.Error -> {
+                    _uiState.value = _uiState.value.copy(
+                        validationResult = LeaveValidationOutDto(
+                            allowed = false,
+                            message = res.message
+                        ),
+                        isValidatingPolicy = false
+                    )
+                }
+                NetworkResult.Loading -> Unit
+            }
+        }
+    }
+
+    /** Load institutional leave application cutoff time from governance policy. */
+    fun loadLeavePolicy() {
+        viewModelScope.launch {
+            val cutoff = leaveRepository.getSameDayLeaveCutoffTime()
+            _uiState.value = _uiState.value.copy(sameDayCutoffTime = cutoff)
+        }
     }
 
     /** Load complete timetable slots for the authenticated teacher. */
@@ -192,6 +279,10 @@ class LeaveViewModel(
         }
     }
 
+    fun setPolicyWarningAcknowledged(acknowledged: Boolean) {
+        _uiState.value = _uiState.value.copy(policyWarningAcknowledged = acknowledged)
+    }
+
     fun submitLeave(
         date: String,
         periodNumber: Int,
@@ -201,12 +292,19 @@ class LeaveViewModel(
     ) {
         _uiState.value = _uiState.value.copy(isLoading = true, errorMessage = null)
         viewModelScope.launch {
-            when (val res = leaveRepository.applyLeave(date, periodNumber, reason, proposedSubstituteId)) {
+            when (val res = leaveRepository.applyLeave(
+                date = date,
+                periodNumber = periodNumber,
+                reason = reason,
+                proposedSubstituteId = proposedSubstituteId,
+                policyWarningAcknowledged = _uiState.value.policyWarningAcknowledged
+            )) {
                 is NetworkResult.Success -> {
                     _uiState.value = _uiState.value.copy(
                         isLoading = false,
                         isSubmittedSuccessfully = true,
-                        selectedSubstitutePerPeriod = emptyMap()
+                        selectedSubstitutePerPeriod = emptyMap(),
+                        policyWarningAcknowledged = false
                     )
                     loadMyLeaves()
                     onComplete()
@@ -225,18 +323,37 @@ class LeaveViewModel(
         reason: String,
         onComplete: () -> Unit,
         periodSubstitutes: Map<String, Int>? = null,
-        wholeDay: Boolean = false
+        wholeDay: Boolean = false,
+        leavePolicyId: Int? = null,
+        leaveType: String? = null,
+        documentUrl: String? = null
     ) {
+        val policyIdToUse = leavePolicyId ?: _uiState.value.selectedPolicy?.id
+        val leaveTypeToUse = leaveType ?: _uiState.value.selectedPolicy?.code?.lowercase()
+        val docUrlToUse = documentUrl ?: _uiState.value.documentUrl
+
         _uiState.value = _uiState.value.copy(isLoading = true, errorMessage = null)
         viewModelScope.launch {
-            when (val res = leaveRepository.applyLeaveBatch(date, periodNumbers, reason, periodSubstitutes, wholeDay)) {
+            when (val res = leaveRepository.applyLeaveBatch(
+                date = date,
+                periodNumbers = periodNumbers,
+                reason = reason,
+                periodSubstitutes = periodSubstitutes,
+                wholeDay = wholeDay,
+                leavePolicyId = policyIdToUse,
+                leaveType = leaveTypeToUse,
+                documentUrl = docUrlToUse,
+                policyWarningAcknowledged = _uiState.value.policyWarningAcknowledged
+            )) {
                 is NetworkResult.Success -> {
                     _uiState.value = _uiState.value.copy(
                         isLoading = false,
                         isSubmittedSuccessfully = true,
-                        selectedSubstitutePerPeriod = emptyMap()
+                        selectedSubstitutePerPeriod = emptyMap(),
+                        policyWarningAcknowledged = false
                     )
                     loadMyLeaves()
+                    loadLeaveBalances()
                     onComplete()
                 }
                 is NetworkResult.Error -> {
@@ -302,7 +419,8 @@ class LeaveViewModel(
                             periodNumbers = selectedPeriods.ifEmpty { listOf(1, 2, 3, 4, 5) },
                             reason = formattedReason,
                             periodSubstitutes = null,
-                            wholeDay = true
+                            wholeDay = true,
+                            policyWarningAcknowledged = _uiState.value.policyWarningAcknowledged
                         )
                         if (res is NetworkResult.Error) {
                             anyFailure = if (successCount > 0) {
@@ -382,33 +500,68 @@ class LeaveViewModel(
         _uiState.value = _uiState.value.copy(isLoadingCandidates = true)
         viewModelScope.launch {
             val currentMap = _uiState.value.candidatesPerPeriod.toMutableMap()
+            var crossDeptForbidden = false
+
             for (period in periods) {
                 when (val res = leaveRepository.getSlotCandidates(date, period, crossDept, handlesClass)) {
                     is NetworkResult.Success -> {
                         currentMap[period] = res.data
                     }
-                    is NetworkResult.Error -> Unit
+                    is NetworkResult.Error -> {
+                        if (res.code == 403 && crossDept) {
+                            crossDeptForbidden = true
+                        }
+                    }
                     NetworkResult.Loading -> Unit
                 }
             }
+
+            if (crossDeptForbidden) {
+                // Server policy forbids cross-department substitutions for this department.
+                // Automatically fall back to fetching same-department candidates so user isn't left stranded.
+                for (period in periods) {
+                    val fallback = leaveRepository.getSlotCandidates(date, period, includeCrossDepartment = false, onlyHandlesClass = handlesClass)
+                    if (fallback is NetworkResult.Success) {
+                        currentMap[period] = fallback.data
+                    }
+                }
+                _uiState.value = _uiState.value.copy(
+                    isLoadingCandidates = false,
+                    includeCrossDepartment = false,
+                    errorMessage = "Cross-department substitutions are disabled by administration for your department.",
+                    candidatesPerPeriod = currentMap,
+                    slotCandidates = currentMap[periods.firstOrNull() ?: 1] ?: emptyList()
+                )
+                return@launch
+            }
+
             _uiState.value = _uiState.value.copy(
                 isLoadingCandidates = false,
+                errorMessage = null,
                 candidatesPerPeriod = currentMap,
                 slotCandidates = currentMap[periods.firstOrNull() ?: 1] ?: emptyList()
             )
         }
     }
 
+    fun dismissErrorMessage() {
+        _uiState.value = _uiState.value.copy(errorMessage = null)
+    }
+
     fun toggleCrossDepartment(date: String, periods: Set<Int>) {
+        val currentHandlesClass = _uiState.value.onlyHandlesClass
         val next = !_uiState.value.includeCrossDepartment
-        _uiState.value = _uiState.value.copy(includeCrossDepartment = next)
-        loadCandidatesForPeriods(date, periods, crossDept = next, handlesClass = _uiState.value.onlyHandlesClass)
+        // Clear any stale error from a previous attempt before re-fetching
+        _uiState.value = _uiState.value.copy(includeCrossDepartment = next, errorMessage = null)
+        loadCandidatesForPeriods(date, periods, crossDept = next, handlesClass = currentHandlesClass)
     }
 
     fun toggleOnlyHandlesClass(date: String, periods: Set<Int>) {
+        val currentCrossDept = _uiState.value.includeCrossDepartment
         val next = !_uiState.value.onlyHandlesClass
-        _uiState.value = _uiState.value.copy(onlyHandlesClass = next)
-        loadCandidatesForPeriods(date, periods, crossDept = _uiState.value.includeCrossDepartment, handlesClass = next)
+        // Clear any stale error (e.g. a prior 403) so the UI is not stuck showing the banner
+        _uiState.value = _uiState.value.copy(onlyHandlesClass = next, errorMessage = null)
+        loadCandidatesForPeriods(date, periods, crossDept = currentCrossDept, handlesClass = next)
     }
 
     fun setCandidateSearchQuery(query: String) {

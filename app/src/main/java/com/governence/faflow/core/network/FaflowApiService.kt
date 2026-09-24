@@ -126,6 +126,37 @@ interface FaflowApiService {
         @Body request: LeaveAlterAssignmentCreateDto
     ): Response<AlterAssignmentOutDto>
 
+    @POST("leaves/evaluate-policy")
+    suspend fun evaluatePolicy(
+        @Body request: LeavePolicyEvalRequestDto
+    ): Response<PolicyEvaluationResultDto>
+
+    @PATCH("leaves/{leave_id}/approve-with-exception")
+    suspend fun approveLeaveWithException(
+        @Path("leave_id") leaveId: Int,
+        @Body request: ApproveWithExceptionRequestDto
+    ): Response<LeaveApproveResponseDto>
+
+    @GET("enforcement-mode")
+    suspend fun getEnforcementMode(): Response<PolicyEnforcementModeResponseDto>
+
+    // ---------- Leave Policies & Balances ----------
+    @GET("leave-balances/policies")
+    suspend fun getActiveLeavePolicies(): Response<List<LeavePolicyOutDto>>
+
+    @GET("leave-balances/me")
+    suspend fun getMyLeaveBalances(): Response<TeacherLeaveBalanceSummaryDto>
+
+    @POST("leave-balances/validate")
+    suspend fun validateLeaveApplication(
+        @Body request: LeaveValidationRequestDto
+    ): Response<LeaveValidationOutDto>
+
+    @GET("leave-balances/teacher/{teacher_id}/ledger")
+    suspend fun getTeacherLeaveLedger(
+        @Path("teacher_id") teacherId: Int
+    ): Response<List<LeaveBalanceTransactionDto>>
+
     // ---------- Today Coverage ----------
     @GET("substitutions/today")
     suspend fun getTodayCoverage(

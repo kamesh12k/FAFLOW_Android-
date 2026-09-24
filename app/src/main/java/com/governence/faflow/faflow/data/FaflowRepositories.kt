@@ -3,10 +3,14 @@ package com.governence.faflow.faflow.data
 import com.governence.faflow.core.network.FaflowApiService
 import com.governence.faflow.core.network.LeaveBatchCreateDto
 import com.governence.faflow.core.network.LeaveCreateDto
+import com.governence.faflow.core.network.LeavePolicyOutDto
+import com.governence.faflow.core.network.LeaveValidationOutDto
+import com.governence.faflow.core.network.LeaveValidationRequestDto
 import com.governence.faflow.core.network.NetworkResult
 import com.governence.faflow.core.network.RecommendationOutDto
 import com.governence.faflow.core.network.SubstitutionPreferenceOutDto
 import com.governence.faflow.core.network.SubstitutionPreferenceUpdateDto
+import com.governence.faflow.core.network.TeacherLeaveBalanceSummaryDto
 import com.governence.faflow.domain.model.CreditTransaction
 import com.governence.faflow.domain.model.LeaveHistoryDay
 import com.governence.faflow.domain.model.LeaveRequest
@@ -32,11 +36,11 @@ class TimetableRepositoryImpl(
                     TimetableSlot(
                         id = dto.id,
                         teacherId = dto.teacherId,
-                        subjectName = dto.subjectName ?: "Subject ${dto.subjectId ?: ""}",
-                        subjectCode = dto.subjectCode ?: "CS-${dto.subjectId ?: ""}",
-                        className = dto.className ?: "Class ${dto.classId}",
+                        subjectName = dto.subjectName?.takeIf { it.isNotBlank() } ?: (dto.subjectId?.let { "Subject $it" } ?: "Lecture"),
+                        subjectCode = dto.subjectCode?.takeIf { it.isNotBlank() } ?: (dto.subjectId?.let { "CS-$it" } ?: "CS"),
+                        className = dto.className?.takeIf { it.isNotBlank() } ?: "Class ${dto.classId}",
                         section = dto.classSection ?: "A",
-                        roomNumber = dto.roomNumber ?: "Room ${dto.roomId ?: ""}",
+                        roomNumber = dto.roomNumber?.takeIf { it.isNotBlank() } ?: (dto.roomId?.let { "$it" } ?: "101"),
                         dayOrder = dto.dayOrder,
                         periodNumber = dto.periodNumber
                     )
@@ -154,7 +158,8 @@ class LeaveRepositoryImpl(
         date: String,
         periodNumber: Int,
         reason: String,
-        proposedSubstituteId: Int?
+        proposedSubstituteId: Int?,
+        policyWarningAcknowledged: Boolean
     ): NetworkResult<LeaveRequest> {
         return try {
             val response = apiService.applyLeave(
@@ -162,7 +167,8 @@ class LeaveRepositoryImpl(
                     date = date,
                     periodNumber = periodNumber,
                     reason = reason,
-                    proposedSubstituteId = proposedSubstituteId
+                    proposedSubstituteId = proposedSubstituteId,
+                    policyWarningAcknowledged = policyWarningAcknowledged
                 )
             )
             if (response.isSuccessful && response.body() != null) {
@@ -194,7 +200,11 @@ class LeaveRepositoryImpl(
         periodNumbers: List<Int>,
         reason: String,
         periodSubstitutes: Map<String, Int>? = null,
-        wholeDay: Boolean = false
+        wholeDay: Boolean = false,
+        leavePolicyId: Int? = null,
+        leaveType: String? = null,
+        documentUrl: String? = null,
+        policyWarningAcknowledged: Boolean = false
     ): NetworkResult<List<LeaveRequest>> {
         return try {
             val response = apiService.applyLeaveBatch(
@@ -203,7 +213,11 @@ class LeaveRepositoryImpl(
                     periodNumbers = periodNumbers,
                     wholeDay = if (wholeDay) true else null,
                     reason = reason,
-                    periodSubstitutes = periodSubstitutes
+                    periodSubstitutes = periodSubstitutes,
+                    leavePolicyId = leavePolicyId,
+                    leaveType = leaveType,
+                    documentUrl = documentUrl,
+                    policyWarningAcknowledged = policyWarningAcknowledged
                 )
             )
             if (response.isSuccessful && response.body() != null) {
@@ -228,6 +242,57 @@ class LeaveRepositoryImpl(
             }
         } catch (e: Exception) {
             NetworkResult.Error(-1, e.localizedMessage ?: "Failed to submit batch leave", e)
+        }
+    }
+
+    suspend fun getActiveLeavePolicies(): NetworkResult<List<LeavePolicyOutDto>> {
+        return try {
+            val response = apiService.getActiveLeavePolicies()
+            if (response.isSuccessful && response.body() != null) {
+                NetworkResult.Success(response.body()!!)
+            } else {
+                NetworkResult.Error(response.code(), "Failed to fetch leave policies (${response.code()})")
+            }
+        } catch (e: Exception) {
+            NetworkResult.Error(-1, e.localizedMessage ?: "Failed to fetch leave policies", e)
+        }
+    }
+
+    suspend fun getMyLeaveBalances(): NetworkResult<TeacherLeaveBalanceSummaryDto> {
+        return try {
+            val response = apiService.getMyLeaveBalances()
+            if (response.isSuccessful && response.body() != null) {
+                NetworkResult.Success(response.body()!!)
+            } else {
+                NetworkResult.Error(response.code(), "Failed to fetch leave balances (${response.code()})")
+            }
+        } catch (e: Exception) {
+            NetworkResult.Error(-1, e.localizedMessage ?: "Failed to fetch leave balances", e)
+        }
+    }
+
+    suspend fun validateLeaveApplication(
+        policyId: Int,
+        date: String,
+        days: Double = 1.0,
+        consecutiveDays: Int = 1
+    ): NetworkResult<LeaveValidationOutDto> {
+        return try {
+            val response = apiService.validateLeaveApplication(
+                LeaveValidationRequestDto(
+                    policyId = policyId,
+                    date = date,
+                    days = days,
+                    consecutiveDays = consecutiveDays
+                )
+            )
+            if (response.isSuccessful && response.body() != null) {
+                NetworkResult.Success(response.body()!!)
+            } else {
+                NetworkResult.Error(response.code(), "Failed to validate leave policy (${response.code()})")
+            }
+        } catch (e: Exception) {
+            NetworkResult.Error(-1, e.localizedMessage ?: "Failed to validate leave policy", e)
         }
     }
 
@@ -262,6 +327,20 @@ class LeaveRepositoryImpl(
         } catch (e: Exception) {
             android.util.Log.e("LeaveRepository", "Error fetching campus operations mode", e)
             NetworkResult.Success("standard") // Fail open — non-Flexible behaviour
+        }
+    }
+
+    suspend fun getSameDayLeaveCutoffTime(): String {
+        return try {
+            val response = apiService.getPublicGovernanceConfig()
+            if (response.isSuccessful && response.body() != null) {
+                response.body()!!.leaveSameDayApplyCutoffTime.ifBlank { "09:00" }
+            } else {
+                "09:00"
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("LeaveRepository", "Error fetching leave cutoff policy", e)
+            "09:00"
         }
     }
 

@@ -64,7 +64,7 @@ object ApiConfig {
      * Always points to live production endpoint (faflowgovernence.online).
      */
     fun getDefaultBaseUrl(): String {
-        return PRODUCTION_BASE_URL
+        return if (isEmulator()) EMULATOR_10_0_2_2_URL else PRODUCTION_BASE_URL
     }
 
     /**
@@ -75,21 +75,23 @@ object ApiConfig {
         val saved = prefs.getString(KEY_BASE_URL, null)
         val migrationVer = prefs.getInt(KEY_MIGRATION_VERSION, 0)
 
-        // Version-aware migration: ensure device is updated to live server
+        val isEmulatorDevice = isEmulator()
+        val defaultUrl = if (isEmulatorDevice) EMULATOR_10_0_2_2_URL else PRODUCTION_BASE_URL
+
+        // Version-aware migration: ensure physical devices are updated to live production server,
+        // while Android Emulators retain access to local 10.0.2.2 development host.
         val isObsolete = saved == null ||
                 LEGACY_OBSOLETE_URLS.any { saved.equals(it, ignoreCase = true) || saved.contains("onrender.com") || saved.contains("faflow.institution.edu") } ||
                 saved.contains("172.21.135.207") ||
-                saved.contains("10.0.2.2") ||
-                saved.contains("127.0.0.1") ||
-                saved.contains("localhost")
+                (!isEmulatorDevice && (saved.contains("10.0.2.2") || saved.contains("127.0.0.1") || saved.contains("localhost")))
 
         if (migrationVer < CURRENT_MIGRATION_VERSION || isObsolete) {
-            saveBaseUrl(context, PRODUCTION_BASE_URL)
+            saveBaseUrl(context, defaultUrl)
             prefs.edit().putInt(KEY_MIGRATION_VERSION, CURRENT_MIGRATION_VERSION).apply()
-            return PRODUCTION_BASE_URL
+            return defaultUrl
         }
 
-        val candidate = saved ?: PRODUCTION_BASE_URL
+        val candidate = saved ?: defaultUrl
         return if (candidate.endsWith("/")) candidate else "$candidate/"
     }
 
