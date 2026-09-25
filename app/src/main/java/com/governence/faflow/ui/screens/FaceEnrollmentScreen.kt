@@ -1,7 +1,11 @@
 package com.governence.faflow.ui.screens
 
 import android.Manifest
+import android.graphics.Bitmap
 import android.content.pm.PackageManager
+import com.governence.faflow.attendance.biometrics.model.FaceDetectionResult
+import com.governence.faflow.attendance.biometrics.model.FaceLandmarks
+import com.governence.faflow.attendance.biometrics.model.FacePoint
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
@@ -133,7 +137,7 @@ fun FaceEnrollmentScreen(
     val matcher = remember { CosineFaceMatcher() }
 
     val enrollmentEngine = remember {
-        FaceEnrollmentEngine(requiredHoldFrames = 4, minCrossSimilarity = 0.55f)
+        FaceEnrollmentEngine(requiredHoldFrames = 2, minCrossSimilarity = 0.42f)
     }
 
     val detections by faceDetector.latestDetections.collectAsState()
@@ -145,7 +149,7 @@ fun FaceEnrollmentScreen(
     var stage by remember { mutableStateOf(FaceEnrollmentStage.READY) }
     var currentPoseTarget by remember { mutableStateOf(EnrollmentPoseTarget.FRONTAL) }
     var stabilityFrames by remember { mutableIntStateOf(0) }
-    val requiredHoldFrames = 3
+    val requiredHoldFrames = enrollmentEngine.requiredHoldFrames
 
     val capturedPoses = remember { mutableStateListOf<PoseCapture>() }
     var guidanceMessage by remember { mutableStateOf("Position your face in the oval guide and tap 'Start Enrollment'") }
@@ -162,27 +166,19 @@ fun FaceEnrollmentScreen(
     LaunchedEffect(detections) {
         if (detections.isNotEmpty()) {
             val face = detections.first()
-            val landmarks = face.landmarks
-            val faceBmp = face.alignedBitmap ?: faceDetector.latestFrameBitmap.value
-            if (faceBmp != null) {
-                val alignRes = if (landmarks != null) aligner.align(faceBmp, landmarks) else null
-                if (alignRes != null && alignRes.isValidGeometry && alignRes.alignedBitmap != null) {
-                    latestAlignmentResult = alignRes
-                } else {
-                    val scaled = if (faceBmp.width == 112 && faceBmp.height == 112) {
-                        faceBmp
-                    } else {
-                        android.graphics.Bitmap.createScaledBitmap(faceBmp, 112, 112, true)
-                    }
+            val frameBmp = faceDetector.latestFrameBitmap.value ?: face.alignedBitmap
+            if (frameBmp != null) {
+                val patch = extractFacePatch(frameBmp, face, aligner)
+                if (patch != null) {
                     latestAlignmentResult = FaceAlignmentResult(
-                        alignedBitmap = scaled,
+                        alignedBitmap = patch,
                         transform = null,
-                        sourceLandmarks = landmarks ?: com.governence.faflow.attendance.biometrics.model.FaceLandmarks(
-                            com.governence.faflow.attendance.biometrics.model.FacePoint(30f, 40f),
-                            com.governence.faflow.attendance.biometrics.model.FacePoint(82f, 40f),
-                            com.governence.faflow.attendance.biometrics.model.FacePoint(56f, 65f),
-                            com.governence.faflow.attendance.biometrics.model.FacePoint(36f, 90f),
-                            com.governence.faflow.attendance.biometrics.model.FacePoint(76f, 90f)
+                        sourceLandmarks = face.landmarks ?: FaceLandmarks(
+                            FacePoint(30f, 40f),
+                            FacePoint(82f, 40f),
+                            FacePoint(56f, 65f),
+                            FacePoint(36f, 90f),
+                            FacePoint(76f, 90f)
                         ),
                         isValidGeometry = true,
                         errorMessage = null,
@@ -199,13 +195,16 @@ fun FaceEnrollmentScreen(
     val performCapture: (EnrollmentPoseTarget) -> Unit = { targetToCapture ->
         coroutineScope.launch {
             val primaryFace = detections.firstOrNull()
-            val alignedFace = latestAlignmentResult?.alignedBitmap
-                ?: primaryFace?.alignedBitmap
-                ?: faceDetector.latestFrameBitmap.value
+            val frameBmp = faceDetector.latestFrameBitmap.value
+            val faceBmp = if (primaryFace != null && frameBmp != null) {
+                extractFacePatch(frameBmp, primaryFace, aligner)
+            } else {
+                latestAlignmentResult?.alignedBitmap
+            }
 
-            if (alignedFace != null) {
+            if (faceBmp != null) {
                 try {
-                    val embedding = faceEmbedder.extractEmbedding(alignedFace)
+                    val embedding = faceEmbedder.extractEmbedding(faceBmp)
                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
 
                     // Replace if this target was already captured (clean re-take support)
@@ -213,7 +212,7 @@ fun FaceEnrollmentScreen(
                     capturedPoses.add(
                         PoseCapture(
                             target = targetToCapture,
-                            bitmap = alignedFace,
+                            bitmap = faceBmp,
                             embedding = embedding
                         )
                     )
@@ -233,7 +232,7 @@ fun FaceEnrollmentScreen(
                         }
                         !hasLeft -> {
                             currentPoseTarget = EnrollmentPoseTarget.LEFT_ANGLE
-                            guidanceMessage = "Great! Now turn your head slightly to the left (←)"
+                            guidanceMessage = "Turn head slightly to the left (←)"
                         }
                         !hasRight -> {
                             currentPoseTarget = EnrollmentPoseTarget.RIGHT_ANGLE
@@ -971,5 +970,49 @@ fun FaceEnrollmentScreen(
                 }
             }
         }
+    }
+}
+
+/**
+ * Extracts a normalized 112x112 face bitmap from the live camera frame.
+ * Priority 1: High-fidelity 5-point biological similarity alignment.
+ * Priority 2 (Fallback): Crops face bounding box with 12% padding and scales to 112x112.
+ * Never scales down the full camera frame!
+ */
+private fun extractFacePatch(
+    frameBitmap: Bitmap?,
+    face: FaceDetectionResult,
+    aligner: SimilarityFaceAligner
+): Bitmap? {
+    if (frameBitmap == null) return null
+
+    // 1. High-fidelity 5-point canonical similarity alignment
+    val landmarks = face.landmarks
+    if (landmarks != null) {
+        val alignRes = aligner.align(frameBitmap, landmarks)
+        if (alignRes.isValidGeometry && alignRes.alignedBitmap != null) {
+            return alignRes.alignedBitmap
+        }
+    }
+
+    // 2. High-reliability fallback: crop face bounding box with safe padding
+    val box = face.boundingBox
+    val padX = (box.width * 0.12f).toInt()
+    val padY = (box.height * 0.12f).toInt()
+
+    val left = (box.left.toInt() - padX).coerceIn(0, frameBitmap.width - 1)
+    val top = (box.top.toInt() - padY).coerceIn(0, frameBitmap.height - 1)
+    val right = (box.right.toInt() + padX).coerceIn(left + 1, frameBitmap.width)
+    val bottom = (box.bottom.toInt() + padY).coerceIn(top + 1, frameBitmap.height)
+
+    val width = right - left
+    val height = bottom - top
+    if (width <= 0 || height <= 0) return null
+
+    val cropped = Bitmap.createBitmap(frameBitmap, left, top, width, height)
+    return if (cropped.width == 112 && cropped.height == 112) {
+        cropped
+    } else {
+        Bitmap.createScaledBitmap(cropped, 112, 112, true)
     }
 }

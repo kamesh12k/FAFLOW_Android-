@@ -22,24 +22,24 @@ enum class EnrollmentPoseTarget(
         title = "Frontal View",
         shortLabel = "Center",
         prompt = "Look directly at the camera",
-        yawMin = -8f,
-        yawMax = 8f
+        yawMin = -7f,
+        yawMax = 7f
     ),
     LEFT_ANGLE(
         id = 2,
         title = "Turn Head Left",
         shortLabel = "Left",
         prompt = "Turn head slightly to the left (←)",
-        yawMin = -30f,
-        yawMax = -5f
+        yawMin = -35f,
+        yawMax = -4.5f
     ),
     RIGHT_ANGLE(
         id = 3,
         title = "Turn Head Right",
         shortLabel = "Right",
         prompt = "Turn head slightly to the right (→)",
-        yawMin = 5f,
-        yawMax = 30f
+        yawMin = 4.5f,
+        yawMax = 35f
     );
 
     fun isPoseSatisfied(yawAngle: Float, rollAngle: Float): Boolean {
@@ -110,8 +110,8 @@ sealed interface EnrollmentValidationResult {
  * for accurate multi-pose biometric registration.
  */
 class FaceEnrollmentEngine(
-    val requiredHoldFrames: Int = 3,
-    val minCrossSimilarity: Float = 0.45f
+    val requiredHoldFrames: Int = 2,
+    val minCrossSimilarity: Float = 0.42f
 ) {
 
     /**
@@ -143,27 +143,27 @@ class FaceEnrollmentEngine(
         val yaw = q.yawAngle
         return when (target) {
             EnrollmentPoseTarget.FRONTAL -> {
-                if (yaw > 8f) {
+                if (yaw > 7f) {
                     PoseEvaluationResult.AdjustPose(yaw, "Turn slightly left towards center")
-                } else if (yaw < -8f) {
+                } else if (yaw < -7f) {
                     PoseEvaluationResult.AdjustPose(yaw, "Turn slightly right towards center")
                 } else {
                     PoseEvaluationResult.ValidPose(yaw)
                 }
             }
             EnrollmentPoseTarget.LEFT_ANGLE -> {
-                if (yaw > -5f) {
+                if (yaw > -4.5f) {
                     PoseEvaluationResult.AdjustPose(yaw, "Turn head a little more to the left (←)")
-                } else if (yaw < -32f) {
+                } else if (yaw < -35f) {
                     PoseEvaluationResult.AdjustPose(yaw, "Turn back slightly towards center")
                 } else {
                     PoseEvaluationResult.ValidPose(yaw)
                 }
             }
             EnrollmentPoseTarget.RIGHT_ANGLE -> {
-                if (yaw < 5f) {
+                if (yaw < 4.5f) {
                     PoseEvaluationResult.AdjustPose(yaw, "Turn head a little more to the right (→)")
-                } else if (yaw > 32f) {
+                } else if (yaw > 35f) {
                     PoseEvaluationResult.AdjustPose(yaw, "Turn back slightly towards center")
                 } else {
                     PoseEvaluationResult.ValidPose(yaw)
@@ -201,7 +201,7 @@ class FaceEnrollmentEngine(
         val sLeftRight = matcher.computeCosineSimilarity(eLeft, eRight)
 
         val lowestAngledMatch = minOf(sCenterLeft, sCenterRight)
-        val effectiveThreshold = minOf(minCrossSimilarity, 0.42f)
+        val effectiveThreshold = minOf(minCrossSimilarity, 0.40f)
 
         if (lowestAngledMatch < effectiveThreshold) {
             return EnrollmentValidationResult.InconsistentIdentity(

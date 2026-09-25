@@ -149,8 +149,14 @@ class SimilarityFaceAligner(
             return "Inverted nose position: nose tip above eye midpoint"
         }
 
-        // Mouth corners below nose
-        if (landmarks.leftMouth.y <= landmarks.nose.y || landmarks.rightMouth.y <= landmarks.nose.y) {
+        // Mouth center below eye midpoint
+        val mouthMidY = (landmarks.leftMouth.y + landmarks.rightMouth.y) / 2f
+        if (mouthMidY <= eyeMidY) {
+            return "Inverted mouth position: mouth corners above eye midpoint"
+        }
+
+        // Mouth corners below nose (permits natural 3D head rotation and slight tilt)
+        if (maxOf(landmarks.leftMouth.y, landmarks.rightMouth.y) <= landmarks.nose.y - 4f) {
             return "Inverted mouth position: mouth corners above nose tip"
         }
 

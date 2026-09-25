@@ -1,5 +1,6 @@
 package com.governence.faflow.attendance.biometrics.scrfd
 
+import com.governence.faflow.attendance.biometrics.liveness.HeadPoseAnalyzer
 import com.governence.faflow.attendance.biometrics.model.FaceBox
 import com.governence.faflow.attendance.biometrics.model.FaceDetectionResult
 import com.governence.faflow.attendance.biometrics.model.FaceQuality
@@ -75,16 +76,9 @@ object ScrfdPostprocessor {
         var yawAngle = 0f
 
         if (lm != null) {
-            // Roll: angle between left eye and right eye
-            val dX = lm.rightEye.x - lm.leftEye.x
-            val dY = lm.rightEye.y - lm.leftEye.y
-            rollAngle = Math.toDegrees(atan2(dY.toDouble(), dX.toDouble())).toFloat()
-
-            // Yaw approximation: nose offset from eye center
-            val eyeMidX = (lm.leftEye.x + lm.rightEye.x) / 2f
-            val eyeDist = maxOf(1f, lm.rightEye.x - lm.leftEye.x)
-            val noseOffset = (lm.nose.x - eyeMidX) / eyeDist
-            yawAngle = noseOffset * 45f
+            val pose = HeadPoseAnalyzer.estimateHeadPose(lm)
+            rollAngle = pose.rollDegrees
+            yawAngle = pose.yawDegrees
         }
 
         val isAdequatelySized = candidate.box.width >= ScrfdModelMetadata.MIN_FACE_SIZE_PIXELS

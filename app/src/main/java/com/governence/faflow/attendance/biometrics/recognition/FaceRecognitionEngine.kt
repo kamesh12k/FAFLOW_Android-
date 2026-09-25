@@ -75,7 +75,18 @@ class FaceRecognitionEngine(
         } else if (sourceBitmap.width == 112 && sourceBitmap.height == 112) {
             sourceBitmap
         } else {
-            android.graphics.Bitmap.createScaledBitmap(sourceBitmap, 112, 112, true)
+            // Safe face bounding box crop fallback
+            val box = detection.boundingBox
+            val padX = (box.width * 0.12f).toInt()
+            val padY = (box.height * 0.12f).toInt()
+            val left = (box.left.toInt() - padX).coerceIn(0, sourceBitmap.width - 1)
+            val top = (box.top.toInt() - padY).coerceIn(0, sourceBitmap.height - 1)
+            val right = (box.right.toInt() + padX).coerceIn(left + 1, sourceBitmap.width)
+            val bottom = (box.bottom.toInt() + padY).coerceIn(top + 1, sourceBitmap.height)
+            val cropW = (right - left).coerceAtLeast(1)
+            val cropH = (bottom - top).coerceAtLeast(1)
+            val cropped = android.graphics.Bitmap.createBitmap(sourceBitmap, left, top, cropW, cropH)
+            android.graphics.Bitmap.createScaledBitmap(cropped, 112, 112, true)
         }
 
         // 4. ArcFace Feature Embedding Extraction
