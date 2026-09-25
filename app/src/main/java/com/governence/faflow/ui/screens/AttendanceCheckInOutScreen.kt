@@ -436,6 +436,9 @@ fun AttendanceCheckInOutScreen(
                         Triple("Location Access Required", "Tap to grant permission", StatusWarning)
                     }
                 }
+                is LocationVerificationResult.NoActiveGeofences -> Triple("No Active Perimeter", "Contact admin to configure campus geofence", StatusWarning)
+                is LocationVerificationResult.LocationServicesDisabled -> Triple("Location Services Disabled", "Turn on GPS in device settings", StatusWarning)
+                is LocationVerificationResult.LocationUnavailable -> Triple("Location Unavailable", "Unable to acquire GPS coordinates", StatusWarning)
                 LocationVerificationResult.Loading -> Triple("Acquiring Campus Location…", "Connecting to GPS satellites", MaterialTheme.colorScheme.primary)
                 else -> Triple("Checking Location…", "Locating campus perimeter", MaterialTheme.colorScheme.onSurfaceVariant)
             }
@@ -723,6 +726,45 @@ fun AttendanceCheckInOutScreen(
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         textAlign = TextAlign.Center
+                                    )
+                                }
+
+                                is LocationVerificationResult.NoActiveGeofences -> {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(64.dp)
+                                            .clip(CircleShape)
+                                            .background(StatusWarning.copy(alpha = 0.12f)),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.NearMe,
+                                            contentDescription = null,
+                                            tint = StatusWarning,
+                                            modifier = Modifier.size(32.dp)
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.height(FaflowSpacing.md))
+                                    Text(
+                                        text = "No Active Geofence",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                        textAlign = TextAlign.Center
+                                    )
+                                    Spacer(modifier = Modifier.height(FaflowSpacing.xs))
+                                    Text(
+                                        text = "No active campus perimeter configured. Please contact administrator.",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        textAlign = TextAlign.Center
+                                    )
+                                    Spacer(modifier = Modifier.height(FaflowSpacing.lg))
+                                    FaflowPillButton(
+                                        text = "Retry",
+                                        onClick = { viewModel.refreshLocation() },
+                                        icon = Icons.Default.Refresh,
+                                        isPrimary = false
                                     )
                                 }
 
@@ -1162,6 +1204,7 @@ fun AttendanceCheckInOutScreen(
 
                         val hintText = when {
                             !hasCameraPermission -> "Camera permission required for face verification"
+                            verificationResult is LocationVerificationResult.NoActiveGeofences -> "No active campus geofence configured"
                             !isLocationVerified -> "Outside authorized perimeter • Campus presence required"
                             isActionCheckIn -> "Align face in the frame and tap Check In"
                             else -> "Align face in the frame and tap Check Out"

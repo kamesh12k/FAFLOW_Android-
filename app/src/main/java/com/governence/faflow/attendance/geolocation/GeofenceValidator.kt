@@ -106,7 +106,8 @@ class GeofenceValidator(
                         nearestGeofence = geofence
                     }
 
-                    if (isInside) {
+                    val isInsideWithTolerance = isInside || distance <= (geofence.radiusMeters + geofence.toleranceMeters)
+                    if (isInsideWithTolerance) {
                         return LocationVerificationResult.InsideGeofence(
                             geofenceId = geofence.id,
                             geofenceName = geofence.name,
