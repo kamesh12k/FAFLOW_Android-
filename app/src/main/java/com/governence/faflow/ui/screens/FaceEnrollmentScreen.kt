@@ -145,7 +145,7 @@ fun FaceEnrollmentScreen(
     var stage by remember { mutableStateOf(FaceEnrollmentStage.READY) }
     var currentPoseTarget by remember { mutableStateOf(EnrollmentPoseTarget.FRONTAL) }
     var stabilityFrames by remember { mutableIntStateOf(0) }
-    val requiredHoldFrames = 4
+    val requiredHoldFrames = 3
 
     val capturedPoses = remember { mutableStateListOf<PoseCapture>() }
     var guidanceMessage by remember { mutableStateOf("Position your face in the oval guide and tap 'Start Enrollment'") }
@@ -195,6 +195,116 @@ fun FaceEnrollmentScreen(
         }
     }
 
+    // Centralized pose capture executor (used by both auto-capture and manual tap)
+    val performCapture: (EnrollmentPoseTarget) -> Unit = { targetToCapture ->
+        coroutineScope.launch {
+            val primaryFace = detections.firstOrNull()
+            val alignedFace = latestAlignmentResult?.alignedBitmap
+                ?: primaryFace?.alignedBitmap
+                ?: faceDetector.latestFrameBitmap.value
+
+            if (alignedFace != null) {
+                try {
+                    val embedding = faceEmbedder.extractEmbedding(alignedFace)
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+
+                    // Replace if this target was already captured (clean re-take support)
+                    capturedPoses.removeAll { it.target == targetToCapture }
+                    capturedPoses.add(
+                        PoseCapture(
+                            target = targetToCapture,
+                            bitmap = alignedFace,
+                            embedding = embedding
+                        )
+                    )
+
+                    stabilityFrames = 0
+                    isHoldingStable = false
+
+                    // Determine next target or complete
+                    val hasFrontal = capturedPoses.any { it.target == EnrollmentPoseTarget.FRONTAL }
+                    val hasLeft = capturedPoses.any { it.target == EnrollmentPoseTarget.LEFT_ANGLE }
+                    val hasRight = capturedPoses.any { it.target == EnrollmentPoseTarget.RIGHT_ANGLE }
+
+                    when {
+                        !hasFrontal -> {
+                            currentPoseTarget = EnrollmentPoseTarget.FRONTAL
+                            guidanceMessage = "Look directly at the camera"
+                        }
+                        !hasLeft -> {
+                            currentPoseTarget = EnrollmentPoseTarget.LEFT_ANGLE
+                            guidanceMessage = "Great! Now turn your head slightly to the left (←)"
+                        }
+                        !hasRight -> {
+                            currentPoseTarget = EnrollmentPoseTarget.RIGHT_ANGLE
+                            guidanceMessage = "Awesome! Now turn your head slightly to the right (→)"
+                        }
+                        else -> {
+                            // All 3 multi-angle poses acquired: validate pairwise similarity & persist
+                            stage = FaceEnrollmentStage.PROCESSING
+                            guidanceMessage = "Validating 3-angle biometric consistency..."
+
+                            val validation = enrollmentEngine.validateAndConsolidate(
+                                captures = capturedPoses.toList(),
+                                matcher = matcher
+                            )
+
+                            when (validation) {
+                                is EnrollmentValidationResult.Success -> {
+                                    crossSimStats = validation.crossSimilarities
+                                    val appContainer = com.governence.faflow.core.di.AppContainer.getInstance(context)
+                                    val loggedInUserId = appContainer.tokenManager.getUserId()
+                                    val effectiveStaffId = if (staffId.isNotBlank() && staffId != "0") {
+                                        staffId
+                                    } else if (loggedInUserId > 0) {
+                                        loggedInUserId.toString()
+                                    } else {
+                                        "1"
+                                    }
+                                    val effectiveStaffName = if (staffName.isNotBlank()) staffName else "Faculty Member"
+
+                                    val saved = enrollmentRepo.saveEnrollment(
+                                        staffId = effectiveStaffId,
+                                        staffName = effectiveStaffName,
+                                        embedding = validation.masterEmbedding,
+                                        templates = validation.templates
+                                    )
+
+                                    if (loggedInUserId > 0 && loggedInUserId.toString() != effectiveStaffId) {
+                                        enrollmentRepo.saveEnrollment(
+                                            staffId = loggedInUserId.toString(),
+                                            staffName = effectiveStaffName,
+                                            embedding = validation.masterEmbedding,
+                                            templates = validation.templates
+                                        )
+                                    }
+
+                                    if (saved) {
+                                        try {
+                                            appContainer.apiService.enrollBiometrics()
+                                        } catch (_: Exception) {}
+                                        stage = FaceEnrollmentStage.SUCCESS
+                                        guidanceMessage = "Facial profile enrolled successfully!"
+                                    } else {
+                                        errorMessage = "Could not save encrypted biometric template to Keystore."
+                                        stage = FaceEnrollmentStage.ERROR
+                                    }
+                                }
+                                is EnrollmentValidationResult.InconsistentIdentity -> {
+                                    errorMessage = validation.reason
+                                    stage = FaceEnrollmentStage.ERROR
+                                }
+                            }
+                        }
+                    }
+                } catch (e: Exception) {
+                    errorMessage = "Feature extraction error: ${e.localizedMessage}"
+                    stage = FaceEnrollmentStage.ERROR
+                }
+            }
+        }
+    }
+
     // Live Guided Auto-Capture Pipeline
     LaunchedEffect(detections, stage, currentPoseTarget) {
         if (stage != FaceEnrollmentStage.ENROLLING) return@LaunchedEffect
@@ -223,103 +333,7 @@ fun FaceEnrollmentScreen(
                 guidanceMessage = "Perfect! Hold still (${stabilityFrames}/$requiredHoldFrames)..."
 
                 if (stabilityFrames >= requiredHoldFrames) {
-                    // Pose condition met and held steadily: auto-capture aligned face sample
-                    val alignedFace = latestAlignmentResult?.alignedBitmap
-                        ?: primaryFace.alignedBitmap
-                        ?: faceDetector.latestFrameBitmap.value
-
-                    if (alignedFace != null) {
-                        try {
-                            val embedding = faceEmbedder.extractEmbedding(alignedFace)
-                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-
-                            capturedPoses.add(
-                                PoseCapture(
-                                    target = currentPoseTarget,
-                                    bitmap = alignedFace,
-                                    embedding = embedding
-                                )
-                            )
-
-                            stabilityFrames = 0
-                            isHoldingStable = false
-
-                            // Advance to the next pose or trigger multi-template consolidation
-                            when (currentPoseTarget) {
-                                EnrollmentPoseTarget.FRONTAL -> {
-                                    currentPoseTarget = EnrollmentPoseTarget.LEFT_ANGLE
-                                    guidanceMessage = "Great! Now turn your head slightly to the left (←)"
-                                }
-                                EnrollmentPoseTarget.LEFT_ANGLE -> {
-                                    currentPoseTarget = EnrollmentPoseTarget.RIGHT_ANGLE
-                                    guidanceMessage = "Awesome! Now turn your head slightly to the right (→)"
-                                }
-                                EnrollmentPoseTarget.RIGHT_ANGLE -> {
-                                    // All 3 multi-angle poses acquired: validate pairwise similarity & persist
-                                    stage = FaceEnrollmentStage.PROCESSING
-                                    guidanceMessage = "Validating 3-angle biometric consistency..."
-
-                                    coroutineScope.launch {
-                                        val validation = enrollmentEngine.validateAndConsolidate(
-                                            captures = capturedPoses.toList(),
-                                            matcher = matcher
-                                        )
-
-                                        when (validation) {
-                                            is EnrollmentValidationResult.Success -> {
-                                                crossSimStats = validation.crossSimilarities
-                                                val appContainer = com.governence.faflow.core.di.AppContainer.getInstance(context)
-                                                val loggedInUserId = appContainer.tokenManager.getUserId()
-                                                val effectiveStaffId = if (staffId.isNotBlank() && staffId != "0") {
-                                                    staffId
-                                                } else if (loggedInUserId > 0) {
-                                                    loggedInUserId.toString()
-                                                } else {
-                                                    "1"
-                                                }
-                                                val effectiveStaffName = if (staffName.isNotBlank()) staffName else "Faculty Member"
-
-                                                val saved = enrollmentRepo.saveEnrollment(
-                                                    staffId = effectiveStaffId,
-                                                    staffName = effectiveStaffName,
-                                                    embedding = validation.masterEmbedding,
-                                                    templates = validation.templates
-                                                )
-
-                                                // Guarantee lookup succeeds if authenticated userId is primary key
-                                                if (loggedInUserId > 0 && loggedInUserId.toString() != effectiveStaffId) {
-                                                    enrollmentRepo.saveEnrollment(
-                                                        staffId = loggedInUserId.toString(),
-                                                        staffName = effectiveStaffName,
-                                                        embedding = validation.masterEmbedding,
-                                                        templates = validation.templates
-                                                    )
-                                                }
-
-                                                if (saved) {
-                                                    try {
-                                                        appContainer.apiService.enrollBiometrics()
-                                                    } catch (_: Exception) {}
-                                                    stage = FaceEnrollmentStage.SUCCESS
-                                                    guidanceMessage = "Facial profile enrolled successfully!"
-                                                } else {
-                                                    errorMessage = "Could not save encrypted biometric template to Keystore."
-                                                    stage = FaceEnrollmentStage.ERROR
-                                                }
-                                            }
-                                            is EnrollmentValidationResult.InconsistentIdentity -> {
-                                                errorMessage = validation.reason
-                                                stage = FaceEnrollmentStage.ERROR
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        } catch (e: Exception) {
-                            errorMessage = "Feature extraction error: ${e.localizedMessage}"
-                            stage = FaceEnrollmentStage.ERROR
-                        }
-                    }
+                    performCapture(currentPoseTarget)
                 }
             }
             is PoseEvaluationResult.AdjustPose -> {
@@ -435,6 +449,12 @@ fun FaceEnrollmentScreen(
                             .clip(RoundedCornerShape(12.dp))
                             .background(chipBg)
                             .border(1.5.dp, chipBorder, RoundedCornerShape(12.dp))
+                            .clickable(enabled = stage == FaceEnrollmentStage.ENROLLING) {
+                                currentPoseTarget = target
+                                stabilityFrames = 0
+                                isHoldingStable = false
+                                guidanceMessage = target.prompt
+                            }
                             .padding(vertical = 8.dp, horizontal = 6.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.Center
@@ -605,7 +625,13 @@ fun FaceEnrollmentScreen(
                 EnrollmentPoseTarget.values().forEach { target ->
                     val capture = capturedPoses.firstOrNull { it.target == target }
                     Column(
-                        horizontalAlignment = Alignment.CenterHorizontally
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.clickable(enabled = stage == FaceEnrollmentStage.ENROLLING) {
+                            currentPoseTarget = target
+                            stabilityFrames = 0
+                            isHoldingStable = false
+                            guidanceMessage = target.prompt
+                        }
                     ) {
                         Box(
                             modifier = Modifier
@@ -722,42 +748,72 @@ fun FaceEnrollmentScreen(
                         shape = RoundedCornerShape(16.dp),
                         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
                     ) {
-                        Row(
+                        Column(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(14.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
+                                .padding(14.dp)
                         ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = "Capturing ${currentPoseTarget.title}",
-                                    style = MaterialTheme.typography.titleSmall,
-                                    fontWeight = FontWeight.Bold,
-                                    color = PrimaryBlue
-                                )
-                                Text(
-                                    text = currentPoseTarget.prompt,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                            OutlinedButton(
-                                onClick = {
-                                    capturedPoses.clear()
-                                    stabilityFrames = 0
-                                    currentPoseTarget = EnrollmentPoseTarget.FRONTAL
-                                    stage = FaceEnrollmentStage.READY
-                                    guidanceMessage = "Position your face in the oval guide and tap 'Start Enrollment'"
-                                }
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
                             ) {
-                                Icon(
-                                    imageVector = Icons.Default.Refresh,
-                                    contentDescription = "Restart",
-                                    modifier = Modifier.size(16.dp)
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("Reset")
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "Step ${currentPoseTarget.id}/3: ${currentPoseTarget.title}",
+                                        style = MaterialTheme.typography.titleSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = PrimaryBlue
+                                    )
+                                    Text(
+                                        text = currentPoseTarget.prompt,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(10.dp))
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                OutlinedButton(
+                                    modifier = Modifier.weight(1f),
+                                    onClick = {
+                                        capturedPoses.clear()
+                                        stabilityFrames = 0
+                                        currentPoseTarget = EnrollmentPoseTarget.FRONTAL
+                                        stage = FaceEnrollmentStage.READY
+                                        guidanceMessage = "Position your face in the oval guide and tap 'Start Enrollment'"
+                                    }
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Refresh,
+                                        contentDescription = "Restart",
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("Reset")
+                                }
+
+                                Button(
+                                    modifier = Modifier.weight(1.8f),
+                                    enabled = detections.isNotEmpty(),
+                                    onClick = {
+                                        performCapture(currentPoseTarget)
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.CameraAlt,
+                                        contentDescription = "Capture",
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("Capture ${currentPoseTarget.shortLabel}")
+                                }
                             }
                         }
                     }

@@ -67,28 +67,39 @@ class FaceEnrollmentEngineTest {
         val result = engine.evaluatePose(detection, EnrollmentPoseTarget.FRONTAL)
         assertTrue(result is PoseEvaluationResult.AdjustPose)
         val adjust = result as PoseEvaluationResult.AdjustPose
-        assertTrue(adjust.guidance.contains("Turn slightly right"))
+        assertTrue(adjust.guidance.contains("Turn slightly left"))
     }
 
     @Test
     fun testLeftAnglePoseEvaluationValid() {
-        val detection = createFaceDetection(yaw = 16.0f)
+        val detection = createFaceDetection(yaw = -16.0f)
         val result = engine.evaluatePose(detection, EnrollmentPoseTarget.LEFT_ANGLE)
         assertTrue(result is PoseEvaluationResult.ValidPose)
     }
 
     @Test
     fun testLeftAnglePoseEvaluationNeedsMoreTurn() {
-        val detection = createFaceDetection(yaw = 3.0f)
+        val detection = createFaceDetection(yaw = -2.0f)
         val result = engine.evaluatePose(detection, EnrollmentPoseTarget.LEFT_ANGLE)
         assertTrue(result is PoseEvaluationResult.AdjustPose)
+        val adjust = result as PoseEvaluationResult.AdjustPose
+        assertTrue(adjust.guidance.contains("Turn head a little more to the left"))
     }
 
     @Test
     fun testRightAnglePoseEvaluationValid() {
-        val detection = createFaceDetection(yaw = -16.0f)
+        val detection = createFaceDetection(yaw = 16.0f)
         val result = engine.evaluatePose(detection, EnrollmentPoseTarget.RIGHT_ANGLE)
         assertTrue(result is PoseEvaluationResult.ValidPose)
+    }
+
+    @Test
+    fun testRightAnglePoseEvaluationNeedsMoreTurn() {
+        val detection = createFaceDetection(yaw = 2.0f)
+        val result = engine.evaluatePose(detection, EnrollmentPoseTarget.RIGHT_ANGLE)
+        assertTrue(result is PoseEvaluationResult.AdjustPose)
+        val adjust = result as PoseEvaluationResult.AdjustPose
+        assertTrue(adjust.guidance.contains("Turn head a little more to the right"))
     }
 
     @Test

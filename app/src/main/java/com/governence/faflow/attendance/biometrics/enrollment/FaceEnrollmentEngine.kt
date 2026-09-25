@@ -22,28 +22,28 @@ enum class EnrollmentPoseTarget(
         title = "Frontal View",
         shortLabel = "Center",
         prompt = "Look directly at the camera",
-        yawMin = -9f,
-        yawMax = 9f
+        yawMin = -8f,
+        yawMax = 8f
     ),
     LEFT_ANGLE(
         id = 2,
         title = "Turn Head Left",
         shortLabel = "Left",
         prompt = "Turn head slightly to the left (←)",
-        yawMin = 8f,
-        yawMax = 28f
+        yawMin = -30f,
+        yawMax = -5f
     ),
     RIGHT_ANGLE(
         id = 3,
         title = "Turn Head Right",
         shortLabel = "Right",
         prompt = "Turn head slightly to the right (→)",
-        yawMin = -28f,
-        yawMax = -8f
+        yawMin = 5f,
+        yawMax = 30f
     );
 
     fun isPoseSatisfied(yawAngle: Float, rollAngle: Float): Boolean {
-        if (abs(rollAngle) > 22f) return false
+        if (abs(rollAngle) > 26f) return false
         return yawAngle in yawMin..yawMax
     }
 }
@@ -110,8 +110,8 @@ sealed interface EnrollmentValidationResult {
  * for accurate multi-pose biometric registration.
  */
 class FaceEnrollmentEngine(
-    val requiredHoldFrames: Int = 4,
-    val minCrossSimilarity: Float = 0.55f
+    val requiredHoldFrames: Int = 3,
+    val minCrossSimilarity: Float = 0.45f
 ) {
 
     /**
@@ -124,12 +124,12 @@ class FaceEnrollmentEngine(
         val q = detection.quality
 
         // 1. Lighting Gate
-        if (q.brightnessScore < 0.25f) {
+        if (q.brightnessScore < 0.20f) {
             return PoseEvaluationResult.QualityIssue("Lighting is too dark. Move to a well-lit area.")
         }
 
         // 2. Head Tilt (Roll) Gate
-        if (abs(q.rollAngle) > 22f) {
+        if (abs(q.rollAngle) > 26f) {
             return PoseEvaluationResult.AdjustPose(
                 yaw = q.yawAngle,
                 guidance = "Keep your head level (avoid tilting)"
@@ -137,30 +137,33 @@ class FaceEnrollmentEngine(
         }
 
         // 3. Pose-specific yaw evaluation
+        // In mirrored front camera view:
+        // Left head turn -> nose is to the left of eye center -> negative yaw
+        // Right head turn -> nose is to the right of eye center -> positive yaw
         val yaw = q.yawAngle
         return when (target) {
             EnrollmentPoseTarget.FRONTAL -> {
-                if (yaw > 9f) {
-                    PoseEvaluationResult.AdjustPose(yaw, "Turn slightly right towards center")
-                } else if (yaw < -9f) {
+                if (yaw > 8f) {
                     PoseEvaluationResult.AdjustPose(yaw, "Turn slightly left towards center")
+                } else if (yaw < -8f) {
+                    PoseEvaluationResult.AdjustPose(yaw, "Turn slightly right towards center")
                 } else {
                     PoseEvaluationResult.ValidPose(yaw)
                 }
             }
             EnrollmentPoseTarget.LEFT_ANGLE -> {
-                if (yaw < 8f) {
+                if (yaw > -5f) {
                     PoseEvaluationResult.AdjustPose(yaw, "Turn head a little more to the left (←)")
-                } else if (yaw > 30f) {
+                } else if (yaw < -32f) {
                     PoseEvaluationResult.AdjustPose(yaw, "Turn back slightly towards center")
                 } else {
                     PoseEvaluationResult.ValidPose(yaw)
                 }
             }
             EnrollmentPoseTarget.RIGHT_ANGLE -> {
-                if (yaw > -8f) {
+                if (yaw < 5f) {
                     PoseEvaluationResult.AdjustPose(yaw, "Turn head a little more to the right (→)")
-                } else if (yaw < -30f) {
+                } else if (yaw > 32f) {
                     PoseEvaluationResult.AdjustPose(yaw, "Turn back slightly towards center")
                 } else {
                     PoseEvaluationResult.ValidPose(yaw)
@@ -177,7 +180,11 @@ class FaceEnrollmentEngine(
         captures: List<PoseCapture>,
         matcher: FaceMatcher
     ): EnrollmentValidationResult {
-        if (captures.size < 3) {
+        val frontal = captures.firstOrNull { it.target == EnrollmentPoseTarget.FRONTAL }
+        val left = captures.firstOrNull { it.target == EnrollmentPoseTarget.LEFT_ANGLE }
+        val right = captures.firstOrNull { it.target == EnrollmentPoseTarget.RIGHT_ANGLE }
+
+        if (frontal == null || left == null || right == null) {
             return EnrollmentValidationResult.InconsistentIdentity(
                 lowestSimilarity = 0f,
                 requiredThreshold = minCrossSimilarity,
@@ -185,30 +192,32 @@ class FaceEnrollmentEngine(
             )
         }
 
-        val e1 = captures[0].embedding
-        val e2 = captures[1].embedding
-        val e3 = captures[2].embedding
+        val eCenter = frontal.embedding
+        val eLeft = left.embedding
+        val eRight = right.embedding
 
-        val s12 = matcher.computeCosineSimilarity(e1, e2)
-        val s23 = matcher.computeCosineSimilarity(e2, e3)
-        val s13 = matcher.computeCosineSimilarity(e1, e3)
+        val sCenterLeft = matcher.computeCosineSimilarity(eCenter, eLeft)
+        val sCenterRight = matcher.computeCosineSimilarity(eCenter, eRight)
+        val sLeftRight = matcher.computeCosineSimilarity(eLeft, eRight)
 
-        val lowest = minOf(s12, minOf(s23, s13))
-        if (lowest < minCrossSimilarity) {
+        val lowestAngledMatch = minOf(sCenterLeft, sCenterRight)
+        val effectiveThreshold = minOf(minCrossSimilarity, 0.42f)
+
+        if (lowestAngledMatch < effectiveThreshold) {
             return EnrollmentValidationResult.InconsistentIdentity(
-                lowestSimilarity = lowest,
-                requiredThreshold = minCrossSimilarity,
-                reason = "Cross-sample similarity ($lowest) fell below consistency threshold ($minCrossSimilarity). Please re-enroll in stable lighting."
+                lowestSimilarity = lowestAngledMatch,
+                requiredThreshold = effectiveThreshold,
+                reason = "Cross-pose similarity (${"%.2f".format(lowestAngledMatch)}) fell below required threshold (${"%.2f".format(effectiveThreshold)}). Please re-enroll in stable lighting."
             )
         }
 
-        // Master composite calculation: mean vector + L2-normalization
-        val master = computeMasterEmbedding(listOf(e1, e2, e3))
+        // Master composite calculation: mean vector of 3 poses + L2-normalization
+        val master = computeMasterEmbedding(listOf(eCenter, eLeft, eRight))
 
         return EnrollmentValidationResult.Success(
             masterEmbedding = master,
-            templates = listOf(e1, e2, e3),
-            crossSimilarities = listOf(s12, s23, s13)
+            templates = listOf(eCenter, eLeft, eRight),
+            crossSimilarities = listOf(sCenterLeft, sCenterRight, sLeftRight)
         )
     }
 
