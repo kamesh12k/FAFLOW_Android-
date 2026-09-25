@@ -46,12 +46,18 @@ class GeofenceRepository(
     fun isLocationEnabled(): Boolean = locationProvider.isLocationServiceEnabled
 
     fun fetchActiveGeofences() {
-        val api = apiService ?: return
+        val api = apiService ?: run {
+            android.util.Log.e("FAFLOW", "[GEOFENCE] fetchActiveGeofences: apiService is null!")
+            return
+        }
         externalScope.launch {
             try {
+                android.util.Log.i("FAFLOW", "[GEOFENCE] fetchActiveGeofences: calling getActiveGeofences()...")
                 val response = api.getActiveGeofences()
+                android.util.Log.i("FAFLOW", "[GEOFENCE] fetchActiveGeofences: code=${response.code()}, isSuccessful=${response.isSuccessful}")
                 if (response.isSuccessful) {
                     val dtoList = response.body() ?: emptyList()
+                    android.util.Log.i("FAFLOW", "[GEOFENCE] fetchActiveGeofences: received ${dtoList.size} geofences")
                     if (dtoList.isNotEmpty()) {
                         val mapped = dtoList.map { dto ->
                             CampusGeofence(
@@ -69,13 +75,16 @@ class GeofenceRepository(
                             )
                         }
                         _geofences.value = mapped
+                        android.util.Log.i("FAFLOW", "[GEOFENCE] mapped ${mapped.size} geofences, first=${mapped.firstOrNull()?.name}")
                         _liveLocation.value?.let { loc ->
                             _verificationResult.value = geofenceValidator.validate(loc, mapped)
                         }
                     }
+                } else {
+                    android.util.Log.e("FAFLOW", "[GEOFENCE] getActiveGeofences failed: code=${response.code()}, error=${response.errorBody()?.string()}")
                 }
             } catch (e: Exception) {
-                // Keep default boundaries on offline or network issue
+                android.util.Log.e("FAFLOW", "[GEOFENCE] fetchActiveGeofences exception: ${e.javaClass.simpleName} - ${e.message}", e)
             }
         }
     }
