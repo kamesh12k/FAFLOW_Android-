@@ -548,7 +548,8 @@ data class AttendanceCheckInRequestDto(
     @Json(name = "face_similarity_score") val faceSimilarityScore: Double,
     @Json(name = "liveness_verified") val livenessVerified: Boolean,
     @Json(name = "verification_method") val verificationMethod: String = "FACE_ON_DEVICE",
-    @Json(name = "device_reference") val deviceReference: String? = null
+    @Json(name = "device_reference") val deviceReference: String? = null,
+    @Json(name = "captured_at") val capturedAt: String? = null
 )
 
 @JsonClass(generateAdapter = true)
@@ -560,7 +561,8 @@ data class AttendanceCheckOutRequestDto(
     @Json(name = "face_similarity_score") val faceSimilarityScore: Double,
     @Json(name = "liveness_verified") val livenessVerified: Boolean,
     @Json(name = "verification_method") val verificationMethod: String = "FACE_ON_DEVICE",
-    @Json(name = "device_reference") val deviceReference: String? = null
+    @Json(name = "device_reference") val deviceReference: String? = null,
+    @Json(name = "captured_at") val capturedAt: String? = null
 )
 
 @JsonClass(generateAdapter = true)

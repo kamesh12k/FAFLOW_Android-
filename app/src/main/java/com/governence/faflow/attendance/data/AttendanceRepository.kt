@@ -46,7 +46,8 @@ class AttendanceRepository(
             faceSimilarityScore = faceSimilarityScore,
             livenessVerified = livenessVerified,
             verificationMethod = "FACE_ON_DEVICE",
-            deviceReference = deviceReference
+            deviceReference = deviceReference,
+            capturedAt = java.time.Instant.now().toString()
         )
 
         try {
@@ -114,7 +115,8 @@ class AttendanceRepository(
             faceSimilarityScore = faceSimilarityScore,
             livenessVerified = livenessVerified,
             verificationMethod = "FACE_ON_DEVICE",
-            deviceReference = deviceReference
+            deviceReference = deviceReference,
+            capturedAt = java.time.Instant.now().toString()
         )
 
         try {
@@ -215,7 +217,8 @@ class AttendanceRepository(
                         faceSimilarityScore = item.faceSimilarityScore,
                         livenessVerified = item.livenessVerified,
                         verificationMethod = item.verificationMethod,
-                        deviceReference = item.deviceReference
+                        deviceReference = item.deviceReference,
+                        capturedAt = java.time.Instant.ofEpochMilli(item.createdAt).toString()
                     )
                     val res = apiService.checkIn(req)
                     if (res.isSuccessful || res.code() == 409) {
@@ -235,7 +238,8 @@ class AttendanceRepository(
                         faceSimilarityScore = item.faceSimilarityScore,
                         livenessVerified = item.livenessVerified,
                         verificationMethod = item.verificationMethod,
-                        deviceReference = item.deviceReference
+                        deviceReference = item.deviceReference,
+                        capturedAt = java.time.Instant.ofEpochMilli(item.createdAt).toString()
                     )
                     val res = apiService.checkOut(req)
                     if (res.isSuccessful || res.code() == 409) {

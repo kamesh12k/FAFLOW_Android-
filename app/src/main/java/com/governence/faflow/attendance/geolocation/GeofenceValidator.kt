@@ -93,25 +93,30 @@ class GeofenceValidator(
                         vertices = geofence.polygonVertices
                     )
 
+                    val edgeDistance = if (isInside) 0.0 else GeofenceMathEngine.distanceToPolygonMeters(
+                        point = staffPoint,
+                        vertices = geofence.polygonVertices
+                    )
+
                     val centerPoint = GeoPoint(geofence.centerLatitude, geofence.centerLongitude)
-                    val distance = GeofenceMathEngine.calculateDistanceMeters(
+                    val distanceToCenter = GeofenceMathEngine.calculateDistanceMeters(
                         staffPoint.latitude,
                         staffPoint.longitude,
                         centerPoint.latitude,
                         centerPoint.longitude
                     )
 
-                    if (distance < minDistance) {
-                        minDistance = distance
+                    if (edgeDistance < minDistance) {
+                        minDistance = edgeDistance
                         nearestGeofence = geofence
                     }
 
-                    val isInsideWithTolerance = isInside || distance <= (geofence.radiusMeters + geofence.toleranceMeters)
+                    val isInsideWithTolerance = isInside || edgeDistance <= geofence.toleranceMeters
                     if (isInsideWithTolerance) {
                         return LocationVerificationResult.InsideGeofence(
                             geofenceId = geofence.id,
                             geofenceName = geofence.name,
-                            distanceToCenterMeters = distance,
+                            distanceToCenterMeters = distanceToCenter,
                             accuracyMeters = location.accuracyMeters,
                             timestamp = location.timestamp
                         )
