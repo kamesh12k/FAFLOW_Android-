@@ -190,7 +190,8 @@ class StudentAttendanceViewModel(
                 classId = slot.classId,
                 subjectId = slot.subjectId,
                 substitutionId = slot.substitutionId,
-                isSubstitution = slot.isSubstitution
+                isSubstitution = slot.isSubstitution,
+                periodNumber = slot.periodNumber
             )
             _uiState.update {
                 it.copy(

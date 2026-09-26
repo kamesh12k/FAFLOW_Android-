@@ -157,7 +157,8 @@ open class StudentAttendanceRepository(
         classId: Int,
         subjectId: Int?,
         substitutionId: Int?,
-        isSubstitution: Boolean
+        isSubstitution: Boolean,
+        periodNumber: Int? = null
     ): AttendanceSessionDto? = withContext(Dispatchers.IO) {
         val service = apiService
         val db = localDb
@@ -168,6 +169,7 @@ open class StudentAttendanceRepository(
                 val createReq = AttendanceSessionCreateDto(
                     timetableSlotId = if (slotId != null && slotId > 0) slotId else null,
                     classId = classId,
+                    periodNumber = periodNumber,
                     subjectId = subjectId,
                     substitutionId = substitutionId,
                     attendanceType = if (isSubstitution) "REGISTERED_SUBSTITUTION" else "NORMAL"
@@ -184,8 +186,10 @@ open class StudentAttendanceRepository(
         }
 
         // 2. Check cached sessions if any matches classId and slotId
-        val cachedId = db?.getCachedTodaySchedule()?.scheduledClasses?.find { it.timetableSlotId == slotId }?.sessionId
-            ?: db?.getCachedTodaySchedule()?.substitutions?.find { it.timetableSlotId == slotId }?.sessionId
+        val cachedId = db?.getCachedTodaySchedule()?.periods?.find {
+            (slotId != null && it.timetableSlotId == slotId) ||
+            (it.classId == classId && (periodNumber == null || it.periodNumber == periodNumber))
+        }?.sessionId
         if (cachedId != null && cachedId > 0) {
             val session = db?.getCachedAttendanceSession(cachedId)
             if (session != null) return@withContext session
@@ -195,7 +199,7 @@ open class StudentAttendanceRepository(
         val localSession = AttendanceSessionDto(
             id = if (slotId != null && slotId > 0) -slotId else -classId,
             attendanceDate = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date()),
-            periodNumber = 1,
+            periodNumber = periodNumber ?: 1,
             classId = classId,
             className = "Class $classId",
             section = "",

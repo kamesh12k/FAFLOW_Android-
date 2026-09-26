@@ -554,6 +554,17 @@ fun StudentAttendanceScreen(
                                                     .padding(horizontal = 4.dp, vertical = 1.dp)
                                             )
                                         }
+                                        if (selectedSlot.isSubstitution) {
+                                            Text(
+                                                text = if (!selectedSlot.scheduledTeacherName.isNullOrBlank()) "SUB FOR ${selectedSlot.scheduledTeacherName.uppercase()}" else "SUBSTITUTION",
+                                                fontWeight = FontWeight.Black,
+                                                fontSize = 9.sp,
+                                                color = Color.White,
+                                                modifier = Modifier
+                                                    .background(Color(0xFF7C3AED), RoundedCornerShape(4.dp))
+                                                    .padding(horizontal = 6.dp, vertical = 1.dp)
+                                            )
+                                        }
                                     }
                                     Text(
                                         text = selectedSlot.className,
